@@ -14,7 +14,7 @@ export function useAuth() {
   }, []);
 
   function signIn() {
-    window.location.href = "/.auth/login";
+    window.location.href = "/.auth/login/github";
   }
 
   function signOut() {
