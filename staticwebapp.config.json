@@ -2,7 +2,7 @@
   "routes": [
     {
       "route": "/about",
-      "allowedRoles": ["mdsuser"]
+      "allowedGroups": ["359aee47-edae-40f7-9842-7de4cbf77263"]
     }
   ]
 }
