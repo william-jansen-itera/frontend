@@ -1,8 +1,8 @@
 {
   "routes": [
     {
-      "route": "/about",
-      "allowedGroups": ["359aee47-edae-40f7-9842-7de4cbf77263"]
+        "route": "/about",
+        "allowedRoles": ["359aee47-edae-40f7-9842-7de4cbf77263"]
     }
   ]
 }
