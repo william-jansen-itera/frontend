@@ -22,7 +22,8 @@ export default function RootLayout({ children }) {
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <nav style={{ marginBottom: "2rem", display: "flex", alignItems: "center", gap: "1rem" }}>
           <Link href="/" style={{ marginRight: "1rem" }}>Home</Link>
-          <Link href="/about">About</Link>
+          <Link href="/about" style={{ marginRight: "1rem" }}>About</Link>
+          <Link href="/notes">Notes</Link>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "1rem" }}>
             {!user ? (
               <button onClick={signIn} style={{ padding: "0.5rem 1rem", borderRadius: "4px", background: "#2563eb", color: "white", border: "none" }}>Sign In</button>
