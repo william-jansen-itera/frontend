@@ -2,27 +2,39 @@
 import Image from "next/image";
 import { useEffect, useState } from 'react';
 
-async function callHelloApi(name) {
-  const response = await fetch(
-    `https://mds-functions-william.azurewebsites.net/api/hello?name=${encodeURIComponent(name)}`
-  );
+async function callHelloFuncApi(name) {
+  const response = await fetch(`/api/proxy-funcapi?name=${encodeURIComponent(name)}`);
+  const data = await response.text();
+  return data;
+}
+
+async function callHelloNextApi(name) {
+  const response = await fetch(`/api/hello?name=${encodeURIComponent(name)}`);
   const data = await response.text();
   return data;
 }
 
 export default function Home() {
-  const [apiResult, setApiResult] = useState('');
+  const [funcApiResult, setFuncApiResult] = useState('');
+  const [nextApiResult, setNextApiResult] = useState('');
 
   useEffect(() => {
-    callHelloApi('World').then(result => {
-      setApiResult(result);
+    callHelloFuncApi('from funcapi').then(result => {
+      setFuncApiResult(result);
+    });
+  }, []);
+
+  useEffect(() => {
+    callHelloNextApi('from nextapi').then(result => {
+      setNextApiResult(result);
     });
   }, []);
 
   return (
     <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
       <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <p>API Response: {apiResult}</p>
+        <p>function API Response: {funcApiResult}</p>
+        <p>nextjs API Response: {nextApiResult}</p>
         <Image
           className="dark:invert"
           src="/next.svg"
