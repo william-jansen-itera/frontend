@@ -17,16 +17,19 @@ export async function GET(request, { params }) {
   if (cookie) {
     headers['Authorization'] = `Bearer ${cookie.value}`;
   }
+  // Log outgoing headers for debugging
+  console.log('Outgoing headers:', headers);
   
   // You can now proxy the request as needed
   try {
     const response = await fetch(targetUrl, { method: 'GET', headers });
     const text = await response.text();
-    // For debugging: include the cookie value in the response
+    // For debugging: include the cookie value and outgoing headers in the response
     return new NextResponse(
       JSON.stringify({
         response: text,
-        StaticWebAppsAuthCookie: cookie ? cookie.value : null
+        StaticWebAppsAuthCookie: cookie ? cookie.value : null,
+        outgoingHeaders: headers
       }),
       {
         status: response.status,
