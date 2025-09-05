@@ -11,10 +11,10 @@ export async function GET(request, { params }) {
 
   console.log('Proxying to:', targetUrl);
 
-  const cookie = request.cookies.get('AppServiceAuthSession');
+  const cookie = request.cookies.get('StaticWebAppsAuthCookie');
   const headers = {};
   if (cookie) {
-    headers['Cookie'] = `AppServiceAuthSession=${cookie.value}`;
+    headers['Cookie'] = `StaticWebAppsAuthCookie=${cookie.value}`;
   }
   
   // You can now proxy the request as needed
