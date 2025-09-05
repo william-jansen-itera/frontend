@@ -13,5 +13,5 @@ export async function GET(request) {
       userName = 'Invalid principal';
     }
   }
-  return new NextResponse(`Hello, ${userName}!`);
+  return new NextResponse(`Hello from next API, ${userName}!`);
 }

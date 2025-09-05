@@ -2,16 +2,26 @@
 import Image from "next/image";
 import { useEffect, useState } from 'react';
 
-async function callHelloFuncApi(name) {
-  const response = await fetch(`/api/proxy-funcapi?name=${encodeURIComponent(name)}`);
-  const data = await response.text();
-  return data;
+async function callFuncApi(apiMethodName) {
+  try {
+    const response = await fetch(`/api/proxy-funcapi?apimethodname=${encodeURIComponent(apiMethodName)}`);
+    const data = await response.text();
+    return data;
+  } catch (err) {
+    console.error('API error:', err);
+    return 'Error calling func API';
+  }
 }
 
 async function callHelloNextApi(name) {
-  const response = await fetch(`/api/hello?name=${encodeURIComponent(name)}`);
-  const data = await response.text();
-  return data;
+  try {
+    const response = await fetch(`/api/hello?name=${encodeURIComponent(name)}`);
+    const data = await response.text();
+    return data;
+  } catch (err) {
+    console.error('API error:', err);
+    return 'Error calling next API';
+  }
 }
 
 export default function Home() {
@@ -19,7 +29,7 @@ export default function Home() {
   const [nextApiResult, setNextApiResult] = useState('');
 
   useEffect(() => {
-    callHelloFuncApi('from funcapi').then(result => {
+    callFuncApi('from funcapi').then(result => {
       setFuncApiResult(result);
     });
   }, []);
