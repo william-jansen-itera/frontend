@@ -12,7 +12,7 @@ export async function GET(request, { params }) {
   console.log('Proxying to:', targetUrl);
 
   const cookie = request.cookies.get('StaticWebAppsAuthCookie');
-  console.log('StaticWebAppsAuthCookie:', cookie);
+  //console.log('StaticWebAppsAuthCookie:', cookie);
   const headers = {};
   if (cookie) {
     headers['Authorization'] = `Bearer ${cookie.value}`;
@@ -22,8 +22,17 @@ export async function GET(request, { params }) {
   try {
     const response = await fetch(targetUrl, { method: 'GET', headers });
     const text = await response.text();
-    console.log('Got response:', text);
-    return new NextResponse(text, { status: response.status });
+    // For debugging: include the cookie value in the response
+    return new NextResponse(
+      JSON.stringify({
+        response: text,
+        StaticWebAppsAuthCookie: cookie ? cookie.value : null
+      }),
+      {
+        status: response.status,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
   } catch (err) {
     console.error('Proxy error:', err);
     return new NextResponse('Proxy error', { status: 500 });
