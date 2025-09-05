@@ -1,8 +1,1 @@
-{
-  "routes": [
-    {
-        "route": "/about",
-        "allowedRoles": ["mdsusers"]
-    }
-  ]
-}
+{"routes":[{"route":"/about","allowedRoles":["mdsusers"]}],"auth":{"rolesSource":"/api/roles","identityProviders":{"azureActiveDirectory":{"registration":{"openIdIssuer":"https://login.microsoftonline.com/a18232f7-c6f8-48da-b8e1-838c7fac8ab1","clientIdSettingName":"AZURE_CLIENT_ID","clientSecretSettingName":"AZURE_CLIENT_SECRET_APP_SETTING_NAME"}}}}}
