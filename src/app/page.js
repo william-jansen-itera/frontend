@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 async function callFuncApi(apiMethodName) {
   try {
-    const response = await fetch(`/api/proxy-funcapi/hello?name=${encodeURIComponent(apiMethodName)}`);
+    const response = await fetch(`/api/proxy-funcapi/hello?name=${encodeURIComponent(apiMethodName)}&code=7fqDGM3EzsL5GelYs-qmqHdRNqcxtMoUMkQXiG9Wl-mNAzFuAeNZyw==`);
     const data = await response.text();
     return data;
   } catch (err) {
