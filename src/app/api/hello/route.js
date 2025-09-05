@@ -8,6 +8,7 @@ export async function GET(request) {
   if (principalHeader) {
     try {
       const principal = JSON.parse(Buffer.from(principalHeader, 'base64').toString('utf8'));
+      console.log('principal: ', principal);
       userName = principal.userDetails || 'Authenticated User';
     } catch (e) {
       userName = 'Invalid principal';
