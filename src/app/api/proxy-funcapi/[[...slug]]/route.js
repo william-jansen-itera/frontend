@@ -11,10 +11,34 @@ export async function GET(request, { params }) {
 
   console.log('Proxying to:', targetUrl);
 
-  const cookie = request.cookies.get('StaticWebAppsAuthCookie');
+  // Fetch the JWT from /.auth/me
+  let jwt = null;
+  try {
+      const meRes = await fetch('/.auth/me', {
+      headers: {
+        Cookie: request.headers.get('cookie') || ''
+      }
+      });
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        // Try to get id_token or access_token
+        jwt = meData?.idToken || (meData?.accessToken || null);
+        // If the structure is an array (as in Azure SWA), extract from clientPrincipal
+        if (!jwt && Array.isArray(meData?.clientPrincipal?.identityProvider)) {
+          jwt = meData.clientPrincipal.identityProvider[0]?.id_token || null;
+        }
+        // If the structure is an array of identities
+        if (!jwt && Array.isArray(meData?.identities)) {
+          jwt = meData.identities[0]?.id_token || null;
+        }
+      }
+  } catch (e) {
+    console.error('Error fetching /.auth/me:', e);
+  }
+
   const headers = {};
-  if (cookie) {
-    headers['Authorization'] = `Bearer ${cookie.value}`;
+  if (jwt) {
+    headers['Authorization'] = `Bearer ${jwt}`;
   }
   
   // You can now proxy the request as needed
