@@ -12,6 +12,7 @@ export async function GET(request, { params }) {
   console.log('Proxying to:', targetUrl);
 
   const cookie = request.cookies.get('StaticWebAppsAuthCookie');
+  console.log('StaticWebAppsAuthCookie:', cookie);
   const headers = {};
   if (cookie) {
     headers['Authorization'] = `Bearer ${cookie.value}`;
