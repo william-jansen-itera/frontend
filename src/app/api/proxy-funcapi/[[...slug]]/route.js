@@ -6,16 +6,22 @@ export async function GET(request, { params }) {
 
   let slugPath = '';
   slugPath = Array.isArray(slug) ? slug.join('/') : slug;
-  // Build the target URL for funcapi
+  // Build the corresponding URL for funcapi
   const targetUrl = `https://mds-functions-william.azurewebsites.net/api/${slugPath}${search}`;
 
   console.log('Proxying to:', targetUrl);
 
+  const cookie = request.cookies.get('AppServiceAuthSession');
+  const headers = {};
+  if (cookie) {
+    headers['Cookie'] = `AppServiceAuthSession=${cookie.value}`;
+  }
+  
   // You can now proxy the request as needed
   try {
-    const response = await fetch(targetUrl, { method: 'GET' });
+    const response = await fetch(targetUrl, { method: 'GET', headers });
     const text = await response.text();
-    console.log('Got repsonse:', text);
+    console.log('Got response:', text);
     return new NextResponse(text, { status: response.status });
   } catch (err) {
     console.error('Proxy error:', err);
