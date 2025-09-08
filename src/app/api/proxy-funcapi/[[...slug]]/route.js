@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getAccessToken } from '../../../../utils/msal';
-import { logTrace, logException } from '../../../../utils/appInsights';
+
 
 export async function GET(request, { params }) {
+  const { logTrace, logException } = await import('../../../../server/utils/appInsights');
   const { slug } = await params;
   const { search } = new URL(request.url);
 
