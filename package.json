@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@azure/msal-browser": "^4.22.0",
+    "@azure/msal-react": "^3.0.19",
     "@minoru/react-dnd-treeview": "^3.5.3",
     "next": "15.5.0",
     "react": "19.1.0",

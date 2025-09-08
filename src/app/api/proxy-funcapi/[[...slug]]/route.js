@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getAccessToken } from '../../../../utils/msal';
 
 export async function GET(request, { params }) {
   const { slug } = await params;
@@ -11,41 +12,21 @@ export async function GET(request, { params }) {
 
   console.log('Proxying to:', targetUrl);
 
-  // Fetch the JWT from /.auth/me
-  let jwt = null;
-  try {
-      const meRes = await fetch('/.auth/me', {
-      headers: {
-        Cookie: request.headers.get('cookie') || ''
-      }
-      });
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        // Try to get id_token or access_token
-        jwt = meData?.idToken || (meData?.accessToken || null);
-        // If the structure is an array (as in Azure SWA), extract from clientPrincipal
-        if (!jwt && Array.isArray(meData?.clientPrincipal?.identityProvider)) {
-          jwt = meData.clientPrincipal.identityProvider[0]?.id_token || null;
-        }
-        // If the structure is an array of identities
-        if (!jwt && Array.isArray(meData?.identities)) {
-          jwt = meData.identities[0]?.id_token || null;
-        }
-      }
-  } catch (e) {
-    console.error('Error fetching /.auth/me:', e);
-  }
+  // Fetch the JWT
+  const jwt = await getAccessToken();
 
-  const headers = {};
   if (jwt) {
     headers['Authorization'] = `Bearer ${jwt}`;
   }
   
-  // You can now proxy the request as needed
   try {
-  const response = await fetch(targetUrl, { method: 'GET', headers });
-  const text = await response.text();
-  return new NextResponse(text, { status: response.status });
+    const response = await fetch(targetUrl, {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+      },
+    });  
+    const text = await response.text();
+    return new NextResponse(text, { status: response.status });
   } catch (err) {
     console.error('Proxy error:', err);
     return new NextResponse('Proxy error', { status: 500 });
