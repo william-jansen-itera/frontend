@@ -24,12 +24,13 @@
           "clientSecretSettingName": "AZURE_CLIENT_SECRET"
         },
         "login": {
-            "scopes": [
+          "scopes": [
             "openid",
             "profile",
             "email",
             "api://398c6cf6-0b41-476e-ab6e-289c46caf1ad/.default"
-            ]
+          ]
+        }
       }
     }
   },
