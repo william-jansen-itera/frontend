@@ -22,7 +22,14 @@
           "openIdIssuer": "https://login.microsoftonline.com/a18232f7-c6f8-48da-b8e1-838c7fac8ab1/v2.0",
           "clientIdSettingName": "AZURE_CLIENT_ID",
           "clientSecretSettingName": "AZURE_CLIENT_SECRET"
-        }
+        },
+        "login": {
+            "scopes": [
+            "openid",
+            "profile",
+            "email",
+            "api://398c6cf6-0b41-476e-ab6e-289c46caf1ad/.default"
+            ]
       }
     }
   },

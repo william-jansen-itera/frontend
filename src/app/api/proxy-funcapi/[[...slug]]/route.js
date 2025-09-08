@@ -18,15 +18,18 @@ export async function GET(request, { params }) {
 
   // Fetch the JWT
   message = 'Getting access token.';
+  console.log(message);
   logTrace(message);
   const jwt = await getAccessToken();
   if (!jwt) {
-    logTrace('Failed to obtain access token.');
+    message = 'Failed to obtain access token.';
+    logTrace(message);
     return new NextResponse('Unauthorized, failure to get access token', { status: 401 });
   }
 
   try {
     message = 'Proxying to: ' + targetUrl;
+    console.log(message);
     logTrace(message);
     const response = await fetch(targetUrl, {
       headers: {
