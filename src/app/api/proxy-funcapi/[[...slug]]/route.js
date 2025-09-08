@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAccessToken } from '../../../../utils/msal';
+import { getAccessToken } from '../../../utils/msal';
 
 export async function GET(request, { params }) {
   const { slug } = await params;
