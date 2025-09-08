@@ -14,10 +14,6 @@ export async function GET(request, { params }) {
 
   // Fetch the JWT
   const jwt = await getAccessToken();
-
-  if (jwt) {
-    headers['Authorization'] = `Bearer ${jwt}`;
-  }
   
   try {
     const response = await fetch(targetUrl, {
