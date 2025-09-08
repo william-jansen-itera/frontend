@@ -11,7 +11,7 @@ export async function GET(request, { params }) {
   // Build the corresponding URL for funcapi
   const targetUrl = `https://mds-functions-william.azurewebsites.net/api/${slugPath}${search}`;
 
-  const message = 'will call ' + targetUrl;
+  let message = 'Will call ' + targetUrl;
   logTrace(message);
   console.log(message);
 
@@ -36,6 +36,7 @@ export async function GET(request, { params }) {
     return new NextResponse(text, { status: response.status });
   } catch (err) {
     console.error('Proxy error:', err);
+    logException(err);
     return new NextResponse('Proxy error', { status: 500 });
   }
 }
