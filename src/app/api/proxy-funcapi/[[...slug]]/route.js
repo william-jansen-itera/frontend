@@ -23,12 +23,13 @@ export async function GET(request, { params }) {
 
   let decoded;
   try {
+    logTrace('Acquiring function app access token.');
     jwt = await getFunctionAppAccessToken();
-    decoded = decodeJwt(jwt);
     logTrace('Successfully acquired function app access token.');
   } catch (err) {
     logException(err);
-    return new NextResponse('Failed to acquire function app access token', { status: 500 });
+    // Return the error message in the response for testing purposes
+    return new NextResponse(`Failed to acquire function app access token: ${err.message || err.toString()}`, { status: 500 });
   }
 
   if (!jwt) {
@@ -36,7 +37,7 @@ export async function GET(request, { params }) {
     logTrace(message);
     return new NextResponse('Unauthorized, failure to get access token', { status: 401 });
   } else {
-    // Log the decoded JWT as JSON
+    decoded = decodeJwt(jwt);
     console.log('Decoded JWT:', decoded);
     logTrace(JSON.stringify(decoded, null, 2));
   }
