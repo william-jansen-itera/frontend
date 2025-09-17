@@ -28,7 +28,7 @@ export async function GET(request, { params }) {
     logTrace('Successfully acquired function app access token.');
   } catch (err) {
     logException(err);
-    // Return the error message in the response for testing purposes
+    // Return the error in the response (testing only, not for production)
     return new NextResponse(`Failed to acquire function app access token: ${err.message || err.toString()}`, { status: 500 });
   }
 
