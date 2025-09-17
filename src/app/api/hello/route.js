@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
-  const { logTrace, logException } = await import('../../../../server/utils/logging');
+  const { logTrace, logException } = await import('../../../server/utils/logging');
   // Try to get the x-ms-client-principal header
   const principalHeader = request.headers.get('x-ms-client-principal');
   let userName = 'Anonymous';
