@@ -7,26 +7,25 @@ export function decodeJwt(token) {
 
 import { ConfidentialClientApplication } from '@azure/msal-node';
 
-const clientId = process.env.AZURE_FUNCTION_CLIENT_ID;
-const clientSecret = process.env.AZURE_FUNCTION_CLIENT_SECRET;
-const tenantId = process.env.AZURE_TENANT_ID;
-const scope = process.env.AZURE_FUNCTION_SCOPE; // e.g. "api://<function-app-client-id>/.default"
-
-if (!clientId || !clientSecret || !tenantId || !scope) {
-  throw new Error('Missing required environment variables for client credential flow');
-}
-
-const msalConfig = {
-  auth: {
-    clientId,
-    authority: `https://login.microsoftonline.com/${tenantId}`,
-    clientSecret,
-  },
-};
-
-const cca = new ConfidentialClientApplication(msalConfig);
-
 export async function getFunctionAppAccessToken() {
+  const clientId = process.env.AZURE_FUNCTION_CLIENT_ID;
+  const clientSecret = process.env.AZURE_FUNCTION_CLIENT_SECRET;
+  const tenantId = process.env.AZURE_TENANT_ID;
+  const scope = process.env.AZURE_FUNCTION_SCOPE; // e.g. "api://<function-app-client-id>/.default"
+
+  if (!clientId || !clientSecret || !tenantId || !scope) {
+    throw new Error('Missing required environment variables for client credential flow');
+  }
+
+  const msalConfig = {
+    auth: {
+      clientId,
+      authority: `https://login.microsoftonline.com/${tenantId}`,
+      clientSecret,
+    },
+  };
+
+  const cca = new ConfidentialClientApplication(msalConfig);
   const result = await cca.acquireTokenByClientCredential({
     scopes: [scope],
   });
