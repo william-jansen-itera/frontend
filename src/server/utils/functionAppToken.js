@@ -11,7 +11,7 @@ export async function getFunctionAppAccessToken() {
   const clientId = process.env.AZURE_FUNC_CLIENT_ID;
   const clientSecret = process.env.AZURE_FUNC_CLIENT_SECRET;
   const tenantId = process.env.AZURE_TENANT_ID;
-  const scope = process.env.AZURE_FUNCTION_SCOPE; // e.g. "api://<function-app-client-id>/.default"
+  const scope = process.env.AZURE_FUNC_SCOPE; // e.g. "api://<function-app-client-id>/.default"
 
   if (!clientId || !clientSecret || !tenantId || !scope) {
     throw new Error('Missing required environment variables for client credential flow');
