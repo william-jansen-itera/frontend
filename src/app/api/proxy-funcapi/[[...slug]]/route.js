@@ -14,7 +14,7 @@ export async function GET(request, { params }) {
   const targetUrl = `https://mds-functions-william.azurewebsites.net/api/${slugPath}${search}`;
 
   let message = 'Will call ' + targetUrl;
-  logTrace(message);
+  //logTrace(message);
   console.log(message);
 
 
@@ -23,9 +23,9 @@ export async function GET(request, { params }) {
 
   let decoded;
   try {
-    logTrace('Acquiring function app access token.');
+    //logTrace('Acquiring function app access token.');
     jwt = await getFunctionAppAccessToken();
-    logTrace('Successfully acquired function app access token.');
+    //logTrace('Successfully acquired function app access token.');
   } catch (err) {
     logException(err);
     // Return the error in the response (testing only, not for production)
@@ -38,14 +38,14 @@ export async function GET(request, { params }) {
     return new NextResponse('Unauthorized, failure to get access token', { status: 401 });
   } else {
     decoded = decodeJwt(jwt);
-    console.log('Decoded JWT:', decoded);
-    logTrace(JSON.stringify(decoded, null, 2));
+    //console.log('Decoded JWT:', decoded);
+    //logTrace(JSON.stringify(decoded, null, 2));
   }
 
   try {
     message = 'Proxying to: ' + targetUrl;
-    console.log(message);
-    logTrace(message);
+    //console.log(message);
+    //logTrace(message);
     const response = await fetch(targetUrl, {
       headers: {
         Authorization: `Bearer ${jwt}`,
@@ -54,7 +54,7 @@ export async function GET(request, { params }) {
     const text = await response.text();
     return new NextResponse(text, { status: response.status });
   } catch (err) {
-    console.error('Proxy error:', err);
+    //console.error('Proxy error:', err);
     logException(err);
     return new NextResponse('Proxy error', { status: 500 });
   }

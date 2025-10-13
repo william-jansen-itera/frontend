@@ -3,6 +3,10 @@
     {
         "route": "/about",
         "allowedRoles": ["mdsusers"]
+    },
+    {
+        "route": "/*",
+        "allowedRoles": ["authenticated"]
     }
   ],
   "responseOverrides": {
