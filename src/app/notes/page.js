@@ -1,29 +1,50 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { DndProvider } from "react-dnd";
 import { Tree, getBackendOptions, MultiBackend } from "@minoru/react-dnd-treeview";
 
 export default function NotesPage() {
-  //manage in-memory state and rendering with 
   const [treeData, setTreeData] = useState([]);
+  const [error, setError] = useState(null);
+  const searchParams = useSearchParams();
+  const idParam = searchParams.get('id');
+  // console.log("idParam: ", idParam);
 
-  // This effect only runs once, because of the empty dependency array []
   useEffect(() => {
-    fetch("/api/notes")
+    if (!idParam) {
+      setError('Invalid request, id parameter not found');
+      setTreeData([]);
+      return;
+    }
+    fetch(`/api/notes?id=${idParam}`)
       .then((res) => res.json())
-      .then((data) => setTreeData(data))
+      .then((data) => {
+        console.log("Is api data array:", Array.isArray(data), data);
+        if (Array.isArray(data)) {
+          setTreeData(data);
+          setError(null);
+        } else {
+          setTreeData([]);
+          setError(data.error || "Unknown error, data is not array");
+        }
+      })
       .catch((err) => {
-        // Optionally handle error
         console.error('Data error:', err);
         setTreeData([]);
+        setError(err.message);
       });
-  }, []);
+  }, [idParam]);
+
+  if (error) {
+    return <div style={{ color: "red" }}>Error: {error}</div>;
+  }
 
   return (
     <DndProvider backend={MultiBackend} options={getBackendOptions()}>
       <Tree
         tree={treeData}
-        rootId={0}
+        rootId={null}
         onDrop={(newTree) => setTreeData(newTree)}
         render={(node, { depth, isOpen, onToggle }) => (
           <div style={{ marginLeft: depth * 10 }}>

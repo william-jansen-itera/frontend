@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import sql from 'mssql';
+import * as sql from 'mssql';
 
 const config = {
   user: process.env.AZURE_SQL_USER,
@@ -17,18 +17,24 @@ export async function GET(request) {
   const idParam = searchParams.get('id');
   let query;
   if (idParam) {
-    query = `SELECT id, parent_id as parent, text, droppable FROM tree_nodes WHERE id = @id`;
+    query = `WITH RecursiveTree AS (
+      SELECT id, parent_id as parent, text, droppable
+      FROM tree_nodes
+      WHERE id = @id
+      UNION ALL
+      SELECT t.id, t.parent_id as parent, t.text, t.droppable
+      FROM tree_nodes t
+      INNER JOIN RecursiveTree rt ON t.parent_id = rt.id
+    )
+    SELECT * FROM RecursiveTree`;
   } else {
     return NextResponse.json({ error: 'Invalid request, id parameter not found' }, { status: 400 });
   }
   try {
     await sql.connect(config);
     let result;
-    if (idParam) {
-      result = await sql.request().input('id', sql.Int, parseInt(idParam)).query(query);
-    } else {
-      result = await sql.query(query);
-    }
+    const request = new sql.Request();
+    result = await request.input('id', sql.Int, parseInt(idParam)).query(query);
     return NextResponse.json(result.recordset);
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
