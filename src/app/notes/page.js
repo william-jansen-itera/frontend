@@ -1,10 +1,19 @@
 "use client";
+import { Suspense } from "react";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { DndProvider } from "react-dnd";
 import { Tree, getBackendOptions, MultiBackend } from "@minoru/react-dnd-treeview";
 
-export default function NotesPage() {
+export default function NotesPageWrapper() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <NotesPage />
+    </Suspense>
+  );
+}
+
+function NotesPage() {
   const [treeData, setTreeData] = useState([]);
   const [error, setError] = useState(null);
   const searchParams = useSearchParams();
