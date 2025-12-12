@@ -3,7 +3,6 @@ import { Suspense } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
-react-arborist
 export default function NotesPageWrapper() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
