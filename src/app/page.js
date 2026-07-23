@@ -2,16 +2,6 @@
 import Image from "next/image";
 import { useEffect, useState } from 'react';
 
-async function callFuncApi(name) {
-  try {
-    const response = await fetch(`/api/proxy-funcapi/hello?name=${encodeURIComponent(name)}`);
-    const data = await response.text();
-    return data;
-  } catch (err) {
-    console.error('API error:', err);
-    return 'Error calling func API';
-  }
-}
 
 async function callHelloNextApi(name) {
   try {
@@ -25,14 +15,7 @@ async function callHelloNextApi(name) {
 }
 
 export default function Home() {
-  const [funcApiResult, setFuncApiResult] = useState('');
-  const [nextApiResult, setNextApiResult] = useState('');
-
-  useEffect(() => {
-    callFuncApi('from funcapi').then(result => {
-      setFuncApiResult(result);
-    });
-  }, []);
+    const [nextApiResult, setNextApiResult] = useState('');
 
   useEffect(() => {
     callHelloNextApi('from nextapi').then(result => {
@@ -43,7 +26,6 @@ export default function Home() {
   return (
     <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
       <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <p>function API Response: {funcApiResult}</p>
         <p>nextjs API Response: {nextApiResult}</p>
         <Image
           className="dark:invert"
