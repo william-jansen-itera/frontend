@@ -9,23 +9,19 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@azure/msal-browser": "^4.22.0",
-    "@azure/msal-node": "^3.7.3",
-    "@azure/msal-react": "^3.0.19",
-    "mssql": "^12.0.0",
-    "next": "15.5.0",
-    "react": "19.1.0",
-    "react-arborist": "^3.4.3",
-    "react-dom": "19.1.0"
+    "mssql": "^12.7.0",
+    "next": "^16.2.12",
+    "react": "^19.2.8",
+    "react-arborist": "^3.16.0",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4",
-    "eslint": "^9",
-    "eslint-config-next": "15.5.0",
-    "tailwindcss": "^4"
+    "@tailwindcss/postcss": "^4.3.3",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.12",
+    "tailwindcss": "^4.3.3"
   },
   "engines": {
-    "node": "20.x"
+    "node": ">=20.9.0"
   }
 }

@@ -54,11 +54,10 @@ function NotesPage() {
   const [error, setError] = useState(null);
   const searchParams = useSearchParams();
   const idParam = searchParams.get('id');
+  const invalidRequestError = !idParam ? 'Invalid request, id parameter not found' : null;
 
   useEffect(() => {
     if (!idParam) {
-      setError('Invalid request, id parameter not found');
-      setTreeData([]);
       return;
     }
     fetch(`/api/notes?id=${idParam}`)
@@ -172,8 +171,8 @@ function NotesPage() {
     }
   };
 
-  if (error) {
-    return <div style={{ color: "red" }}>Error: {error}</div>;
+  if (invalidRequestError || error) {
+    return <div style={{ color: "red" }}>Error: {invalidRequestError || error}</div>;
   }
 
   return (
