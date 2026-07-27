@@ -192,16 +192,16 @@ function NotesPage() {
         onMove={handleMove}
         // Allow drag on draggable nodes only
         disableDrag={(node) => !node.draggable}
-        // Allow drop on droppable nodes only
+        // Allow drop on container nodes only, not leaf nodes
         disableDrop={({ parentNode }) =>
-          parentNode ? !parentNode.data.droppable : false
+          parentNode ? parentNode.data.isLeafNode : false
         }
       >
         {({ node, style, dragHandle }) => { 
         //console.log(node.isLeaf);
         return (
           <div style={style} ref={dragHandle}>
-            {node.data.droppable && (
+            {!node.data.isLeafNode && (
               <span 
                 onClick={() => {
                   node.toggle(); // Call toggle

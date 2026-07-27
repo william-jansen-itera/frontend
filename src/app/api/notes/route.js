@@ -25,8 +25,8 @@ const config = {
 //         .input('id', sql.Int, node.id)
 //         .input('parent', sql.Int, node.parent)
 //         .input('text', sql.NVarChar, node.text)
-//         .input('droppable', sql.Bit, node.droppable ? 1 : 0)
-//         .query(`INSERT INTO tree_nodes (id, parent_id, text, droppable) VALUES (@id, @parent, @text, @droppable)`);
+//         .input('is_leaf_node', sql.Bit, node.isLeafNode ? 1 : 0)
+//         .query(`INSERT INTO tree_nodes (id, parent_id, text, is_leaf_node) VALUES (@id, @parent, @text, @is_leaf_node)`);
 //     }
 //     return NextResponse.json({ success: true });
 // } catch (err) {
@@ -42,7 +42,7 @@ async function getTreeData(rootId) {
         CAST(id AS VARCHAR(10)) as id, 
         CAST(parent_id AS VARCHAR(10)) parent, 
         text as name, 
-        droppable,
+        is_leaf_node AS isLeafNode,
         draggable,
         sort_order,
         CAST(sort_order AS VARCHAR(MAX)) AS path,
@@ -54,7 +54,7 @@ async function getTreeData(rootId) {
         CAST(t.id AS VARCHAR(10)) as id, 
         CAST(t.parent_id AS VARCHAR(10)) parent, 
         t.text as name, 
-        t.droppable,
+        t.is_leaf_node AS isLeafNode,
         t.draggable,
         t.sort_order,
         rt.path + '-' + CAST(t.sort_order AS VARCHAR(MAX)) AS path,
