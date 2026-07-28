@@ -3,10 +3,14 @@ import { Suspense } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
+
 export default function NotesPageWrapper() {
+  const searchParams = useSearchParams();
+  const idParam = searchParams.get("id");
+
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <NotesPage />
+      <NotesPage key={idParam ?? "missing-id"} idParam={idParam} />
     </Suspense>
   );
 }
@@ -15,159 +19,234 @@ function buildNestedTreeData(flatData) {
   const idToNodeMap = {};
   const rootNodes = [];
 
-  // Create a map of nodes by their id
-  flatData.forEach(node => {
+  flatData.forEach((node) => {
     idToNodeMap[node.id] = { ...node, children: [] };
   });
 
-  // Build the tree structure
-  flatData.forEach(node => {
+  flatData.forEach((node) => {
     if (node.parent === null) {
       rootNodes.push(idToNodeMap[node.id]);
     } else {
       idToNodeMap[node.parent].children.push(idToNodeMap[node.id]);
     }
   });
+
   return rootNodes;
-};
-
-function flattenTreeData(nodes, parentId = null) {
-    let flatData = [];
-
-    nodes.forEach(node => {
-        // Add the current node to the flat data
-        const { children, ...rest } = node; // Exclude children for the flat structure
-        flatData.push({ ...rest, parent: parentId });
-
-        // Recursively flatten the children
-        if (children && children.length > 0) {
-            flatData = flatData.concat(flattenTreeData(children, node.id));
-        }
-    });
-
-    return flatData;
 }
 
-function NotesPage() {
-  const [treeData, setTreeData] = useState([]);
-  const treeRef = useRef(); // Create a ref for the Tree instance
-  const [error, setError] = useState(null);
-  const searchParams = useSearchParams();
-  const idParam = searchParams.get('id');
-  const invalidRequestError = !idParam ? 'Invalid request, id parameter not found' : null;
+function flattenTreeData(nodes, parentId = null) {
+  let flatData = [];
 
+  nodes.forEach((node) => {
+    const { children, ...rest } = node;
+    flatData.push({ ...rest, parent: parentId });
+
+    if (children && children.length > 0) {
+      flatData = flatData.concat(flattenTreeData(children, node.id));
+    }
+  });
+
+  return flatData;
+}
+
+// Collect the IDs of all expandable nodes (on change to tree or node toggle state)
+function collectExpandableNodeIds(nodes) {
+  return nodes.flatMap((node) => {
+    const childIds = node.children ? collectExpandableNodeIds(node.children) : [];
+    return node.isLeafNode ? childIds : [String(node.id), ...childIds];
+  });
+}
+
+// Extract the expanded state (on tree mount and node move)
+function extractExpandedState(flatData) {
+  return flatData.reduce((nextExpandedState, node) => {
+    if (!node.isLeafNode && node.isExpanded) {
+      nextExpandedState[String(node.id)] = true;
+    }
+
+    return nextExpandedState;
+  }, {});
+}
+
+function NotesPage({ idParam }) {
+  const [treeData, setTreeData] = useState([]);
+  const [expandedState, setExpandedState] = useState({});
+  const treeRef = useRef();
+  const isApplyingExpandedStateRef = useRef(false);
+  const [error, setError] = useState(null);
+  const invalidRequestError = !idParam ? "Invalid request, id parameter not found" : null;
+
+  // Fetch the tree data when the component mounts or when idParam changes
   useEffect(() => {
     if (!idParam) {
       return;
     }
+
     fetch(`/api/notes?id=${idParam}`)
       .then((res) => res.json())
       .then((flatData) => {
         if (Array.isArray(flatData)) {
-          const nestedTreeData = buildNestedTreeData(flatData)
-          //console.log("Nested tree data:", nestedTreeData);
-          setTreeData(nestedTreeData);
+          setTreeData(buildNestedTreeData(flatData));
+          setExpandedState(extractExpandedState(flatData));
           setError(null);
         } else {
           setTreeData([]);
+          setExpandedState({});
           setError(flatData.error || "Unknown error, data is not array");
         }
       })
       .catch((err) => {
-        console.error('Data error:', err);
+        console.error("Data error:", err);
         setTreeData([]);
+        setExpandedState({});
         setError(err.message);
       });
   }, [idParam]);
 
+  // Apply the expanded state to the tree when treeData or expandedState changes
+  useEffect(() => {
+    const tree = treeRef.current;
+
+    if (!tree || treeData.length === 0) {
+      return;
+    }
+
+    isApplyingExpandedStateRef.current = true;
+
+    try {
+      // Apply the expanded state (present in the expandedState = expanded)
+      collectExpandableNodeIds(treeData).forEach((nodeId) => {
+        if (expandedState[nodeId]) {
+          if (!tree.isOpen(nodeId)) {
+            tree.open(nodeId);
+          }
+        } else if (tree.isOpen(nodeId)) {
+          tree.close(nodeId);
+        }
+      });
+    } finally {
+      isApplyingExpandedStateRef.current = false;
+    }
+  }, [treeData, expandedState]);
+
   const handleMove = async ({ dragIds, parentId, index }) => {
     console.log("Move event:", { dragIds, parentId, index });
 
-    // Access the Tree instance if needed
-    // const tree = treeRef.current;
-    // if (tree) {
-    //   console.log("Tree instance:", tree);
-    //   // Example: Access a specific node
-    //   const node = tree.get(dragIds[0]);
-    //   https://www.npmjs.com/package/react-arborist#tree-api-reference
-    // }
-
     try {
-      // Update the tree data in state
-      // first detect existing parent and index of dragged nodes
-      let existingParentId = 0, existingIndex = 0;
-      const flatData = flattenTreeData(treeData).map(node => {
+      let existingParentId = 0;
+      let existingIndex = 0;
+      const flatData = flattenTreeData(treeData).map((node) => {
         if (dragIds.includes(node.id)) {
           existingParentId = node.parent;
           existingIndex = node.sort_order;
           return { ...node, parent: parentId };
         }
+
         return { ...node };
       });
-      //abort if no changes
+
       if (existingParentId == parentId && existingIndex == index) {
         console.log("No changes in position, do nothing.");
-      //implement changes
       } else {
-        let abandonedSiblingIndexCounter = 0, siblingIndexCounter = 0;
-        //change sort_order of all affected nodes
-        flatData.forEach(node => {
-          // update indexes within parent
-          if (node.parent == parentId) { 
-            if (dragIds.includes(node.id)) { 
+        let abandonedSiblingIndexCounter = 0;
+        let siblingIndexCounter = 0;
+
+        flatData.forEach((node) => {
+          if (node.parent == parentId) {
+            if (dragIds.includes(node.id)) {
               node.sort_order = index;
-            } else {
-              // node inserted (new parent)
-              if (parentId != existingParentId) {
-                if (siblingIndexCounter < index) {
-                  node.sort_order = siblingIndexCounter;
-                } else {
-                  node.sort_order = siblingIndexCounter + 1;
-                }
-              // node moved up
-              } else if(index < existingIndex) {          
-                if (siblingIndexCounter < index || siblingIndexCounter > existingIndex) {
-                  node.sort_order = siblingIndexCounter;
-                } else {
-                  node.sort_order = siblingIndexCounter + 1;
-                }
-              //node moved down
-              } else if(index > existingIndex) {
-                if (siblingIndexCounter < existingIndex || siblingIndexCounter > index) {
-                  node.sort_order = siblingIndexCounter;
-                } else {
-                  node.sort_order = siblingIndexCounter -1
-                }
-              }
+            } else if (parentId != existingParentId) {
+              node.sort_order = siblingIndexCounter < index
+                ? siblingIndexCounter
+                : siblingIndexCounter + 1;
+            } else if (index < existingIndex) {
+              node.sort_order =
+                siblingIndexCounter < index || siblingIndexCounter > existingIndex
+                  ? siblingIndexCounter
+                  : siblingIndexCounter + 1;
+            } else if (index > existingIndex) {
+              node.sort_order =
+                siblingIndexCounter < existingIndex || siblingIndexCounter > index
+                  ? siblingIndexCounter
+                  : siblingIndexCounter - 1;
             }
+
             siblingIndexCounter++;
-          }      
-          // if parent was new also update indexes of abandoned siblings
-          if (parentId != existingParentId) {          
-            if (node.parent == existingParentId) {          
-              node.sort_order = abandonedSiblingIndexCounter;
-              abandonedSiblingIndexCounter++;
-            }
+          }
+
+          if (parentId != existingParentId && node.parent == existingParentId) {
+            node.sort_order = abandonedSiblingIndexCounter;
+            abandonedSiblingIndexCounter++;
           }
         });
-        // send the updated tree data to the server
+
         console.log("Flat data to send to server:", flatData);
         fetch("/api/notes", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(flatData),
         })
-        .then((res) => res.json())
-        .then((flatData) => {
-          console.log(" Updated data returned from server:", flatData);
-          // rerender the tree with the response
-          if (Array.isArray(flatData)) {
-            setTreeData(buildNestedTreeData(flatData));
-          }
-        });
-      }      
+          .then((res) => res.json())
+          .then((updatedFlatData) => {
+            console.log("Updated data returned from server:", updatedFlatData);
+            if (Array.isArray(updatedFlatData)) {
+              setTreeData(buildNestedTreeData(updatedFlatData));
+              setExpandedState(extractExpandedState(updatedFlatData));
+            }
+          });
+      }
     } catch (err) {
       console.error("Failed to update tree:", err);
+    }
+  };
+
+  const handleToggle = async (id) => {
+    if (isApplyingExpandedStateRef.current) {
+      return;
+    }
+
+    const tree = treeRef.current;
+    const isExpanded = tree ? tree.isOpen(id) : false;
+    const previousIsExpanded = Boolean(expandedState[id]);
+
+    if (isExpanded === previousIsExpanded) {
+      return;
+    }
+
+    setExpandedState((currentExpandedState) => {
+      // if expanded, add to expanded state
+      if (isExpanded) {
+        return { ...currentExpandedState, [id]: true };
+      }
+      // if collapsed, remove from expanded state
+      const nextExpandedState = { ...currentExpandedState };
+      delete nextExpandedState[id];
+      return nextExpandedState;
+    });
+
+    try {
+      // Persist the open state change to the server
+      const response = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, isExpanded }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to persist tree open state");
+      }
+    } catch (err) {
+      console.error("Failed to persist tree open state:", err);
+      setExpandedState((currentExpandedState) => {
+        // revert the state back to previous expanded state
+        if (previousIsExpanded) {
+          return { ...currentExpandedState, [id]: true };
+        }
+        // revert the state back to previous collapsed state
+        const nextExpandedState = { ...currentExpandedState };
+        delete nextExpandedState[id];
+        return nextExpandedState;
+      });
     }
   };
 
@@ -178,8 +257,10 @@ function NotesPage() {
   return (
     <div style={{ height: "100vh", width: "100%" }}>
       <Tree
-        ref={treeRef} // Attach the ref to the Tree component
+        ref={treeRef}
+        key={idParam}
         data={treeData}
+        initialOpenState={expandedState}
         openByDefault={false}
         width="100%"
         height={600}
@@ -190,31 +271,28 @@ function NotesPage() {
         paddingBottom={10}
         padding={25}
         onMove={handleMove}
-        // Allow drag on draggable nodes only
+        onToggle={handleToggle}
         disableDrag={(node) => !node.draggable}
-        // Allow drop on container nodes only, not leaf nodes
         disableDrop={({ parentNode }) =>
           parentNode ? parentNode.data.isLeafNode : false
         }
       >
-        {({ node, style, dragHandle }) => { 
-        //console.log(node.isLeaf);
-        return (
-          <div style={style} ref={dragHandle}>
-            {!node.data.isLeafNode && (
-              <span 
-                onClick={() => {
-                  node.toggle(); // Call toggle
-                }} 
-                style={{ cursor: "pointer", marginRight: 4 }}
-              >
-                {/* {node.isLeaf ? "🍁" : "🗀"} */}
-                {node.isOpen ? "[-]" : "[+]"}
-              </span>
-            )}
-            {node.data.name}
-          </div>
-        );
+        {({ node, style, dragHandle }) => {
+          return (
+            <div style={style} ref={dragHandle}>
+              {!node.data.isLeafNode && (
+                <span
+                  onClick={() => {
+                    node.toggle();
+                  }}
+                  style={{ cursor: "pointer", marginRight: 4 }}
+                >
+                  {node.isOpen ? "[-]" : "[+]"}
+                </span>
+              )}
+              {node.data.name}
+            </div>
+          );
         }}
       </Tree>
     </div>

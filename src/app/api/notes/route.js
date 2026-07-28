@@ -43,6 +43,7 @@ async function getTreeData(rootId) {
         CAST(parent_id AS VARCHAR(10)) parent, 
         text as name, 
         is_leaf_node AS isLeafNode,
+        is_expanded AS isExpanded,
         draggable,
         sort_order,
         CAST(sort_order AS VARCHAR(MAX)) AS path,
@@ -55,6 +56,7 @@ async function getTreeData(rootId) {
         CAST(t.parent_id AS VARCHAR(10)) parent, 
         t.text as name, 
         t.is_leaf_node AS isLeafNode,
+        t.is_expanded AS isExpanded,
         t.draggable,
         t.sort_order,
         rt.path + '-' + CAST(t.sort_order AS VARCHAR(MAX)) AS path,
@@ -86,8 +88,23 @@ async function UpdateTreeNodes(nodes) {
         .input('parent', sql.Int, node.parent)
         .input('text', sql.NVarChar, node.name)
         .input('sort_order', sql.Int, node.sort_order)
-        .query(`UPDATE tree_nodes SET parent_id = @parent, text = @text, sort_order = @sort_order WHERE id = @id`);
+        .input('is_expanded', sql.Bit, node.isExpanded ? 1 : 0)
+        .query(`UPDATE tree_nodes SET parent_id = @parent, text = @text, sort_order = @sort_order, is_expanded = @is_expanded WHERE id = @id`);
     }
+  } catch (err) {
+    throw err;
+  } finally {
+    await sql.close();
+  }
+}
+
+async function UpdateTreeNodeOpenState(nodeId, isExpanded) {
+  try {
+    await sql.connect(config);
+    await new sql.Request()
+      .input('id', sql.Int, nodeId)
+      .input('is_expanded', sql.Bit, isExpanded ? 1 : 0)
+      .query(`UPDATE tree_nodes SET is_expanded = @is_expanded WHERE id = @id`);
   } catch (err) {
     throw err;
   } finally {
@@ -120,6 +137,21 @@ export async function PUT(request) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   } finally {
     await sql.close();
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const { id, isExpanded } = await request.json();
+
+    if (id === undefined || typeof isExpanded !== 'boolean') {
+      return NextResponse.json({ error: 'Invalid request, id and isExpanded are required' }, { status: 400 });
+    }
+
+    await UpdateTreeNodeOpenState(id, isExpanded);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
