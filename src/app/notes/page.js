@@ -5,12 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
 
 export default function NotesPageWrapper() {
-  const searchParams = useSearchParams();
-  const idParam = searchParams.get("id");
-
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <NotesPage key={idParam ?? "missing-id"} idParam={idParam} />
+      <NotesPage />
     </Suspense>
   );
 }
@@ -68,7 +65,9 @@ function extractExpandedState(flatData) {
   }, {});
 }
 
-function NotesPage({ idParam }) {
+function NotesPage() {
+  const searchParams = useSearchParams();
+  const idParam = searchParams.get("id");
   const [treeData, setTreeData] = useState([]);
   const [expandedState, setExpandedState] = useState({});
   const treeRef = useRef();
