@@ -57,7 +57,7 @@ async function getTreeList() {
   });
 }
 
-async function getTreeData(treeInstanceId) {
+async function queryTreeData(treeInstanceId) {
   const query = `WITH RecursiveTree AS (
       SELECT
         id,
@@ -100,12 +100,40 @@ async function getTreeData(treeInstanceId) {
     FROM RecursiveTree
     ORDER BY path;`;
 
-  return withSqlConnection(async () => {
-    const result = await new sql.Request()
-      .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
-      .query(query);
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
+    .query(query);
 
-    return result.recordset;
+  return result.recordset;
+}
+
+async function getTreeData(treeInstanceId) {
+  return withSqlConnection(async () => {
+    return queryTreeData(treeInstanceId);
+  });
+}
+
+async function queryNodeDetails(treeInstanceId, nodeId) {
+  const detailResult = await new sql.Request()
+    .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
+    .input('id', sql.Int, parseInt(nodeId, 10))
+    .query(`
+      SELECT
+        CAST(tn.id AS VARCHAR(10)) AS id,
+        tn.text AS name,
+        ISNULL(tnd.description, '') AS description,
+        ISNULL(tnd.notes, '') AS notes
+      FROM tree_nodes tn
+      LEFT JOIN tree_node_details tnd ON tnd.tree_node_id = tn.id
+      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id;
+    `);
+
+  return detailResult.recordset[0] ?? null;
+}
+
+async function getNodeDetails(treeInstanceId, nodeId) {
+  return withSqlConnection(async () => {
+    return queryNodeDetails(treeInstanceId, nodeId);
   });
 }
 
@@ -216,7 +244,7 @@ async function CreateTreeNode({ parentId, treeInstanceId, name }) {
 
     return {
       createdNodeId: String(createdNodeId),
-      flatData: await getTreeData(treeInstanceId),
+      flatData: await queryTreeData(treeInstanceId),
     };
   });
 }
@@ -242,7 +270,7 @@ async function DeleteTreeNode({ id, treeInstanceId }) {
       .input('tree_instance_id', sql.Int, treeInstanceId)
       .query(deleteQuery);
 
-    return getTreeData(treeInstanceId);
+    return queryTreeData(treeInstanceId);
   });
 }
 
@@ -275,10 +303,54 @@ async function UpdateTreeNodeOpenState(treeInstanceId, nodeId, isExpanded) {
   });
 }
 
+async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, description, notes }) {
+  return withSqlConnection(async () => {
+    const trimmedName = name.trim();
+
+    const updateResult = await new sql.Request()
+      .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('id', sql.Int, nodeId)
+      .input('text', sql.NVarChar, trimmedName)
+      .query(`
+        UPDATE tree_nodes
+        SET text = @text
+        WHERE tree_instance_id = @tree_instance_id AND id = @id;
+      `);
+
+    if (!updateResult.rowsAffected[0]) {
+      throw new Error('Node was not found for the selected tree');
+    }
+
+    await new sql.Request()
+      .input('tree_node_id', sql.Int, nodeId)
+      .input('description', sql.NVarChar, description ?? '')
+      .input('notes', sql.NVarChar(sql.MAX), notes ?? '')
+      .query(`
+        MERGE tree_node_details AS target
+        USING (SELECT @tree_node_id AS tree_node_id) AS source
+          ON target.tree_node_id = source.tree_node_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            description = @description,
+            notes = @notes,
+            updated_at = SYSUTCDATETIME()
+        WHEN NOT MATCHED THEN
+          INSERT (tree_node_id, description, notes, created_at, updated_at)
+          VALUES (@tree_node_id, @description, @notes, SYSUTCDATETIME(), SYSUTCDATETIME());
+      `);
+
+    return {
+      flatData: await queryTreeData(treeInstanceId),
+      details: await queryNodeDetails(treeInstanceId, nodeId),
+    };
+  });
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const treeIdParam = searchParams.get('treeId');
   const includeParam = searchParams.get('include');
+  const nodeIdParam = searchParams.get('id');
 
   try {
     if (!treeIdParam) {
@@ -287,6 +359,19 @@ export async function GET(request) {
 
     if (includeParam === 'settings') {
       return NextResponse.json(await getTreeSettings(treeIdParam));
+    }
+
+    if (includeParam === 'details') {
+      if (!nodeIdParam) {
+        return NextResponse.json({ error: 'Invalid request, id is required for node details' }, { status: 400 });
+      }
+
+      const details = await getNodeDetails(treeIdParam, nodeIdParam);
+      if (!details) {
+        return NextResponse.json({ error: 'Node was not found for the selected tree' }, { status: 404 });
+      }
+
+      return NextResponse.json(details);
     }
 
     return NextResponse.json(await getTreeData(treeIdParam));
@@ -330,14 +415,26 @@ export async function PUT(request) {
 
 export async function PATCH(request) {
   try {
-    const { id, treeId, isExpanded } = await request.json();
+    const { id, treeId, isExpanded, name, description, notes } = await request.json();
 
-    if (id === undefined || !treeId || typeof isExpanded !== 'boolean') {
-      return NextResponse.json({ error: 'Invalid request, id, treeId and isExpanded are required' }, { status: 400 });
+    if (id === undefined || !treeId) {
+      return NextResponse.json({ error: 'Invalid request, id and treeId are required' }, { status: 400 });
     }
 
-    await UpdateTreeNodeOpenState(parseInt(treeId), id, isExpanded);
-    return NextResponse.json({ success: true });
+    if (typeof isExpanded === 'boolean') {
+      await UpdateTreeNodeOpenState(parseInt(treeId), id, isExpanded);
+      return NextResponse.json({ success: true });
+    }
+
+    if (typeof name !== 'string' || !name.trim()) {
+      return NextResponse.json({ error: 'Invalid request, name is required when saving node details' }, { status: 400 });
+    }
+
+    return NextResponse.json(await UpdateTreeNodeDetails(parseInt(treeId), parseInt(id), {
+      name,
+      description: typeof description === 'string' ? description : '',
+      notes: typeof notes === 'string' ? notes : '',
+    }));
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

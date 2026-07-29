@@ -109,6 +109,14 @@ function dataNodeHasChildren(dataNode) {
   return Array.isArray(dataNode?.children) && dataNode.children.length > 0;
 }
 
+function buildNodeEditorState(nodeDetails = null) {
+  return {
+    name: nodeDetails?.name ?? "",
+    description: nodeDetails?.description ?? "",
+    notes: nodeDetails?.notes ?? "",
+  };
+}
+
 // Main NotesPage component runs whenever state changes, including treeIdParam, treeData, expandedState, and selectedNodeId
 function NotesPage() {
   const router = useRouter();
@@ -119,21 +127,37 @@ function NotesPage() {
   const [treeData, setTreeData] = useState([]);
   const [expandedState, setExpandedState] = useState({});
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [nodeEditorState, setNodeEditorState] = useState(() => buildNodeEditorState());
+  const [nodeDetailsError, setNodeDetailsError] = useState(null);
+  const [isSavingNodeDetails, setIsSavingNodeDetails] = useState(false);
+  const [availablePageHeight, setAvailablePageHeight] = useState(0);
+  const [treeContentHeight, setTreeContentHeight] = useState(0);
+  const pageContainerRef = useRef(null);
+  const treeContentRef = useRef(null);
   const treeRef = useRef();
   const isApplyingExpandedStateRef = useRef(false);
   const [error, setError] = useState(null);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
   const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode);
   const canDelete = Boolean(selectedNode && selectedNode.parent !== null);
+  const panelHeight = availablePageHeight || 600;
+  const treeHeight = treeContentHeight || 240;
 
   const applyTreeResponse = (flatData, targetSelectedNodeId = null) => {
     if (!Array.isArray(flatData)) {
       return;
     }
 
+    const nextSelectedNodeId = getNextSelectedNodeId(flatData, selectedNodeId, targetSelectedNodeId);
+    const nextSelectedNode = nextSelectedNodeId
+      ? flatData.find((node) => String(node.id) === String(nextSelectedNodeId))
+      : null;
+
     setTreeData(buildNestedTreeData(flatData));
     setExpandedState(extractExpandedState(flatData));
-    setSelectedNodeId(getNextSelectedNodeId(flatData, selectedNodeId, targetSelectedNodeId));
+    setSelectedNodeId(nextSelectedNodeId);
+    setNodeEditorState(buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null));
+    setNodeDetailsError(null);
   };
   // Fetch the list of available trees on mount
   useEffect(() => {
@@ -148,12 +172,14 @@ function NotesPage() {
             setTreeData([]);
             setExpandedState({});
             setSelectedNodeId(null);
+            setNodeEditorState(buildNodeEditorState());
           }
         } else {
           setAvailableTrees([]);
           setTreeData([]);
           setExpandedState({});
           setSelectedNodeId(null);
+          setNodeEditorState(buildNodeEditorState());
           setError(trees.error || "Unknown error, data is not array");
         }
       })
@@ -163,6 +189,7 @@ function NotesPage() {
         setTreeData([]);
         setExpandedState({});
         setSelectedNodeId(null);
+        setNodeEditorState(buildNodeEditorState());
         setError(err.message);
       });
   }, []);
@@ -193,14 +220,22 @@ function NotesPage() {
       .then((res) => res.json())
       .then((flatData) => {
         if (Array.isArray(flatData)) {
+          const nextSelectedNodeId = getNextSelectedNodeId(flatData, null, flatData[0]?.id ?? null);
+          const nextSelectedNode = nextSelectedNodeId
+            ? flatData.find((node) => String(node.id) === String(nextSelectedNodeId))
+            : null;
+
           setTreeData(buildNestedTreeData(flatData));
           setExpandedState(extractExpandedState(flatData));
-          setSelectedNodeId(getNextSelectedNodeId(flatData, null, flatData[0]?.id ?? null));
+          setSelectedNodeId(nextSelectedNodeId);
+          setNodeEditorState(buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null));
+          setNodeDetailsError(null);
           setError(null);
         } else {
           setTreeData([]);
           setExpandedState({});
           setSelectedNodeId(null);
+          setNodeEditorState(buildNodeEditorState());
           setError(flatData.error || "Unknown error, data is not array");
         }
       })
@@ -209,9 +244,88 @@ function NotesPage() {
         setTreeData([]);
         setExpandedState({});
         setSelectedNodeId(null);
+        setNodeEditorState(buildNodeEditorState());
         setError(err.message);
       });
   }, [treeIdParam]);
+
+  useEffect(() => {
+    if (!treeIdParam || !selectedNodeId) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&include=details&id=${encodeURIComponent(selectedNodeId)}`)
+      .then((res) => res.json().then((result) => ({ ok: res.ok, result })))
+      .then(({ ok, result }) => {
+        if (isCancelled) {
+          return;
+        }
+
+        if (!ok) {
+          throw new Error(result.error || "Failed to load node details");
+        }
+
+        setNodeEditorState(buildNodeEditorState(result));
+      })
+      .catch((err) => {
+        if (isCancelled) {
+          return;
+        }
+
+        console.error("Node details error:", err);
+        setNodeDetailsError(err.message);
+      })
+      .finally(() => undefined);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [treeIdParam, selectedNodeId]);
+
+  useEffect(() => {
+    const updateAvailablePageHeight = () => {
+      const pageContainer = pageContainerRef.current;
+      if (!pageContainer) {
+        return;
+      }
+
+      const { top } = pageContainer.getBoundingClientRect();
+      const nextHeight = Math.max(Math.floor(window.innerHeight - top - 16), 0);
+      setAvailablePageHeight(nextHeight);
+    };
+
+    updateAvailablePageHeight();
+    window.addEventListener("resize", updateAvailablePageHeight);
+
+    return () => {
+      window.removeEventListener("resize", updateAvailablePageHeight);
+    };
+  }, []);
+
+  useEffect(() => {
+    const treeContentElement = treeContentRef.current;
+    if (!treeContentElement) {
+      return undefined;
+    }
+
+    const updateTreeContentHeight = () => {
+      setTreeContentHeight(treeContentElement.clientHeight);
+    };
+
+    updateTreeContentHeight();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateTreeContentHeight();
+    });
+
+    resizeObserver.observe(treeContentElement);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [panelHeight]);
 
   // Apply the expanded state to the tree when treeData or expandedState changes
   useEffect(() => {
@@ -406,104 +520,272 @@ function NotesPage() {
     }
   };
 
+  const handleNodeEditorChange = (field, value) => {
+    setNodeEditorState((currentState) => ({
+      ...currentState,
+      [field]: value,
+    }));
+  };
+
+  const handleSaveNodeDetails = async () => {
+    if (!treeIdParam || !selectedNodeId || !nodeEditorState.name.trim()) {
+      return;
+    }
+
+    try {
+      setIsSavingNodeDetails(true);
+      setNodeDetailsError(null);
+
+      const response = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedNodeId,
+          treeId: treeIdParam,
+          name: nodeEditorState.name,
+          description: nodeEditorState.description,
+          notes: nodeEditorState.notes,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to save node details");
+      }
+
+      applyTreeResponse(result.flatData, selectedNodeId);
+      setNodeEditorState(buildNodeEditorState(result.details));
+    } catch (err) {
+      console.error("Failed to save node details:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setIsSavingNodeDetails(false);
+    }
+  };
+
   if (error) {
     return <div style={{ color: "red" }}>Error: {error}</div>;
   }
 
   return (
-    <div style={{ height: "100vh", width: "100%", padding: 16, boxSizing: "border-box" }}>
+    <div
+      ref={pageContainerRef}
+      style={{
+        width: "100%",
+        height: panelHeight || undefined,
+        padding: 16,
+        boxSizing: "border-box",
+        overflow: "hidden",
+      }}
+    >
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 16,
-          padding: "12px 16px",
-          border: "1px solid #d4d4d8",
-          borderRadius: 10,
-          backgroundColor: "#fafafa",
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 420px)",
+          gap: 16,
+          alignItems: "start",
+          height: "100%",
         }}
       >
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "#27272a" }}>Tree</span>
-          <select
-            value={treeIdParam ?? ""}
-            onChange={(event) => {
-              // Update the URL with the selected treeId, which will trigger the effect to fetch and populate the selected tree.
-              router.replace(
-                getTreeSelectionHref(pathname, searchParams.toString(), event.target.value || null),
-                { scroll: false },
-              );
-            }}
-            disabled={availableTrees.length === 0}
-          >
-            {availableTrees.length === 0 ? (
-              <option value="">No trees available</option>
-            ) : (
-              availableTrees.map((tree) => (
-                <option key={tree.id} value={tree.id}>
-                  {tree.name}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
-        <button onClick={handleAdd} disabled={!canAddChild} type="button">
-          Add
-        </button>
-        <button onClick={handleDelete} disabled={!canDelete} type="button">
-          Delete
-        </button>
-        <span style={{ color: "#52525b" }}>
-          {selectedNode
-            ? `Selected: ${selectedNode.name}`
-            : "Select a node to enable actions."}
-        </span>
-      </div>
-      <Tree
-        ref={treeRef}
-        key={treeIdParam ?? "tree-empty"}
-        data={treeData}
-        selection={selectedNodeId ?? undefined}
-        initialOpenState={expandedState}
-        openByDefault={false}
-        width="100%"
-        height={600}
-        indent={24}
-        rowHeight={36}
-        overscanCount={1}
-        paddingTop={30}
-        paddingBottom={10}
-        padding={25}
-        onMove={handleMove}
-        onToggle={handleToggle}
-        onSelect={(nodes) => {
-          setSelectedNodeId(nodes.length === 1 ? String(nodes[0].id) : null);
-        }}
-        disableMultiSelection={true}
-        disableDrag={(node) => !node.draggable}
-        disableDrop={({ parentNode }) =>
-          parentNode ? parentNode.data.isLeafNode : false
-        }
-      >
-        {({ node, style, dragHandle }) => {
-          return (
-            <div style={style} ref={dragHandle}>
-              {dataNodeHasChildren(node.data) && (
-                <span
-                  onClick={() => {
-                    node.toggle();
-                  }}
-                  style={{ cursor: "pointer", marginRight: 4 }}
-                >
-                  {node.isOpen ? "[-]" : "[+]"}
-                </span>
-              )}
-              {node.data.name}
+        <div
+          style={{
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            boxSizing: "border-box",
+            border: "1px solid #d4d4d8",
+            borderRadius: 10,
+            backgroundColor: "#ffffff",
+            overflow: "hidden",
+            height: "100%",
+          }}
+        >
+          <div style={{ backgroundColor: "#ffffff" }}>
+            <div style={{ padding: "16px 16px 0" }}>
+              <h2 style={{ margin: 0, fontSize: 18, color: "#18181b" }}>Tree Nodes</h2>
             </div>
-          );
-        }}
-      </Tree>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "12px 16px",
+                marginTop: 12,
+                borderTop: "1px solid #e4e4e7",
+                borderBottom: "1px solid #e4e4e7",
+                backgroundColor: "#fafafa",
+                flexWrap: "wrap",
+              }}
+            >
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "#27272a" }}>Tree</span>
+                <select
+                  value={treeIdParam ?? ""}
+                  onChange={(event) => {
+                    router.replace(
+                      getTreeSelectionHref(pathname, searchParams.toString(), event.target.value || null),
+                      { scroll: false },
+                    );
+                  }}
+                  disabled={availableTrees.length === 0}
+                >
+                  {availableTrees.length === 0 ? (
+                    <option value="">No trees available</option>
+                  ) : (
+                    availableTrees.map((tree) => (
+                      <option key={tree.id} value={tree.id}>
+                        {tree.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <button onClick={handleAdd} disabled={!canAddChild} type="button">
+                Add
+              </button>
+              <button onClick={handleDelete} disabled={!canDelete} type="button">
+                Delete
+              </button>
+            </div>
+          </div>
+          <div ref={treeContentRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            <Tree
+              ref={treeRef}
+              key={treeIdParam ?? "tree-empty"}
+              data={treeData}
+              selection={selectedNodeId ?? undefined}
+              initialOpenState={expandedState}
+              openByDefault={false}
+              width="100%"
+              height={treeHeight}
+              indent={24}
+              rowHeight={36}
+              overscanCount={1}
+              paddingTop={18}
+              paddingBottom={10}
+              padding={25}
+              onMove={handleMove}
+              onToggle={handleToggle}
+              onSelect={(nodes) => {
+                setSelectedNodeId(nodes.length === 1 ? String(nodes[0].id) : null);
+              }}
+              disableMultiSelection={true}
+              disableDrag={(node) => !node.draggable}
+              disableDrop={({ parentNode }) =>
+                parentNode ? parentNode.data.isLeafNode : false
+              }
+            >
+              {({ node, style, dragHandle }) => {
+                return (
+                  <div style={style} ref={dragHandle}>
+                    {dataNodeHasChildren(node.data) && (
+                      <span
+                        onClick={() => {
+                          node.toggle();
+                        }}
+                        style={{ cursor: "pointer", marginRight: 4 }}
+                      >
+                        {node.isOpen ? "[-]" : "[+]"}
+                      </span>
+                    )}
+                    {node.data.name}
+                  </div>
+                );
+              }}
+            </Tree>
+          </div>
+        </div>
+        <aside
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            boxSizing: "border-box",
+            border: "1px solid #d4d4d8",
+            borderRadius: 10,
+            backgroundColor: "#ffffff",
+            height: "100%",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ backgroundColor: "#ffffff" }}>
+            <div style={{ padding: "16px 16px 0" }}>
+              <h2 style={{ margin: 0, fontSize: 18, color: "#18181b" }}>Node Details</h2>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "12px 16px",
+                marginTop: 12,
+                borderTop: "1px solid #e4e4e7",
+                borderBottom: "1px solid #e4e4e7",
+                backgroundColor: "#fafafa",
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ color: "#52525b", fontSize: 14 }}>
+                {selectedNode
+                  ? `Selected: ${selectedNode.name}`
+                  : "Select a node to edit its details."}
+              </span>
+              <button
+                onClick={handleSaveNodeDetails}
+                disabled={!selectedNode || isSavingNodeDetails || !nodeEditorState.name.trim()}
+                type="button"
+              >
+                {isSavingNodeDetails ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            {!selectedNode ? (
+              <div style={{ color: "#71717a", padding: 16 }}>
+                Select a node to edit its details.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12, padding: 16 }}>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "#27272a", fontWeight: 500 }}>Name</span>
+                  <input
+                    type="text"
+                    value={nodeEditorState.name}
+                    onChange={(event) => handleNodeEditorChange("name", event.target.value)}
+                    disabled={isSavingNodeDetails}
+                    style={{ padding: "10px 12px", border: "1px solid #d4d4d8", borderRadius: 8 }}
+                  />
+                </label>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "#27272a", fontWeight: 500 }}>Description</span>
+                  <input
+                    type="text"
+                    value={nodeEditorState.description}
+                    onChange={(event) => handleNodeEditorChange("description", event.target.value)}
+                    disabled={isSavingNodeDetails}
+                    style={{ padding: "10px 12px", border: "1px solid #d4d4d8", borderRadius: 8 }}
+                  />
+                </label>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "#27272a", fontWeight: 500 }}>Notes</span>
+                  <textarea
+                    value={nodeEditorState.notes}
+                    onChange={(event) => handleNodeEditorChange("notes", event.target.value)}
+                    disabled={isSavingNodeDetails}
+                    rows={12}
+                    style={{ padding: "10px 12px", border: "1px solid #d4d4d8", borderRadius: 8, resize: "vertical" }}
+                  />
+                </label>
+                {nodeDetailsError && (
+                  <div style={{ color: "#b91c1c", fontSize: 14 }}>
+                    {nodeDetailsError}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
