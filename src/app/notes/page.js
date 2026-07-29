@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
+import styles from "./page.module.css";
 
 export default function NotesPageWrapper() {
   return (
@@ -564,7 +565,7 @@ function NotesPage() {
   };
 
   if (error) {
-    return <div style={{ color: "red" }}>Error: {error}</div>;
+    return <div className={styles.errorMessage}>Error: {error}</div>;
   }
 
   return (
@@ -573,52 +574,24 @@ function NotesPage() {
       style={{
         width: "100%",
         height: panelHeight || undefined,
-        padding: 16,
-        boxSizing: "border-box",
-        overflow: "hidden",
       }}
+      className={styles.pageShell}
     >
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 420px)",
-          gap: 16,
-          alignItems: "start",
-          height: "100%",
-        }}
+        className={styles.panelGrid}
+        style={{ height: "100%" }}
       >
         <div
-          style={{
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-            boxSizing: "border-box",
-            border: "1px solid #d4d4d8",
-            borderRadius: 10,
-            backgroundColor: "#ffffff",
-            overflow: "hidden",
-            height: "100%",
-          }}
+          className={styles.panelShell}
+          style={{ height: "100%" }}
         >
-          <div style={{ backgroundColor: "#ffffff" }}>
-            <div style={{ padding: "16px 16px 0" }}>
-              <h2 style={{ margin: 0, fontSize: 18, color: "#18181b" }}>Tree Nodes</h2>
+          <div className={styles.panelHeader}>
+            <div className={styles.panelTitleWrap}>
+              <h2 className={styles.panelTitle}>Tree Nodes</h2>
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "12px 16px",
-                marginTop: 12,
-                borderTop: "1px solid #e4e4e7",
-                borderBottom: "1px solid #e4e4e7",
-                backgroundColor: "#fafafa",
-                flexWrap: "wrap",
-              }}
-            >
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ color: "#27272a" }}>Tree</span>
+            <div className={styles.panelToolbar}>
+              <label className={styles.toolbarLabel}>
+                <span className={styles.labelText}>Tree</span>
                 <select
                   value={treeIdParam ?? ""}
                   onChange={(event) => {
@@ -648,7 +621,7 @@ function NotesPage() {
               </button>
             </div>
           </div>
-          <div ref={treeContentRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+          <div ref={treeContentRef} className={styles.treeContent}>
             <Tree
               ref={treeRef}
               key={treeIdParam ?? "tree-empty"}
@@ -677,13 +650,13 @@ function NotesPage() {
             >
               {({ node, style, dragHandle }) => {
                 return (
-                  <div style={style} ref={dragHandle}>
+                  <div style={style} ref={dragHandle} className={styles.treeRow}>
                     {dataNodeHasChildren(node.data) && (
                       <span
                         onClick={() => {
                           node.toggle();
                         }}
-                        style={{ cursor: "pointer", marginRight: 4 }}
+                        className={styles.treeToggle}
                       >
                         {node.isOpen ? "[-]" : "[+]"}
                       </span>
@@ -696,36 +669,15 @@ function NotesPage() {
           </div>
         </div>
         <aside
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            boxSizing: "border-box",
-            border: "1px solid #d4d4d8",
-            borderRadius: 10,
-            backgroundColor: "#ffffff",
-            height: "100%",
-            overflow: "hidden",
-          }}
+          className={styles.panelShell}
+          style={{ height: "100%" }}
         >
-          <div style={{ backgroundColor: "#ffffff" }}>
-            <div style={{ padding: "16px 16px 0" }}>
-              <h2 style={{ margin: 0, fontSize: 18, color: "#18181b" }}>Node Details</h2>
+          <div className={styles.panelHeader}>
+            <div className={styles.panelTitleWrap}>
+              <h2 className={styles.panelTitle}>Node Details</h2>
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                padding: "12px 16px",
-                marginTop: 12,
-                borderTop: "1px solid #e4e4e7",
-                borderBottom: "1px solid #e4e4e7",
-                backgroundColor: "#fafafa",
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ color: "#52525b", fontSize: 14 }}>
+            <div className={`${styles.panelToolbar} ${styles.detailsToolbar}`}>
+              <span className={styles.selectionStatus}>
                 {selectedNode
                   ? `Selected: ${selectedNode.name}`
                   : "Select a node to edit its details."}
@@ -739,45 +691,45 @@ function NotesPage() {
               </button>
             </div>
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <div className={styles.detailsContent}>
             {!selectedNode ? (
-              <div style={{ color: "#71717a", padding: 16 }}>
+              <div className={styles.emptyState}>
                 Select a node to edit its details.
               </div>
             ) : (
-              <div style={{ display: "grid", gap: 12, padding: 16 }}>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ color: "#27272a", fontWeight: 500 }}>Name</span>
+              <div className={styles.detailsForm}>
+                <label className={styles.formField}>
+                  <span className={styles.fieldLabel}>Name</span>
                   <input
                     type="text"
                     value={nodeEditorState.name}
                     onChange={(event) => handleNodeEditorChange("name", event.target.value)}
                     disabled={isSavingNodeDetails}
-                    style={{ padding: "10px 12px", border: "1px solid #d4d4d8", borderRadius: 8 }}
+                    className={styles.textInput}
                   />
                 </label>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ color: "#27272a", fontWeight: 500 }}>Description</span>
+                <label className={styles.formField}>
+                  <span className={styles.fieldLabel}>Description</span>
                   <input
                     type="text"
                     value={nodeEditorState.description}
                     onChange={(event) => handleNodeEditorChange("description", event.target.value)}
                     disabled={isSavingNodeDetails}
-                    style={{ padding: "10px 12px", border: "1px solid #d4d4d8", borderRadius: 8 }}
+                    className={styles.textInput}
                   />
                 </label>
-                <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ color: "#27272a", fontWeight: 500 }}>Notes</span>
+                <label className={styles.formField}>
+                  <span className={styles.fieldLabel}>Notes</span>
                   <textarea
                     value={nodeEditorState.notes}
                     onChange={(event) => handleNodeEditorChange("notes", event.target.value)}
                     disabled={isSavingNodeDetails}
                     rows={12}
-                    style={{ padding: "10px 12px", border: "1px solid #d4d4d8", borderRadius: 8, resize: "vertical" }}
+                    className={styles.textArea}
                   />
                 </label>
                 {nodeDetailsError && (
-                  <div style={{ color: "#b91c1c", fontSize: 14 }}>
+                  <div className={styles.fieldError}>
                     {nodeDetailsError}
                   </div>
                 )}
