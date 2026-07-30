@@ -4,6 +4,18 @@ import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
+import { usePanelLayout } from "./usePanelLayout";
+import {
+  buildMovedFlatData,
+  buildNestedTreeData,
+  buildNodeEditorState,
+  collectExpandableNodeIds,
+  dataNodeHasChildren,
+  extractExpandedState,
+  findNodeById,
+  getNextSelectedNodeId,
+  getTreeSelectionHref,
+} from "./treeUtils";
 
 export default function NotesPageWrapper() {
   return (
@@ -11,111 +23,6 @@ export default function NotesPageWrapper() {
       <NotesPage />
     </Suspense>
   );
-}
-
-function buildNestedTreeData(flatData) {
-  const idToNodeMap = {};
-  const rootNodes = [];
-
-  flatData.forEach((node) => {
-    idToNodeMap[node.id] = { ...node, children: [] };
-  });
-
-  flatData.forEach((node) => {
-    if (node.parent === null) {
-      rootNodes.push(idToNodeMap[node.id]);
-    } else {
-      idToNodeMap[node.parent].children.push(idToNodeMap[node.id]);
-    }
-  });
-
-  return rootNodes;
-}
-
-function flattenTreeData(nodes, parentId = null) {
-  let flatData = [];
-
-  nodes.forEach((node) => {
-    const { children, ...rest } = node;
-    flatData.push({ ...rest, parent: parentId });
-
-    if (children && children.length > 0) {
-      flatData = flatData.concat(flattenTreeData(children, node.id));
-    }
-  });
-
-  return flatData;
-}
-
-// Collect the IDs of all expandable nodes (on change to tree or node toggle state)
-function collectExpandableNodeIds(nodes) {
-  return nodes.flatMap((node) => {
-    const childIds = node.children ? collectExpandableNodeIds(node.children) : [];
-    return node.isLeafNode ? childIds : [String(node.id), ...childIds];
-  });
-}
-
-// Extract the expanded state (on tree mount and node move)
-function extractExpandedState(flatData) {
-  return flatData.reduce((nextExpandedState, node) => {
-    if (!node.isLeafNode && node.isExpanded) {
-      nextExpandedState[String(node.id)] = true;
-    }
-
-    return nextExpandedState;
-  }, {});
-}
-
-function findNodeById(nodes, targetId) {
-  for (const node of nodes) {
-    if (String(node.id) === String(targetId)) {
-      return node;
-    }
-
-    if (node.children) {
-      const childMatch = findNodeById(node.children, targetId);
-      if (childMatch) {
-        return childMatch;
-      }
-    }
-  }
-
-  return null;
-}
-
-function getNextSelectedNodeId(flatData, currentSelectedNodeId, targetSelectedNodeId = null) {
-  const nextSelectedNodeId = targetSelectedNodeId ?? currentSelectedNodeId;
-  if (!nextSelectedNodeId) {
-    return null;
-  }
-
-  const matchingNode = flatData.find((node) => String(node.id) === String(nextSelectedNodeId));
-  return matchingNode ? String(nextSelectedNodeId) : null;
-}
-
-function getTreeSelectionHref(pathname, searchParamsString, nextTreeId) {
-  const nextSearchParams = new URLSearchParams(searchParamsString);
-
-  if (nextTreeId) {
-    nextSearchParams.set("treeId", String(nextTreeId));
-  } else {
-    nextSearchParams.delete("treeId");
-  }
-
-  const nextQueryString = nextSearchParams.toString();
-  return nextQueryString ? `${pathname}?${nextQueryString}` : pathname;
-}
-
-function dataNodeHasChildren(dataNode) {
-  return Array.isArray(dataNode?.children) && dataNode.children.length > 0;
-}
-
-function buildNodeEditorState(nodeDetails = null) {
-  return {
-    name: nodeDetails?.name ?? "",
-    description: nodeDetails?.description ?? "",
-    notes: nodeDetails?.notes ?? "",
-  };
 }
 
 // Main NotesPage component runs whenever state changes, including treeIdParam, treeData, expandedState, and selectedNodeId
@@ -131,18 +38,13 @@ function NotesPage() {
   const [nodeEditorState, setNodeEditorState] = useState(() => buildNodeEditorState());
   const [nodeDetailsError, setNodeDetailsError] = useState(null);
   const [isSavingNodeDetails, setIsSavingNodeDetails] = useState(false);
-  const [availablePageHeight, setAvailablePageHeight] = useState(0);
-  const [treeContentHeight, setTreeContentHeight] = useState(0);
-  const pageContainerRef = useRef(null);
-  const treeContentRef = useRef(null);
+  const { pageContainerRef, treeContentRef, panelHeight, treeHeight } = usePanelLayout();
   const treeRef = useRef();
   const isApplyingExpandedStateRef = useRef(false);
   const [error, setError] = useState(null);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
   const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode);
   const canDelete = Boolean(selectedNode && selectedNode.parent !== null);
-  const panelHeight = availablePageHeight || 600;
-  const treeHeight = treeContentHeight || 240;
 
   const applyTreeResponse = (flatData, targetSelectedNodeId = null) => {
     if (!Array.isArray(flatData)) {
@@ -250,6 +152,7 @@ function NotesPage() {
       });
   }, [treeIdParam]);
 
+  // Fetch the details of the selected node when selectedNodeId changes
   useEffect(() => {
     if (!treeIdParam || !selectedNodeId) {
       return;
@@ -285,49 +188,6 @@ function NotesPage() {
     };
   }, [treeIdParam, selectedNodeId]);
 
-  useEffect(() => {
-    const updateAvailablePageHeight = () => {
-      const pageContainer = pageContainerRef.current;
-      if (!pageContainer) {
-        return;
-      }
-
-      const { top } = pageContainer.getBoundingClientRect();
-      const nextHeight = Math.max(Math.floor(window.innerHeight - top - 16), 0);
-      setAvailablePageHeight(nextHeight);
-    };
-
-    updateAvailablePageHeight();
-    window.addEventListener("resize", updateAvailablePageHeight);
-
-    return () => {
-      window.removeEventListener("resize", updateAvailablePageHeight);
-    };
-  }, []);
-
-  useEffect(() => {
-    const treeContentElement = treeContentRef.current;
-    if (!treeContentElement) {
-      return undefined;
-    }
-
-    const updateTreeContentHeight = () => {
-      setTreeContentHeight(treeContentElement.clientHeight);
-    };
-
-    updateTreeContentHeight();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateTreeContentHeight();
-    });
-
-    resizeObserver.observe(treeContentElement);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [panelHeight]);
-
   // Apply the expanded state to the tree when treeData or expandedState changes
   useEffect(() => {
     const tree = treeRef.current;
@@ -358,53 +218,11 @@ function NotesPage() {
     console.log("Move event:", { dragIds, parentId, index });
 
     try {
-      let existingParentId = 0;
-      let existingIndex = 0;
-      const flatData = flattenTreeData(treeData).map((node) => {
-        if (dragIds.includes(node.id)) {
-          existingParentId = node.parent;
-          existingIndex = node.sort_order;
-          return { ...node, parent: parentId };
-        }
+      const { didPositionChange, flatData } = buildMovedFlatData(treeData, { dragIds, parentId, index });
 
-        return { ...node };
-      });
-
-      if (existingParentId == parentId && existingIndex == index) {
+      if (!didPositionChange) {
         console.log("No changes in position, do nothing.");
       } else {
-        let abandonedSiblingIndexCounter = 0;
-        let siblingIndexCounter = 0;
-
-        flatData.forEach((node) => {
-          if (node.parent == parentId) {
-            if (dragIds.includes(node.id)) {
-              node.sort_order = index;
-            } else if (parentId != existingParentId) {
-              node.sort_order = siblingIndexCounter < index
-                ? siblingIndexCounter
-                : siblingIndexCounter + 1;
-            } else if (index < existingIndex) {
-              node.sort_order =
-                siblingIndexCounter < index || siblingIndexCounter > existingIndex
-                  ? siblingIndexCounter
-                  : siblingIndexCounter + 1;
-            } else if (index > existingIndex) {
-              node.sort_order =
-                siblingIndexCounter < existingIndex || siblingIndexCounter > index
-                  ? siblingIndexCounter
-                  : siblingIndexCounter - 1;
-            }
-
-            siblingIndexCounter++;
-          }
-
-          if (parentId != existingParentId && node.parent == existingParentId) {
-            node.sort_order = abandonedSiblingIndexCounter;
-            abandonedSiblingIndexCounter++;
-          }
-        });
-
         console.log("Flat data to send to server:", flatData);
         fetch("/api/notes", {
           method: "PUT",
@@ -521,6 +339,7 @@ function NotesPage() {
     }
   };
 
+  // Overwrites just the one field edited in current state, while keeping the other fields intact
   const handleNodeEditorChange = (field, value) => {
     setNodeEditorState((currentState) => ({
       ...currentState,
@@ -528,6 +347,8 @@ function NotesPage() {
     }));
   };
 
+  // Save node editor state to the server 
+  // and update state with the response, including treeData and nodeEditorState
   const handleSaveNodeDetails = async () => {
     if (!treeIdParam || !selectedNodeId || !nodeEditorState.name.trim()) {
       return;
