@@ -2,7 +2,6 @@ IF OBJECT_ID('dbo.tree_node_details', 'U') IS NULL
 BEGIN
   CREATE TABLE dbo.tree_node_details (
     tree_node_id INT NOT NULL,
-    description NVARCHAR(500) NULL,
     notes NVARCHAR(MAX) NULL,
     created_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_details_created_at DEFAULT SYSUTCDATETIME(),
     updated_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_details_updated_at DEFAULT SYSUTCDATETIME(),
@@ -28,3 +27,26 @@ BEGIN
     INNER JOIN inserted changed ON changed.tree_node_id = details.tree_node_id;
   END;');
 END;
+
+IF OBJECT_ID('dbo.TR_tree_node_details_require_leaf_nodes', 'TR') IS NOT NULL
+BEGIN
+  DROP TRIGGER dbo.TR_tree_node_details_require_leaf_nodes;
+END;
+
+EXEC('CREATE TRIGGER dbo.TR_tree_node_details_require_leaf_nodes
+ON dbo.tree_node_details
+AFTER INSERT, UPDATE
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF EXISTS (
+    SELECT 1
+    FROM inserted changed
+    INNER JOIN dbo.tree_nodes nodes ON nodes.id = changed.tree_node_id
+    WHERE nodes.is_leaf_node = 0
+  )
+  BEGIN
+    THROW 50010, ''Only leaf nodes can have detail rows.'', 1;
+  END;
+END;');

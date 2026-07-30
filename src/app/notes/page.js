@@ -17,6 +17,22 @@ import {
   getTreeSelectionHref,
 } from "./treeUtils";
 
+const ATTACHMENT_ACCEPT = ".csv,.doc,.docx,.gif,.html,.jpeg,.jpg,.json,.md,.pdf,.png,.ppt,.pptx,.txt,.webp,.xls,.xlsx";
+
+function formatAttachmentSize(byteSize) {
+  const size = Number(byteSize);
+
+  if (!Number.isFinite(size) || size < 1024) {
+    return `${size || 0} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function NotesPageWrapper() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -38,13 +54,19 @@ function NotesPage() {
   const [nodeEditorState, setNodeEditorState] = useState(() => buildNodeEditorState());
   const [nodeDetailsError, setNodeDetailsError] = useState(null);
   const [isSavingNodeDetails, setIsSavingNodeDetails] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState(null);
   const { pageContainerRef, treeContentRef, panelHeight, treeHeight } = usePanelLayout();
   const treeRef = useRef();
+  const attachmentInputRef = useRef(null);
   const isApplyingExpandedStateRef = useRef(false);
   const [error, setError] = useState(null);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
   const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode);
   const canDelete = Boolean(selectedNode && selectedNode.parent !== null);
+  const canEditLeafDetails = Boolean(selectedNode?.isLeafNode);
+  const isNodeDetailsBusy = isSavingNodeDetails || isUploadingAttachments || deletingAttachmentId !== null;
 
   const applyTreeResponse = (flatData, targetSelectedNodeId = null) => {
     if (!Array.isArray(flatData)) {
@@ -61,6 +83,11 @@ function NotesPage() {
     setSelectedNodeId(nextSelectedNodeId);
     setNodeEditorState(buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null));
     setNodeDetailsError(null);
+    setPendingFiles([]);
+
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
   };
   // Fetch the list of available trees on mount
   useEffect(() => {
@@ -158,6 +185,10 @@ function NotesPage() {
       return;
     }
 
+    if (!selectedNode?.isLeafNode) {
+      return;
+    }
+
     let isCancelled = false;
 
     fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&include=details&id=${encodeURIComponent(selectedNodeId)}`)
@@ -172,6 +203,7 @@ function NotesPage() {
         }
 
         setNodeEditorState(buildNodeEditorState(result));
+        setNodeDetailsError(null);
       })
       .catch((err) => {
         if (isCancelled) {
@@ -186,7 +218,7 @@ function NotesPage() {
     return () => {
       isCancelled = true;
     };
-  }, [treeIdParam, selectedNodeId]);
+  }, [treeIdParam, selectedNodeId, selectedNode]);
 
   // Apply the expanded state to the tree when treeData or expandedState changes
   useEffect(() => {
@@ -347,6 +379,80 @@ function NotesPage() {
     }));
   };
 
+  const handleAttachmentSelectionChange = (event) => {
+    setPendingFiles(Array.from(event.target.files ?? []));
+  };
+
+  const handleUploadAttachments = async () => {
+    if (!treeIdParam || !selectedNodeId || pendingFiles.length === 0 || !canEditLeafDetails) {
+      return;
+    }
+
+    try {
+      setIsUploadingAttachments(true);
+      setNodeDetailsError(null);
+
+      const formData = new FormData();
+      formData.set("treeId", treeIdParam);
+      formData.set("nodeId", selectedNodeId);
+      pendingFiles.forEach((file) => {
+        formData.append("files", file);
+      });
+
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to upload attachments");
+      }
+
+      setNodeEditorState(buildNodeEditorState(result));
+      setPendingFiles([]);
+
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
+    } catch (err) {
+      console.error("Failed to upload attachments:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setIsUploadingAttachments(false);
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId) => {
+    if (!treeIdParam || !attachmentId) {
+      return;
+    }
+
+    try {
+      setDeletingAttachmentId(String(attachmentId));
+      setNodeDetailsError(null);
+
+      const response = await fetch(
+        `/api/notes?treeId=${encodeURIComponent(treeIdParam)}&attachmentId=${encodeURIComponent(attachmentId)}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to delete attachment");
+      }
+
+      setNodeEditorState(buildNodeEditorState(result));
+    } catch (err) {
+      console.error("Failed to delete attachment:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setDeletingAttachmentId(null);
+    }
+  };
+
   // Save node editor state to the server 
   // and update state with the response, including treeData and nodeEditorState
   const handleSaveNodeDetails = async () => {
@@ -365,7 +471,6 @@ function NotesPage() {
           id: selectedNodeId,
           treeId: treeIdParam,
           name: nodeEditorState.name,
-          description: nodeEditorState.description,
           notes: nodeEditorState.notes,
         }),
       });
@@ -461,7 +566,19 @@ function NotesPage() {
               onMove={handleMove}
               onToggle={handleToggle}
               onSelect={(nodes) => {
-                setSelectedNodeId(nodes.length === 1 ? String(nodes[0].id) : null);
+                const nextSelectedNode = nodes.length === 1 ? nodes[0].data : null;
+
+                setSelectedNodeId(nextSelectedNode ? String(nextSelectedNode.id) : null);
+                setNodeEditorState(buildNodeEditorState(nextSelectedNode ? {
+                  name: nextSelectedNode.name,
+                  isLeafNode: nextSelectedNode.isLeafNode,
+                } : null));
+                setNodeDetailsError(null);
+                setPendingFiles([]);
+
+                if (attachmentInputRef.current) {
+                  attachmentInputRef.current.value = "";
+                }
               }}
               disableMultiSelection={true}
               disableDrag={(node) => !node.draggable}
@@ -525,30 +642,75 @@ function NotesPage() {
                     type="text"
                     value={nodeEditorState.name}
                     onChange={(event) => handleNodeEditorChange("name", event.target.value)}
-                    disabled={isSavingNodeDetails}
+                    disabled={isNodeDetailsBusy}
                     className={styles.textInput}
                   />
                 </label>
-                <label className={styles.formField}>
-                  <span className={styles.fieldLabel}>Description</span>
-                  <input
-                    type="text"
-                    value={nodeEditorState.description}
-                    onChange={(event) => handleNodeEditorChange("description", event.target.value)}
-                    disabled={isSavingNodeDetails}
-                    className={styles.textInput}
-                  />
-                </label>
-                <label className={styles.formField}>
-                  <span className={styles.fieldLabel}>Notes</span>
-                  <textarea
-                    value={nodeEditorState.notes}
-                    onChange={(event) => handleNodeEditorChange("notes", event.target.value)}
-                    disabled={isSavingNodeDetails}
-                    rows={12}
-                    className={styles.textArea}
-                  />
-                </label>
+                {canEditLeafDetails ? (
+                  <>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}>Notes</span>
+                      <textarea
+                        value={nodeEditorState.notes}
+                        onChange={(event) => handleNodeEditorChange("notes", event.target.value)}
+                        disabled={isNodeDetailsBusy}
+                        rows={12}
+                        className={styles.textArea}
+                      />
+                    </label>
+                    <section className={styles.attachmentSection}>
+                      <div className={styles.attachmentSectionHeader}>
+                        <span className={styles.fieldLabel}>Attachments</span>
+                        <span className={styles.attachmentHint}>Allowed up to 10 MB each.</span>
+                      </div>
+                      <div className={styles.attachmentPicker}>
+                        <input
+                          ref={attachmentInputRef}
+                          type="file"
+                          multiple
+                          accept={ATTACHMENT_ACCEPT}
+                          onChange={handleAttachmentSelectionChange}
+                          disabled={isNodeDetailsBusy}
+                        />
+                        <button
+                          onClick={handleUploadAttachments}
+                          disabled={isNodeDetailsBusy || pendingFiles.length === 0}
+                          type="button"
+                        >
+                          {isUploadingAttachments ? "Uploading..." : `Upload${pendingFiles.length ? ` (${pendingFiles.length})` : ""}`}
+                        </button>
+                      </div>
+                      {nodeEditorState.attachments.length === 0 ? (
+                        <div className={styles.emptyState}>No files uploaded for this node.</div>
+                      ) : (
+                        <div className={styles.attachmentList}>
+                          {nodeEditorState.attachments.map((attachment) => (
+                            <div key={attachment.id} className={styles.attachmentItem}>
+                              <div className={styles.attachmentMeta}>
+                                <strong>{attachment.fileName}</strong>
+                                <span className={styles.attachmentHint}>
+                                  {formatAttachmentSize(attachment.byteSize)}
+                                  {attachment.contentType ? ` • ${attachment.contentType}` : ""}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => handleDeleteAttachment(attachment.id)}
+                                disabled={isNodeDetailsBusy}
+                                type="button"
+                              >
+                                {deletingAttachmentId === String(attachment.id) ? "Deleting..." : "Delete file"}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </>
+                ) : (
+                  <div className={styles.detailConstraintMessage}>
+                    Notes and attachments are only available for leaf nodes.
+                  </div>
+                )}
                 {nodeDetailsError && (
                   <div className={styles.fieldError}>
                     {nodeDetailsError}

@@ -96,8 +96,8 @@ export function dataNodeHasChildren(dataNode) {
 export function buildNodeEditorState(nodeDetails = null) {
   return {
     name: nodeDetails?.name ?? "",
-    description: nodeDetails?.description ?? "",
     notes: nodeDetails?.notes ?? "",
+    attachments: Array.isArray(nodeDetails?.attachments) ? nodeDetails.attachments : [],
   };
 }
 

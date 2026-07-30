@@ -6,7 +6,7 @@
 
 .panelGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -93,10 +93,66 @@
   padding: 16px;
 }
 
+.detailConstraintMessage {
+  color: #52525b;
+  background-color: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  padding: 12px;
+}
+
 .detailsForm {
   display: grid;
   gap: 12px;
   padding: 16px;
+}
+
+.attachmentSection {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.attachmentSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.attachmentPicker {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.attachmentList {
+  display: grid;
+  gap: 10px;
+}
+
+.attachmentItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background-color: #fafafa;
+}
+
+.attachmentMeta {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.attachmentHint {
+  color: #71717a;
+  font-size: 13px;
 }
 
 .formField {
@@ -132,5 +188,10 @@
 @media (max-width: 960px) {
   .panelGrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .attachmentItem {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
