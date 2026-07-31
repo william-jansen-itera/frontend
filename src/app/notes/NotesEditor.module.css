@@ -1,0 +1,133 @@
+.editorShell {
+  position: relative;
+  display: grid;
+  gap: 10px;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.insertButton {
+  appearance: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 14px;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.insertButton:hover:not(:disabled) {
+  background-color: #eef2f7;
+  border-color: #94a3b8;
+}
+
+.insertButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.insertPanel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #d4d4d8;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.insertGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.insertGroupTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.insertGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.insertItem {
+  appearance: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 12px;
+  text-align: left;
+  transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.insertItemPreview {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.insertItemLabel {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #64748b;
+}
+
+.insertItem:hover:not(:disabled) {
+  background-color: #f8fafc;
+  border-color: #93c5fd;
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.1);
+  transform: translateY(-1px);
+}
+
+.insertItem:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+.textArea {
+  width: 100%;
+  min-height: 240px;
+  padding: 10px 12px;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+  color: #18181b;
+  background-color: #ffffff;
+}
+
+.textArea:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+.textArea:disabled {
+  background-color: #f4f4f5;
+  color: #71717a;
+}

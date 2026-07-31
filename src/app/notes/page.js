@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
+import { NotesEditor } from "./NotesEditor";
 import { usePanelLayout } from "./usePanelLayout";
 import {
   buildMovedFlatData,
@@ -720,12 +721,10 @@ function NotesPage() {
                   <>
                     <label className={styles.formField}>
                       <span className={styles.fieldLabel}>Notes</span>
-                      <textarea
+                      <NotesEditor
                         value={nodeEditorState.notes}
-                        onChange={(event) => handleNodeEditorChange("notes", event.target.value)}
+                        onChange={(nextValue) => handleNodeEditorChange("notes", nextValue)}
                         disabled={isNodeDetailsBusy}
-                        rows={12}
-                        className={styles.textArea}
                       />
                     </label>
                     <section className={styles.attachmentSection}>
