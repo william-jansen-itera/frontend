@@ -39,6 +39,13 @@ function buildBlobName({ treeId, nodeId, fileName }) {
   return `notes/${treeId}/${nodeId}/${randomUUID()}-${safeBaseName}${safeExtension}`;
 }
 
+function buildBlobMetadata({ treeId, nodeId }) {
+  return {
+    treeid: String(treeId),
+    nodeid: String(nodeId),
+  };
+}
+
 export async function uploadNodeAttachment({ treeId, nodeId, file }) {
   const arrayBuffer = await file.arrayBuffer();
   const blobName = buildBlobName({ treeId, nodeId, fileName: file.name });
@@ -49,6 +56,7 @@ export async function uploadNodeAttachment({ treeId, nodeId, file }) {
     blobHTTPHeaders: {
       blobContentType: file.type || 'application/octet-stream',
     },
+    metadata: buildBlobMetadata({ treeId, nodeId }),
   });
 
   return {
@@ -65,7 +73,9 @@ export async function deleteNodeAttachmentBlob(blobName) {
   }
 
   const containerClient = getContainerClient();
-  await containerClient.deleteBlob(blobName, {
+  const blobClient = containerClient.getBlobClient(blobName);
+
+  await blobClient.delete({
     deleteSnapshots: 'include',
   });
 }
@@ -76,7 +86,8 @@ export async function deleteNodeAttachmentBlobIfExists(blobName) {
   }
 
   const containerClient = getContainerClient();
-  const response = await containerClient.deleteBlobIfExists(blobName, {
+  const blobClient = containerClient.getBlobClient(blobName);
+  const response = await blobClient.deleteIfExists({
     deleteSnapshots: 'include',
   });
 
