@@ -240,6 +240,19 @@ async function getTreeSettings(treeInstanceId) {
   });
 }
 
+async function getTreeMaxDepth(treeInstanceId) {
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .query(`
+      SELECT TOP 1 TRY_CAST(setting_value AS INT) AS maxDepth
+      FROM tree_setting
+      WHERE tree_instance_id = @tree_instance_id
+        AND setting_key = 'nodes.max_depth';
+    `);
+
+  return Number(result.recordset[0]?.maxDepth);
+}
+
 async function getTreeCreateContext(treeInstanceId, parentId) {
   const query = `WITH RecursiveTree AS (
       SELECT
@@ -283,47 +296,71 @@ async function getTreeCreateContext(treeInstanceId, parentId) {
 
 async function CreateTreeNode({ parentId, treeInstanceId, name }) {
   return withSqlConnection(async () => {
-    const createContext = await getTreeCreateContext(treeInstanceId, parentId);
-    if (!createContext) {
-      throw new Error('Parent node was not found for the selected tree');
-    }
+    const isRootInsert = parentId === null || parentId === undefined;
+    let nextDepth = 0;
+    let maxDepth;
 
-    if (createContext.isLeafNode) {
-      throw new Error('Cannot add a child node to a leaf node');
-    }
+    if (isRootInsert) {
+      maxDepth = await getTreeMaxDepth(treeInstanceId);
+    } else {
+      const createContext = await getTreeCreateContext(treeInstanceId, parentId);
+      if (!createContext) {
+        throw new Error('Parent node was not found for the selected tree');
+      }
 
-    const parentDepth = Number(createContext.parentDepth);
-    const maxDepth = Number(createContext.maxDepth);
-    const nextDepth = parentDepth + 1;
+      if (createContext.isLeafNode) {
+        throw new Error('Cannot add a child node to a leaf node');
+      }
 
-    if (Number.isFinite(maxDepth) && nextDepth > maxDepth) {
-      throw new Error(`Cannot create nodes deeper than nodes.max_depth (${maxDepth})`);
+      const parentDepth = Number(createContext.parentDepth);
+      maxDepth = Number(createContext.maxDepth);
+      nextDepth = parentDepth + 1;
+
+      if (Number.isFinite(maxDepth) && nextDepth > maxDepth) {
+        throw new Error(`Cannot create nodes deeper than nodes.max_depth (${maxDepth})`);
+      }
     }
 
     const isLeafNode = Number.isFinite(maxDepth) && nextDepth >= maxDepth;
 
-    const sortOrderResult = await new sql.Request()
-      .input('tree_instance_id', sql.Int, treeInstanceId)
-      .input('parent_id', sql.Int, parentId)
-      .query(`
+    const sortOrderQuery = isRootInsert
+      ? `
+        SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
+        FROM tree_nodes
+        WHERE tree_instance_id = @tree_instance_id AND parent_id IS NULL
+      `
+      : `
         SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
         FROM tree_nodes
         WHERE tree_instance_id = @tree_instance_id AND parent_id = @parent_id
-      `);
+      `;
+
+    const sortOrderRequest = new sql.Request()
+      .input('tree_instance_id', sql.Int, treeInstanceId);
+
+    if (!isRootInsert) {
+      sortOrderRequest.input('parent_id', sql.Int, parentId);
+    }
+
+    const sortOrderResult = await sortOrderRequest.query(sortOrderQuery);
     const nextSortOrder = sortOrderResult.recordset[0].nextSortOrder;
 
     const insertResult = await new sql.Request()
       .input('tree_instance_id', sql.Int, treeInstanceId)
-      .input('parent_id', sql.Int, parentId)
+      .input('parent_id', sql.Int, isRootInsert ? null : parentId)
       .input('text', sql.NVarChar, name)
       .input('is_leaf_node', sql.Bit, isLeafNode ? 1 : 0)
       .input('is_expanded', sql.Bit, 0)
       .input('draggable', sql.Bit, 1)
       .input('sort_order', sql.Int, nextSortOrder)
       .query(`
+        DECLARE @createdNodes TABLE (createdNodeId INT);
+
         INSERT INTO tree_nodes (tree_instance_id, parent_id, text, is_leaf_node, is_expanded, draggable, sort_order)
-        OUTPUT INSERTED.id AS createdNodeId
+        OUTPUT INSERTED.id INTO @createdNodes (createdNodeId)
         VALUES (@tree_instance_id, @parent_id, @text, @is_leaf_node, @is_expanded, @draggable, @sort_order)
+
+        SELECT createdNodeId FROM @createdNodes;
       `);
     const createdNodeId = insertResult.recordset[0].createdNodeId;
 
@@ -335,6 +372,9 @@ async function CreateTreeNode({ parentId, treeInstanceId, name }) {
 }
 
 async function DeleteTreeNode({ id, treeInstanceId }) {
+  // recursive delete query to remove the node and all its descendants
+  // tree_node_details and tree_node_detail_files will be automatically deleted 
+  // due to foreign key constraints with ON DELETE CASCADE
   const deleteQuery = `WITH Descendants AS (
       SELECT id
       FROM tree_nodes
@@ -368,10 +408,9 @@ async function UpdateTreeNodes(treeInstanceId, nodes) {
         .input('parent', sql.Int, node.parent)
         .input('text', sql.NVarChar, node.name)
         .input('sort_order', sql.Int, node.sort_order)
-        .input('is_expanded', sql.Bit, node.isExpanded ? 1 : 0)
         .query(`
           UPDATE tree_nodes
-          SET parent_id = @parent, text = @text, sort_order = @sort_order, is_expanded = @is_expanded
+          SET parent_id = @parent, text = @text, sort_order = @sort_order
           WHERE tree_instance_id = @tree_instance_id AND id = @id
         `);
     }
@@ -670,12 +709,12 @@ export async function POST(request) {
 
     const { parentId, treeId, name } = await request.json();
 
-    if (parentId === undefined || !treeId) {
-      return NextResponse.json({ error: 'Invalid request, parentId and treeId are required' }, { status: 400 });
+    if (!treeId) {
+      return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
     }
 
     return NextResponse.json(await CreateTreeNode({
-      parentId: parseInt(parentId),
+      parentId: parentId === null || parentId === undefined ? null : parseInt(parentId, 10),
       treeInstanceId: parseInt(treeId),
       name: name?.trim() || 'New node',
     }));

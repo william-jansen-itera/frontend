@@ -1,3 +1,5 @@
+import { adjustMoveIndex } from "react-arborist";
+
 export function buildNestedTreeData(flatData) {
   const idToNodeMap = {};
   const rootNodes = [];
@@ -93,6 +95,14 @@ export function dataNodeHasChildren(dataNode) {
   return Array.isArray(dataNode?.children) && dataNode.children.length > 0;
 }
 
+export function dataNodeHasLeafDescendants(dataNode) {
+  if (!Array.isArray(dataNode?.children) || dataNode.children.length === 0) {
+    return false;
+  }
+
+  return dataNode.children.some((childNode) => childNode.isLeafNode || dataNodeHasLeafDescendants(childNode));
+}
+
 export function buildNodeEditorState(nodeDetails = null) {
   return {
     name: nodeDetails?.name ?? "",
@@ -102,53 +112,74 @@ export function buildNodeEditorState(nodeDetails = null) {
 }
 
 export function buildMovedFlatData(treeData, { dragIds, parentId, index }) {
-  let existingParentId = 0;
-  let existingIndex = 0;
-  const flatData = flattenTreeData(treeData).map((node) => {
-    if (dragIds.includes(node.id)) {
-      existingParentId = node.parent;
-      existingIndex = node.sort_order;
-      return { ...node, parent: parentId };
-    }
+  const flatData = flattenTreeData(treeData).map((node) => ({ ...node }));
+  const draggedIdSet = new Set(dragIds.map(String));
+  const draggedNodes = flatData.filter((node) => draggedIdSet.has(String(node.id)));
 
-    return { ...node };
+  if (draggedNodes.length === 0) {
+    return { didPositionChange: false, flatData };
+  }
+
+  const existingParentId = draggedNodes[0].parent;
+  const sourceSiblingIds = flatData
+    .filter((node) => node.parent == existingParentId)
+    .sort((left, right) => left.sort_order - right.sort_order)
+    .map((node) => String(node.id));
+  const destinationSiblingIds = flatData
+    .filter((node) => node.parent == parentId)
+    .sort((left, right) => left.sort_order - right.sort_order)
+    .map((node) => String(node.id));
+  const adjustedIndex = adjustMoveIndex({
+    index,
+    dragIds: dragIds.map(String),
+    siblingIds: destinationSiblingIds,
   });
+  const existingIndex = sourceSiblingIds.findIndex((id) => draggedIdSet.has(id));
 
-  const didPositionChange = !(existingParentId == parentId && existingIndex == index);
+  const didPositionChange = !(existingParentId == parentId && existingIndex === adjustedIndex);
   if (!didPositionChange) {
     return { didPositionChange, flatData };
   }
 
-  let abandonedSiblingIndexCounter = 0;
-  let siblingIndexCounter = 0;
+  const siblingGroups = new Map();
 
   flatData.forEach((node) => {
-    if (node.parent == parentId) {
-      if (dragIds.includes(node.id)) {
-        node.sort_order = index;
-      } else if (parentId != existingParentId) {
-        node.sort_order = siblingIndexCounter < index
-          ? siblingIndexCounter
-          : siblingIndexCounter + 1;
-      } else if (index < existingIndex) {
-        node.sort_order =
-          siblingIndexCounter < index || siblingIndexCounter > existingIndex
-            ? siblingIndexCounter
-            : siblingIndexCounter + 1;
-      } else if (index > existingIndex) {
-        node.sort_order =
-          siblingIndexCounter < existingIndex || siblingIndexCounter > index
-            ? siblingIndexCounter
-            : siblingIndexCounter - 1;
-      }
+    const key = node.parent == null ? "__root__" : String(node.parent);
+    const siblings = siblingGroups.get(key) ?? [];
+    siblings.push(node);
+    siblingGroups.set(key, siblings);
+  });
 
-      siblingIndexCounter++;
-    }
+  siblingGroups.forEach((siblings) => {
+    siblings.sort((left, right) => left.sort_order - right.sort_order);
+  });
 
-    if (parentId != existingParentId && node.parent == existingParentId) {
-      node.sort_order = abandonedSiblingIndexCounter;
-      abandonedSiblingIndexCounter++;
-    }
+  const sourceKey = existingParentId == null ? "__root__" : String(existingParentId);
+  const destinationKey = parentId == null ? "__root__" : String(parentId);
+  const sourceSiblings = siblingGroups.get(sourceKey) ?? [];
+  const destinationSiblings = siblingGroups.get(destinationKey) ?? [];
+  const movedSiblings = sourceSiblings.filter((node) => draggedIdSet.has(String(node.id)));
+
+  siblingGroups.set(
+    sourceKey,
+    sourceSiblings.filter((node) => !draggedIdSet.has(String(node.id))),
+  );
+
+  movedSiblings.forEach((node) => {
+    node.parent = parentId;
+  });
+
+  const insertionSiblings = sourceKey === destinationKey
+    ? siblingGroups.get(sourceKey) ?? []
+    : destinationSiblings;
+
+  insertionSiblings.splice(adjustedIndex, 0, ...movedSiblings);
+  siblingGroups.set(destinationKey, insertionSiblings);
+
+  siblingGroups.forEach((siblings) => {
+    siblings.forEach((node, siblingIndex) => {
+      node.sort_order = siblingIndex;
+    });
   });
 
   return { didPositionChange, flatData };

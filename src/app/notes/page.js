@@ -10,6 +10,7 @@ import {
   buildNestedTreeData,
   buildNodeEditorState,
   collectExpandableNodeIds,
+  dataNodeHasLeafDescendants,
   dataNodeHasChildren,
   extractExpandedState,
   findNodeById,
@@ -63,8 +64,9 @@ function NotesPage() {
   const isApplyingExpandedStateRef = useRef(false);
   const [error, setError] = useState(null);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
+  const canAddRoot = Boolean(treeIdParam);
   const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode);
-  const canDelete = Boolean(selectedNode && selectedNode.parent !== null);
+  const canDelete = Boolean(selectedNode);
   const canEditLeafDetails = Boolean(selectedNode?.isLeafNode);
   const isNodeDetailsBusy = isSavingNodeDetails || isUploadingAttachments || deletingAttachmentId !== null;
 
@@ -324,7 +326,34 @@ function NotesPage() {
     }
   };
 
-  const handleAdd = async () => {
+  const handleAddRoot = async () => {
+    if (!canAddRoot) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parentId: null,
+          treeId: treeIdParam,
+          name: "New root node",
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to add root node");
+      }
+
+      applyTreeResponse(result.flatData, result.createdNodeId);
+    } catch (err) {
+      console.error("Failed to add root node:", err);
+    }
+  };
+
+  const handleAddChild = async () => {
     if (!canAddChild) {
       return;
     }
@@ -345,7 +374,7 @@ function NotesPage() {
         throw new Error(result.error || "Failed to add tree node");
       }
 
-      applyTreeResponse(result.flatData);
+      applyTreeResponse(result.flatData, result.createdNodeId);
     } catch (err) {
       console.error("Failed to add tree node:", err);
     }
@@ -517,7 +546,7 @@ function NotesPage() {
             </div>
             <div className={styles.panelToolbar}>
               <label className={styles.toolbarLabel}>
-                <span className={styles.labelText}>Tree</span>
+                <span className={styles.labelText}>Tree:</span>
                 <select
                   value={treeIdParam ?? ""}
                   onChange={(event) => {
@@ -539,10 +568,28 @@ function NotesPage() {
                   )}
                 </select>
               </label>
-              <button onClick={handleAdd} disabled={!canAddChild} type="button">
-                Add
+              <button
+                onClick={handleAddRoot}
+                disabled={!canAddRoot}
+                type="button"
+                className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral}`}
+              >
+                Add Root
               </button>
-              <button onClick={handleDelete} disabled={!canDelete} type="button">
+              <button
+                onClick={handleAddChild}
+                disabled={!canAddChild}
+                type="button"
+                className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral}`}
+              >
+                Add Child
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={!canDelete}
+                type="button"
+                className={`${styles.toolbarButton} ${styles.toolbarButtonDanger}`}
+              >
                 Delete
               </button>
             </div>
@@ -582,13 +629,37 @@ function NotesPage() {
               }}
               disableMultiSelection={true}
               disableDrag={(node) => !node.draggable}
-              disableDrop={({ parentNode }) =>
-                parentNode ? parentNode.data.isLeafNode : false
-              }
+              disableDrop={({ parentNode, dragNodes }) => {
+                // Prevent dropping onto a leaf node
+                if (parentNode && !parentNode.isRoot && parentNode.data.isLeafNode) {
+                  return true;
+                }
+
+                const targetDepth = parentNode?.isRoot ? 0 : (parentNode?.data._depth ?? -1) + 1;
+                return dragNodes.some((draggedRootNode) => {
+                  const wouldChangeLevel = targetDepth !== draggedRootNode.data._depth;
+
+                  if (!wouldChangeLevel) {
+                    return false;
+                  }
+                  // if the dragged node is changing levels 
+                  // and is either a leaf node or has leaf descendants, 
+                  // block the move
+                  return draggedRootNode.data.isLeafNode || dataNodeHasLeafDescendants(draggedRootNode.data);
+                });
+              }}
             >
               {({ node, style, dragHandle }) => {
                 return (
-                  <div style={style} ref={dragHandle} className={styles.treeRow}>
+                  <div
+                    style={style}
+                    ref={dragHandle}
+                    className={[
+                      styles.treeRow,
+                      node.isSelected ? styles.treeRowSelected : "",
+                      node.willReceiveDrop ? styles.treeRowDropTarget : "",
+                    ].filter(Boolean).join(" ")}
+                  >
                     {dataNodeHasChildren(node.data) && (
                       <span
                         onClick={() => {
@@ -599,7 +670,10 @@ function NotesPage() {
                         {node.isOpen ? "[-]" : "[+]"}
                       </span>
                     )}
-                    {node.data.name}
+                    <span className={styles.treeRowLabel}>{node.data.name}</span>
+                    {node.willReceiveDrop && !node.data.isLeafNode && (
+                      <span className={styles.treeDropHint}>Drop into node</span>
+                    )}
                   </div>
                 );
               }}
@@ -615,15 +689,11 @@ function NotesPage() {
               <h2 className={styles.panelTitle}>Node Details</h2>
             </div>
             <div className={`${styles.panelToolbar} ${styles.detailsToolbar}`}>
-              <span className={styles.selectionStatus}>
-                {selectedNode
-                  ? `Selected: ${selectedNode.name}`
-                  : "Select a node to edit its details."}
-              </span>
               <button
                 onClick={handleSaveNodeDetails}
                 disabled={!selectedNode || isSavingNodeDetails || !nodeEditorState.name.trim()}
                 type="button"
+                className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
               >
                 {isSavingNodeDetails ? "Saving..." : "Save"}
               </button>
