@@ -11,7 +11,8 @@ Files:
 
 Before using these in the portal or REST:
 - Replace placeholder values such as `<search-index-name>`, `<storage-account>`, `<container-name>`, `<your-server>`, `<your-database>`, `<your-user>`, and `<your-password>`.
-- Keep custom blob metadata source field names lowercase in the blob indexer: `sourcetype`, `treeid`, `nodeid`, `blobname`.
+- The SQL data source uses a high-water-mark change detection policy on `updatedAt`, so the source view must keep that value advancing whenever a searchable node row changes.
+- Keep custom blob metadata source field names lowercase in the blob indexer: `sourcetype`, `treeid`, `nodeid`, `blobname`, `applicationidentifier`.
 - After changing indexer mappings or source metadata, use `Reset` and then `Run` on the indexer.
 
 Current design notes:

@@ -13,6 +13,7 @@ import {
   collectExpandableNodeIds,
   dataNodeHasLeafDescendants,
   dataNodeHasChildren,
+  expandPathToNode,
   extractExpandedState,
   findNodeById,
   getNextSelectedNodeId,
@@ -49,6 +50,7 @@ function NotesPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const treeIdParam = searchParams.get("treeId");
+  const nodeIdParam = searchParams.get("nodeId");
   const [availableTrees, setAvailableTrees] = useState([]);
   const [treeData, setTreeData] = useState([]);
   const [expandedState, setExpandedState] = useState({});
@@ -80,9 +82,14 @@ function NotesPage() {
     const nextSelectedNode = nextSelectedNodeId
       ? flatData.find((node) => String(node.id) === String(nextSelectedNodeId))
       : null;
+    const nextExpandedState = expandPathToNode(
+      flatData,
+      extractExpandedState(flatData),
+      nextSelectedNodeId,
+    );
 
     setTreeData(buildNestedTreeData(flatData));
-    setExpandedState(extractExpandedState(flatData));
+    setExpandedState(nextExpandedState);
     setSelectedNodeId(nextSelectedNodeId);
     setNodeEditorState(buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null));
     setNodeDetailsError(null);
@@ -166,13 +173,22 @@ function NotesPage() {
       .then((res) => res.json())
       .then((flatData) => {
         if (Array.isArray(flatData)) {
-          const nextSelectedNodeId = getNextSelectedNodeId(flatData, null, flatData[0]?.id ?? null);
+          const nextSelectedNodeId = getNextSelectedNodeId(
+            flatData,
+            null,
+            nodeIdParam ? String(nodeIdParam) : null,
+          );
           const nextSelectedNode = nextSelectedNodeId
             ? flatData.find((node) => String(node.id) === String(nextSelectedNodeId))
             : null;
+          const nextExpandedState = expandPathToNode(
+            flatData,
+            extractExpandedState(flatData),
+            nextSelectedNodeId,
+          );
 
           setTreeData(buildNestedTreeData(flatData));
-          setExpandedState(extractExpandedState(flatData));
+          setExpandedState(nextExpandedState);
           setSelectedNodeId(nextSelectedNodeId);
           setNodeEditorState(buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null));
           setNodeDetailsError(null);
@@ -193,7 +209,7 @@ function NotesPage() {
         setNodeEditorState(buildNodeEditorState());
         setError(err.message);
       });
-  }, [treeIdParam]);
+  }, [treeIdParam, nodeIdParam]);
 
   // Fetch the details of the selected node when selectedNodeId changes
   useEffect(() => {
@@ -257,10 +273,14 @@ function NotesPage() {
           tree.close(nodeId);
         }
       });
+
+      if (selectedNodeId) {
+        tree.select(selectedNodeId, { focus: false });
+      }
     } finally {
       isApplyingExpandedStateRef.current = false;
     }
-  }, [treeData, expandedState]);
+  }, [treeData, expandedState, selectedNodeId]);
 
   const handleMove = async ({ dragIds, parentId, index }) => {
     console.log("Move event:", { dragIds, parentId, index });
@@ -629,8 +649,9 @@ function NotesPage() {
               onToggle={handleToggle}
               onSelect={(nodes) => {
                 const nextSelectedNode = nodes.length === 1 ? nodes[0].data : null;
+                const nextSelectedNodeId = nextSelectedNode ? String(nextSelectedNode.id) : null;
 
-                setSelectedNodeId(nextSelectedNode ? String(nextSelectedNode.id) : null);
+                setSelectedNodeId(nextSelectedNodeId);
                 setNodeEditorState(buildNodeEditorState(nextSelectedNode ? {
                   name: nextSelectedNode.name,
                   isLeafNode: nextSelectedNode.isLeafNode,

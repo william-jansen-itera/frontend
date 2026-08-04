@@ -16,6 +16,7 @@
     { "sourceFieldName": "nodeText", "targetFieldName": "nodeText" },
     { "sourceFieldName": "notes", "targetFieldName": "notes" },
     { "sourceFieldName": "breadcrumb", "targetFieldName": "breadcrumb" },
+    { "sourceFieldName": "nodeIdPath", "targetFieldName": "nodeIdPath" },
     { "sourceFieldName": "content", "targetFieldName": "content" },
     { "sourceFieldName": "isLeafNode", "targetFieldName": "isLeafNode" },
     { "sourceFieldName": "depth", "targetFieldName": "depth" },

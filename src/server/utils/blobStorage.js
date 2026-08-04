@@ -6,6 +6,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 const blobConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const blobAccountUrl = process.env.AZURE_STORAGE_ACCOUNT_URL;
 const blobContainerName = process.env.AZURE_STORAGE_CONTAINER_NAME;
+const applicationIdentifier = process.env.APPLICATION_IDENTIFIER;
 
 function getContainerClient() {
   if (!blobContainerName) {
@@ -40,12 +41,18 @@ function buildBlobName({ treeId, nodeId, fileName }) {
 }
 
 function buildBlobMetadata({ treeId, nodeId, blobName }) {
-  return {
+  const metadata = {
     treeid: String(treeId),
     nodeid: String(nodeId),
     sourcetype: 'attachment',
     blobname: blobName,
   };
+
+  if (applicationIdentifier) {
+    metadata.applicationidentifier = applicationIdentifier;
+  }
+
+  return metadata;
 }
 
 export async function uploadNodeAttachment({ treeId, nodeId, file }) {

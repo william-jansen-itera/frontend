@@ -51,6 +51,33 @@ export function extractExpandedState(flatData) {
   }, {});
 }
 
+export function expandPathToNode(flatData, expandedState, targetNodeId) {
+  if (!targetNodeId) {
+    return expandedState;
+  }
+
+  const nodeById = new Map(flatData.map((node) => [String(node.id), node]));
+  const nextExpandedState = { ...expandedState };
+  let currentNode = nodeById.get(String(targetNodeId));
+
+  while (currentNode?.parent !== null && currentNode?.parent !== undefined) {
+    const parentId = String(currentNode.parent);
+    const parentNode = nodeById.get(parentId);
+
+    if (!parentNode) {
+      break;
+    }
+
+    if (!parentNode.isLeafNode) {
+      nextExpandedState[parentId] = true;
+    }
+
+    currentNode = parentNode;
+  }
+
+  return nextExpandedState;
+}
+
 export function findNodeById(nodes, targetId) {
   for (const node of nodes) {
     if (String(node.id) === String(targetId)) {
@@ -83,8 +110,10 @@ export function getTreeSelectionHref(pathname, searchParamsString, nextTreeId) {
 
   if (nextTreeId) {
     nextSearchParams.set("treeId", String(nextTreeId));
+    nextSearchParams.delete("nodeId");
   } else {
     nextSearchParams.delete("treeId");
+    nextSearchParams.delete("nodeId");
   }
 
   const nextQueryString = nextSearchParams.toString();

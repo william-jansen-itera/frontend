@@ -1,5 +1,5 @@
 {
-  "name": "<search-index-name>",
+  "name": "tree-content-index",
   "fields": [
     {
       "name": "id",
@@ -120,6 +120,15 @@
       "facetable": false
     },
     {
+      "name": "nodeIdPath",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
       "name": "content",
       "type": "Edm.String",
       "searchable": true,
@@ -226,6 +235,18 @@
       "retrievable": true,
       "sortable": true,
       "facetable": false
+    }
+  ],
+  "scoringProfiles": [
+    {
+      "name": "node-content-priority",
+      "text": {
+        "weights": {
+          "content": 3,
+          "title": 2,
+          "breadcrumb": 1
+        }
+      }
     }
   ]
 }

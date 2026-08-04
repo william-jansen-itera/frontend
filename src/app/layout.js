@@ -24,6 +24,7 @@ export default function RootLayout({ children }) {
           <Link href="/" style={{ marginRight: "1rem" }}>Home</Link>
           <Link href="/about" style={{ marginRight: "1rem" }}>About</Link>
           <Link href="/notes">Notes</Link>
+          <Link href="/search">Search</Link>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "1rem" }}>
             {!user ? (
               <button onClick={signIn} style={{ padding: "0.5rem 1rem", borderRadius: "4px", background: "#2563eb", color: "white", border: "none" }}>Sign In</button>

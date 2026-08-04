@@ -1,7 +1,8 @@
 
 import { NextResponse } from 'next/server';
-import * as sql from 'mssql';
 import { deleteNodeAttachmentBlobIfExists, uploadNodeAttachment } from '@/server/utils/blobStorage';
+import { sql, withSqlConnection } from '@/server/utils/sql';
+import { getTreeList } from '@/server/utils/treeCatalog';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
@@ -23,69 +24,6 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   '.xls',
   '.xlsx',
 ]);
-
-const config = {
-  user: process.env.AZURE_SQL_USER,
-  password: process.env.AZURE_SQL_PASSWORD,
-  server: process.env.AZURE_SQL_SERVER,
-  database: process.env.AZURE_SQL_DATABASE,
-  applicationIdentifier: process.env.APPLICATION_IDENTIFIER,
-  options: {
-    encrypt: process.env.AZURE_SQL_ENCRYPT === 'true',
-    trustServerCertificate: false,
-  },
-};
-
-let sqlConnectionPromise;
-
-function getSqlConnection() {
-  if (!sqlConnectionPromise) {
-    sqlConnectionPromise = sql.connect(config).catch((error) => {
-      sqlConnectionPromise = undefined;
-      throw error;
-    });
-  }
-
-  return sqlConnectionPromise;
-}
-
-async function withSqlConnection(callback) {
-  await getSqlConnection();
-  return callback();
-}
-
-function getRequiredApplicationIdentifier() {
-  if (!config.applicationIdentifier) {
-    throw new Error('Application identifier env var is not configured');
-  }
-
-  return config.applicationIdentifier;
-}
-
-async function getTreeList() {
-  const query = `
-    SELECT
-      CAST(ti.id AS VARCHAR(10)) AS id,
-      COALESCE(NULLIF(ti.display_name, ''), root_node.text, CONCAT('Tree ', ti.id)) AS name
-    FROM tree_instance ti
-    INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-    OUTER APPLY (
-      SELECT TOP 1 tn.text
-      FROM tree_nodes tn
-      WHERE tn.tree_instance_id = ti.id AND tn.parent_id IS NULL
-      ORDER BY tn.sort_order, tn.id
-    ) root_node
-    WHERE ai.app_identifier = @application_identifier
-    ORDER BY COALESCE(NULLIF(ti.display_name, ''), root_node.text, CONCAT('Tree ', ti.id));`;
-
-  return withSqlConnection(async () => {
-    const result = await new sql.Request()
-      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-      .query(query);
-
-    return result.recordset;
-  });
-}
 
 async function queryTreeData(treeInstanceId) {
   const query = `WITH RecursiveTree AS (

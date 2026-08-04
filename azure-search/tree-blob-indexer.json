@@ -23,6 +23,10 @@
       "targetFieldName": "nodeId"
     },
     {
+      "sourceFieldName": "applicationidentifier",
+      "targetFieldName": "appIdentifier"
+    },
+    {
       "sourceFieldName": "blobname",
       "targetFieldName": "blobName"
     },

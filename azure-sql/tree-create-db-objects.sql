@@ -340,6 +340,8 @@ WITH TreeHierarchy AS (
 		tn.sort_order,
 		tn.created_at,
 		tn.updated_at,
+		CAST(tn.updated_at AS DATETIME2(7)) AS path_updated_at,
+		CAST(CAST(tn.id AS NVARCHAR(20)) AS NVARCHAR(MAX)) AS node_id_path,
 		CAST(RIGHT(REPLICATE('0', 3) + CAST(tn.sort_order AS VARCHAR(3)), 3) AS VARCHAR(MAX)) AS sort_path,
 		CAST(tn.[text] AS NVARCHAR(MAX)) AS breadcrumb,
 		0 AS depth
@@ -357,6 +359,11 @@ WITH TreeHierarchy AS (
 		child.sort_order,
 		child.created_at,
 		child.updated_at,
+		CAST(CASE
+			WHEN child.updated_at >= parent.path_updated_at THEN child.updated_at
+			ELSE parent.path_updated_at
+		END AS DATETIME2(7)) AS path_updated_at,
+		CAST(parent.node_id_path + N'/' + CAST(child.id AS NVARCHAR(20)) AS NVARCHAR(MAX)) AS node_id_path,
 		CAST(parent.sort_path + '-' + RIGHT(REPLICATE('0', 3) + CAST(child.sort_order AS VARCHAR(3)), 3) AS VARCHAR(MAX)) AS sort_path,
 		CAST(parent.breadcrumb + N' > ' + child.[text] AS NVARCHAR(MAX)) AS breadcrumb,
 		parent.depth + 1 AS depth
@@ -386,11 +393,8 @@ SELECT
 	CAST(th.[text] AS NVARCHAR(MAX)) AS nodeText,
 	CAST(ISNULL(details.notes, N'') AS NVARCHAR(MAX)) AS notes,
 	CAST(th.breadcrumb AS NVARCHAR(MAX)) AS breadcrumb,
-	CAST(CONCAT(
-		th.[text],
-		CASE WHEN NULLIF(details.notes, N'') IS NOT NULL THEN CONCAT(NCHAR(10), NCHAR(10), details.notes) ELSE N'' END,
-		CASE WHEN NULLIF(th.breadcrumb, N'') IS NOT NULL THEN CONCAT(NCHAR(10), NCHAR(10), N'Breadcrumb: ', th.breadcrumb) ELSE N'' END
-	) AS NVARCHAR(MAX)) AS content,
+	CAST(th.node_id_path AS NVARCHAR(MAX)) AS nodeIdPath,
+	CAST(ISNULL(details.notes, N'') AS NVARCHAR(MAX)) AS content,
 	th.is_leaf_node AS isLeafNode,
 	th.depth,
 	th.sort_path AS sortPath,
@@ -412,16 +416,16 @@ SELECT
 		FOR JSON PATH
 	) AS NVARCHAR(MAX)) AS attachmentMetadataJson,
 	CAST(CASE
-		WHEN attachments.latest_attachment_updated_at IS NULL AND details.updated_at IS NULL THEN th.updated_at
+		WHEN attachments.latest_attachment_updated_at IS NULL AND details.updated_at IS NULL THEN th.path_updated_at
 		WHEN attachments.latest_attachment_updated_at IS NULL THEN
-			CASE WHEN details.updated_at >= th.updated_at THEN details.updated_at ELSE th.updated_at END
+			CASE WHEN details.updated_at >= th.path_updated_at THEN details.updated_at ELSE th.path_updated_at END
 		WHEN details.updated_at IS NULL THEN
-			CASE WHEN attachments.latest_attachment_updated_at >= th.updated_at THEN attachments.latest_attachment_updated_at ELSE th.updated_at END
+			CASE WHEN attachments.latest_attachment_updated_at >= th.path_updated_at THEN attachments.latest_attachment_updated_at ELSE th.path_updated_at END
 		ELSE (
 			CASE
-				WHEN attachments.latest_attachment_updated_at >= details.updated_at AND attachments.latest_attachment_updated_at >= th.updated_at THEN attachments.latest_attachment_updated_at
-				WHEN details.updated_at >= attachments.latest_attachment_updated_at AND details.updated_at >= th.updated_at THEN details.updated_at
-				ELSE th.updated_at
+				WHEN attachments.latest_attachment_updated_at >= details.updated_at AND attachments.latest_attachment_updated_at >= th.path_updated_at THEN attachments.latest_attachment_updated_at
+				WHEN details.updated_at >= attachments.latest_attachment_updated_at AND details.updated_at >= th.path_updated_at THEN details.updated_at
+				ELSE th.path_updated_at
 			END
 		)
 	END AS DATETIME2(7)) AS updatedAt,
