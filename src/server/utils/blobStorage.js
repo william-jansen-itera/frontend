@@ -39,10 +39,12 @@ function buildBlobName({ treeId, nodeId, fileName }) {
   return `notes/${treeId}/${nodeId}/${randomUUID()}-${safeBaseName}${safeExtension}`;
 }
 
-function buildBlobMetadata({ treeId, nodeId }) {
+function buildBlobMetadata({ treeId, nodeId, blobName }) {
   return {
     treeid: String(treeId),
     nodeid: String(nodeId),
+    sourcetype: 'attachment',
+    blobname: blobName,
   };
 }
 
@@ -56,7 +58,7 @@ export async function uploadNodeAttachment({ treeId, nodeId, file }) {
     blobHTTPHeaders: {
       blobContentType: file.type || 'application/octet-stream',
     },
-    metadata: buildBlobMetadata({ treeId, nodeId }),
+    metadata: buildBlobMetadata({ treeId, nodeId, blobName }),
   });
 
   return {

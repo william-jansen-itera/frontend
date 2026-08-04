@@ -1,0 +1,10 @@
+{
+  "name": "tree-sql-datasource",
+  "type": "azuresql",
+  "credentials": {
+    "connectionString": "Server=tcp:<your-server>.database.windows.net,1433;Initial Catalog=<your-database>;User ID=<your-user>;Password=<your-password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+  },
+  "container": {
+    "name": "dbo.vw_tree_search_nodes"
+  }
+}

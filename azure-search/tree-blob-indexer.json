@@ -1,0 +1,50 @@
+{
+  "name": "tree-blob-indexer",
+  "dataSourceName": "tree-blob-datasource",
+  "targetIndexName": "<search-index-name>",
+  "fieldMappings": [
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "id",
+      "mappingFunction": {
+        "name": "base64Encode"
+      }
+    },
+    {
+      "sourceFieldName": "sourcetype",
+      "targetFieldName": "sourceType"
+    },
+    {
+      "sourceFieldName": "treeid",
+      "targetFieldName": "treeId"
+    },
+    {
+      "sourceFieldName": "nodeid",
+      "targetFieldName": "nodeId"
+    },
+    {
+      "sourceFieldName": "blobname",
+      "targetFieldName": "blobName"
+    },
+    {
+      "sourceFieldName": "metadata_storage_name",
+      "targetFieldName": "attachmentFileName"
+    },
+    {
+      "sourceFieldName": "metadata_storage_path",
+      "targetFieldName": "blobUrl"
+    },
+    {
+      "sourceFieldName": "content",
+      "targetFieldName": "content"
+    }
+  ],
+  "parameters": {
+    "maxFailedItems": 10,
+    "maxFailedItemsPerBatch": 5,
+    "configuration": {
+      "dataToExtract": "contentAndMetadata",
+      "indexedFileNameExtensions": ".csv,.doc,.docx,.gif,.html,.jpeg,.jpg,.json,.md,.pdf,.png,.ppt,.pptx,.txt,.webp,.xls,.xlsx"
+    }
+  }
+}

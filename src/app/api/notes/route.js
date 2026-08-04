@@ -36,14 +36,22 @@ const config = {
   },
 };
 
-async function withSqlConnection(callback) {
-  await sql.connect(config);
+let sqlConnectionPromise;
 
-  try {
-    return await callback();
-  } finally {
-    await sql.close();
+function getSqlConnection() {
+  if (!sqlConnectionPromise) {
+    sqlConnectionPromise = sql.connect(config).catch((error) => {
+      sqlConnectionPromise = undefined;
+      throw error;
+    });
   }
+
+  return sqlConnectionPromise;
+}
+
+async function withSqlConnection(callback) {
+  await getSqlConnection();
+  return callback();
 }
 
 function getRequiredApplicationIdentifier() {

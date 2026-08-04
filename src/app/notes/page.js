@@ -92,6 +92,19 @@ function NotesPage() {
       attachmentInputRef.current.value = "";
     }
   };
+
+  const resetTreeSelectionState = () => {
+    setTreeData([]);
+    setExpandedState({});
+    setSelectedNodeId(null);
+    setNodeEditorState(buildNodeEditorState());
+    setNodeDetailsError(null);
+    setPendingFiles([]);
+
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
+  };
   // Fetch the list of available trees on mount
   useEffect(() => {
     fetch("/api/notes")
@@ -551,6 +564,7 @@ function NotesPage() {
                 <select
                   value={treeIdParam ?? ""}
                   onChange={(event) => {
+                    resetTreeSelectionState();
                     router.replace(
                       getTreeSelectionHref(pathname, searchParams.toString(), event.target.value || null),
                       { scroll: false },
