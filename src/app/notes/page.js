@@ -1,5 +1,6 @@
 "use client";
 import { Suspense } from "react";
+import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
@@ -21,6 +22,7 @@ import {
 } from "./treeUtils";
 
 const ATTACHMENT_ACCEPT = ".csv,.doc,.docx,.gif,.html,.jpeg,.jpg,.json,.md,.pdf,.png,.ppt,.pptx,.txt,.webp,.xls,.xlsx";
+const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
 
 function formatAttachmentSize(byteSize) {
   const size = Number(byteSize);
@@ -34,6 +36,26 @@ function formatAttachmentSize(byteSize) {
   }
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getAttachmentPreviewType(attachment) {
+  const fileName = String(attachment?.fileName || "").trim().toLowerCase();
+  const contentType = String(attachment?.contentType || "").trim().toLowerCase();
+  const extension = fileName.includes(".") ? fileName.slice(fileName.lastIndexOf(".") + 1) : "";
+
+  if (contentType.startsWith("image/") || IMAGE_FILE_EXTENSIONS.has(extension)) {
+    return "image";
+  }
+
+  return null;
+}
+
+function getNodeAttachmentContentUrl(attachment) {
+  if (!attachment?.blobName) {
+    return null;
+  }
+
+  return `/api/attachments/content?blobName=${encodeURIComponent(attachment.blobName)}`;
 }
 
 export default function NotesPageWrapper() {
@@ -419,6 +441,14 @@ function NotesPage() {
       return;
     }
 
+    const confirmed = window.confirm(
+      `Delete node "${selectedNode?.name || 'this node'}"? This action cannot be undone.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       const response = await fetch(`/api/notes?id=${selectedNode.id}&treeId=${treeIdParam}`, {
         method: "DELETE",
@@ -488,6 +518,15 @@ function NotesPage() {
 
   const handleDeleteAttachment = async (attachmentId) => {
     if (!treeIdParam || !attachmentId) {
+      return;
+    }
+
+    const attachment = nodeEditorState.attachments.find((item) => String(item.id) === String(attachmentId));
+    const confirmed = window.confirm(
+      `Delete file "${attachment?.fileName || 'this file'}"? This action cannot be undone.`,
+    );
+
+    if (!confirmed) {
       return;
     }
 
@@ -768,21 +807,29 @@ function NotesPage() {
                         <span className={styles.attachmentHint}>Allowed up to 10 MB each.</span>
                       </div>
                       <div className={styles.attachmentPicker}>
-                        <input
-                          ref={attachmentInputRef}
-                          type="file"
-                          multiple
-                          accept={ATTACHMENT_ACCEPT}
-                          onChange={handleAttachmentSelectionChange}
-                          disabled={isNodeDetailsBusy}
-                        />
+                        <label className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral} ${isNodeDetailsBusy ? styles.pickerButtonDisabled : ""}`}>
+                          <span>Choose files</span>
+                          <input
+                            ref={attachmentInputRef}
+                            type="file"
+                            multiple
+                            accept={ATTACHMENT_ACCEPT}
+                            onChange={handleAttachmentSelectionChange}
+                            disabled={isNodeDetailsBusy}
+                            className={styles.fileInputHidden}
+                          />
+                        </label>
                         <button
                           onClick={handleUploadAttachments}
                           disabled={isNodeDetailsBusy || pendingFiles.length === 0}
                           type="button"
+                          className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
                         >
                           {isUploadingAttachments ? "Uploading..." : `Upload${pendingFiles.length ? ` (${pendingFiles.length})` : ""}`}
                         </button>
+                        {pendingFiles.length > 0 ? (
+                          <span className={styles.attachmentPickerStatus}>{pendingFiles.length} file{pendingFiles.length === 1 ? "" : "s"} selected</span>
+                        ) : null}
                       </div>
                       {nodeEditorState.attachments.length === 0 ? (
                         <div className={styles.emptyState}>No files uploaded for this node.</div>
@@ -791,19 +838,45 @@ function NotesPage() {
                           {nodeEditorState.attachments.map((attachment) => (
                             <div key={attachment.id} className={styles.attachmentItem}>
                               <div className={styles.attachmentMeta}>
+                                {getAttachmentPreviewType(attachment) === "image" && getNodeAttachmentContentUrl(attachment) ? (
+                                  <div className={styles.attachmentPreviewInline}>
+                                    <Image
+                                      src={getNodeAttachmentContentUrl(attachment)}
+                                      alt={attachment.fileName || "Attachment preview"}
+                                      width={240}
+                                      height={180}
+                                      sizes="240px"
+                                      className={styles.attachmentPreviewInlineImage}
+                                      unoptimized
+                                    />
+                                  </div>
+                                ) : null}
                                 <strong>{attachment.fileName}</strong>
                                 <span className={styles.attachmentHint}>
                                   {formatAttachmentSize(attachment.byteSize)}
                                   {attachment.contentType ? ` • ${attachment.contentType}` : ""}
                                 </span>
                               </div>
-                              <button
-                                onClick={() => handleDeleteAttachment(attachment.id)}
-                                disabled={isNodeDetailsBusy}
-                                type="button"
-                              >
-                                {deletingAttachmentId === String(attachment.id) ? "Deleting..." : "Delete file"}
-                              </button>
+                              <div className={styles.attachmentActions}>
+                                {getNodeAttachmentContentUrl(attachment) ? (
+                                  <a
+                                    href={getNodeAttachmentContentUrl(attachment)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral} ${styles.attachmentActionLink}`}
+                                  >
+                                    Open
+                                  </a>
+                                ) : null}
+                                <button
+                                  onClick={() => handleDeleteAttachment(attachment.id)}
+                                  disabled={isNodeDetailsBusy}
+                                  type="button"
+                                  className={`${styles.toolbarButton} ${styles.toolbarButtonDanger}`}
+                                >
+                                  {deletingAttachmentId === String(attachment.id) ? "Deleting..." : "Delete file"}
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>

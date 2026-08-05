@@ -417,16 +417,25 @@
 .attachmentOpenLink {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   width: fit-content;
-  color: #0369a1;
-  font-size: 0.88rem;
-  font-weight: 700;
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
   text-decoration: none;
+  line-height: 1;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .attachmentOpenLink:hover,
 .attachmentOpenLink:focus-visible {
-  text-decoration: underline;
+  background-color: #eef2f7;
+  border-color: #94a3b8;
+  text-decoration: none;
 }
 
 .attachmentOpenLink:focus-visible {

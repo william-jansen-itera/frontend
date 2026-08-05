@@ -389,14 +389,6 @@ function SearchPageContent() {
                               <div className={styles.attachmentPreviewRow}>
                                 <div className={styles.attachmentPreviewDetails}>
                                   <span className={styles.attachmentPreviewFileName}>{attachmentSummary.fileName}</span>
-                                  <a
-                                    href={getAttachmentContentUrl(attachmentSummary)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className={styles.attachmentOpenLink}
-                                  >
-                                    open
-                                  </a>
                                 </div>
                                 {getPreviewType(attachmentSummary) === "image" ? (
                                   <div className={styles.attachmentPreviewFrame}>
@@ -411,6 +403,14 @@ function SearchPageContent() {
                                     />
                                   </div>
                                 ) : null}
+                                <a
+                                  href={getAttachmentContentUrl(attachmentSummary)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className={styles.attachmentOpenLink}
+                                >
+                                  Open
+                                </a>
                               </div>
                             ) : null}
                           </div>

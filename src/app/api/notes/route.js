@@ -146,6 +146,7 @@ async function queryNodeDetails(treeInstanceId, nodeId) {
         files.original_file_name AS fileName,
         files.content_type AS contentType,
         files.byte_size AS byteSize,
+        files.blob_name AS blobName,
         files.blob_url AS blobUrl,
         files.created_at AS createdAt
       FROM tree_node_detail_files files
