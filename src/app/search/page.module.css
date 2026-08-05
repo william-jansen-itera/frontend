@@ -299,12 +299,12 @@
 }
 
 .resultInlineSection {
-  margin: 0.35rem 0 0;
+  margin: 0.45rem 0 0;
 }
 
 .resultSection {
-  margin: 0.35rem 0 0;
-  padding-top: 0.3rem;
+  margin: 0.45rem 0 0;
+  padding-top: 0.4rem;
   border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
@@ -364,7 +364,7 @@
 .attachmentSummaryList {
   display: grid;
   gap: 0.35rem;
-  margin-top: 0.35rem;
+  margin-top: 0;
 }
 
 .attachmentSummaryCard {
@@ -373,24 +373,24 @@
 }
 
 .attachmentSummaryCard + .attachmentSummaryCard {
-  margin-top: 0.35rem;
-  padding-top: 0.35rem;
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
   border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .attachmentPreviewRow {
-  display: inline-grid;
-  grid-template-columns: minmax(0, 16rem) minmax(11rem, 13rem);
+  display: flex;
+  flex-wrap: wrap;
   align-items: start;
   gap: 1rem;
   margin-top: 0.55rem;
-  max-width: 100%;
 }
 
 .attachmentPreviewDetails {
   display: grid;
   gap: 0.2rem;
   min-width: 0;
+  flex: 1 1 12rem;
 }
 
 .attachmentPreviewFileName {
@@ -402,9 +402,8 @@
 }
 
 .attachmentPreviewFrame {
-  flex: 0 0 auto;
+  flex: 0 0 10rem;
   width: 10rem;
-  justify-self: start;
 }
 
 .attachmentPreviewImage {
@@ -469,8 +468,7 @@
   }
 
   .attachmentPreviewRow {
-    grid-template-columns: 1fr;
-    display: grid;
+    gap: 0.75rem;
   }
 
   .attachmentPreviewFrame {
