@@ -86,7 +86,7 @@ function buildFilter({ treeId, allowedTreeIds }) {
   const clauses = [buildAllowedTreeFilter(treeId, allowedTreeIds)];
 
   if (applicationIdentifier) {
-    clauses.push(`(sourceType eq 'attachment' or appIdentifier eq '${escapeODataString(applicationIdentifier)}')`);
+    clauses.push(`appIdentifier eq '${escapeODataString(applicationIdentifier)}'`);
   }
 
   return clauses.join(' and ');
