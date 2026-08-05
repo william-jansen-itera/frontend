@@ -124,6 +124,13 @@ function normalizeSearchDocument(document) {
   };
 }
 
+function addAttachmentMatchSource(documents, matchSource) {
+  return documents.map((document) => ({
+    ...document,
+    attachmentMatchSource: matchSource,
+  }));
+}
+
 function getFirstHighlightValue(highlights, fieldNames) {
   const normalizedHighlights = highlights && typeof highlights === 'object' ? highlights : null;
 
@@ -154,6 +161,45 @@ function buildHighlightSnippet(highlights, fieldNames, fallbackText) {
   return buildSummaryText(fallbackText);
 }
 
+function getSearchTokens(value) {
+  return String(value ?? '')
+    .split(/[^a-zA-Z0-9]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function escapeLuceneRegexValue(value) {
+  return String(value ?? '').replace(/[\\/.*+?^${}()|[\]{}-]/g, '\\$&');
+}
+
+function buildAttachmentFileNameRegexQuery(searchText) {
+  const tokens = getSearchTokens(searchText);
+
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  return tokens
+    .map((token) => `attachmentFileName:/.*${escapeLuceneRegexValue(token)}.*/`)
+    .join(' AND ');
+}
+
+function mergeSearchDocuments(...documentGroups) {
+  const documentsById = new Map();
+
+  documentGroups.forEach((documents) => {
+    documents.forEach((document) => {
+      if (!document?.id || documentsById.has(document.id)) {
+        return;
+      }
+
+      documentsById.set(document.id, document);
+    });
+  });
+
+  return Array.from(documentsById.values());
+}
+
 function buildNodeHighlightInfo(document) {
   if (!document) {
     return { text: null, source: null };
@@ -176,7 +222,7 @@ function buildNodeHighlightInfo(document) {
   return { text: null, source: null };
 }
 
-async function executeSearchQuery({ endpoint, indexName, queryKey, searchText, filter, top, searchFields, scoringProfile = null }) {
+async function executeSearchQuery({ endpoint, indexName, queryKey, searchText, filter, top, searchFields, scoringProfile = null, queryType = null }) {
   const response = await fetch(
     `${endpoint}/indexes/${encodeURIComponent(indexName)}/docs/search?api-version=${SEARCH_API_VERSION}`,
     {
@@ -191,6 +237,7 @@ async function executeSearchQuery({ endpoint, indexName, queryKey, searchText, f
         searchMode: 'all',
         filter,
         searchFields: searchFields.join(','),
+        ...(queryType ? { queryType } : {}),
         ...(scoringProfile ? { scoringProfile } : {}),
         highlight: searchFields.join(','),
         highlightPreTag: HIGHLIGHT_PRE_TAG,
@@ -353,6 +400,9 @@ function finalizeGroupedResults(groups) {
     const attachmentSummaries = attachmentDocuments.map((attachmentDocument) => ({
       id: attachmentDocument.id,
       fileName: attachmentDocument.attachmentFileName || 'Attachment',
+      blobName: attachmentDocument.blobName || null,
+      blobUrl: attachmentDocument.blobUrl || null,
+      matchSource: attachmentDocument.attachmentMatchSource || 'content',
       score: attachmentDocument.score ?? null,
       summary: buildHighlightSnippet(
         attachmentDocument.highlights,
@@ -399,7 +449,8 @@ export async function searchTreeContent({ searchText, treeId, top, allowedTreeId
   const { endpoint, indexName, queryKey } = getRequiredSearchConfig();
   const normalizedTopValue = normalizeTop(top);
   const baseFilter = buildFilter({ treeId, allowedTreeIds });
-  const [nodeResults, attachmentResults] = await Promise.all([
+  const attachmentFileNameRegexQuery = buildAttachmentFileNameRegexQuery(trimmedSearchText);
+  const [nodeResults, attachmentResults, attachmentFileNameResults] = await Promise.all([
     executeSearchQuery({
       endpoint,
       indexName,
@@ -419,8 +470,24 @@ export async function searchTreeContent({ searchText, treeId, top, allowedTreeId
       filter: `${baseFilter} and sourceType eq 'attachment'`,
       searchFields: ATTACHMENT_SEARCH_FIELDS,
     }),
+    attachmentFileNameRegexQuery
+      ? executeSearchQuery({
+        endpoint,
+        indexName,
+        queryKey,
+        searchText: attachmentFileNameRegexQuery,
+        top: normalizedTopValue,
+        filter: `${baseFilter} and sourceType eq 'attachment'`,
+        searchFields: ['attachmentFileName'],
+        queryType: 'full',
+      })
+      : Promise.resolve([]),
   ]);
-  const normalizedResults = [...nodeResults, ...attachmentResults];
+  const normalizedAttachmentResults = mergeSearchDocuments(
+    addAttachmentMatchSource(attachmentResults, 'content'),
+    addAttachmentMatchSource(attachmentFileNameResults, 'fileName'),
+  );
+  const normalizedResults = [...nodeResults, ...normalizedAttachmentResults];
   const filteredResults = filterDeepestResults(normalizedResults);
   const groupedResults = groupResultsByNode(filteredResults);
   const nodeDocumentsByGroupKey = await fetchNodeDocumentsForGroups({

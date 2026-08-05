@@ -1,9 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
+
+const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
 
 function renderHighlightedText(text, keyPrefix) {
   const normalizedText = String(text ?? "");
@@ -87,6 +90,39 @@ function getBreadcrumbItems(result) {
       : nodeHref,
     isLeaf: index === breadcrumbParts.length - 1,
   }));
+}
+
+function getPreviewType(attachmentSummary) {
+  const fileName = String(attachmentSummary?.fileName || "").trim().toLowerCase();
+  const blobName = String(attachmentSummary?.blobName || "").trim().toLowerCase();
+  const candidate = fileName || blobName;
+
+  if (!candidate) {
+    return null;
+  }
+
+  const sanitizedCandidate = candidate.split("?")[0].split("#")[0];
+  const extension = sanitizedCandidate.includes(".")
+    ? sanitizedCandidate.slice(sanitizedCandidate.lastIndexOf(".") + 1)
+    : "";
+
+  if (IMAGE_FILE_EXTENSIONS.has(extension)) {
+    return "image";
+  }
+
+  return null;
+}
+
+function getAttachmentContentUrl(attachmentSummary) {
+  if (!attachmentSummary?.blobName) {
+    return null;
+  }
+
+  return `/api/attachments/content?blobName=${encodeURIComponent(attachmentSummary.blobName)}`;
+}
+
+function getAttachmentBadgeLabel(attachmentSummary) {
+  return attachmentSummary?.matchSource === "fileName" ? "FILE NAME" : "FILE CONTENT";
 }
 
 function SearchPageContent() {
@@ -342,14 +378,41 @@ function SearchPageContent() {
                           >
                             <div className={styles.attachmentSummaryMetaRow}>
                               <div className={styles.attachmentSummaryBadges}>
-                                <span className={styles.resultType}>FILE CONTENT</span>
-                                <span className={styles.resultMatchChip}>{attachmentSummary.fileName}</span>
+                                <span className={styles.resultType}>{getAttachmentBadgeLabel(attachmentSummary)}</span>
                               </div>
                               <span className={styles.resultScore}>
                                 Score {attachmentSummary.score ? attachmentSummary.score.toFixed(2) : "n/a"}
                               </span>
                             </div>
                             <p className={`${styles.attachmentSummaryText} ${styles.resultSnippetCode}`}>{renderHighlightedText(attachmentSummary.summary, `${attachmentSummary.id}-attachment-summary`)}</p>
+                            {getAttachmentContentUrl(attachmentSummary) ? (
+                              <div className={styles.attachmentPreviewRow}>
+                                <div className={styles.attachmentPreviewDetails}>
+                                  <span className={styles.attachmentPreviewFileName}>{attachmentSummary.fileName}</span>
+                                  <a
+                                    href={getAttachmentContentUrl(attachmentSummary)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={styles.attachmentOpenLink}
+                                  >
+                                    open
+                                  </a>
+                                </div>
+                                {getPreviewType(attachmentSummary) === "image" ? (
+                                  <div className={styles.attachmentPreviewFrame}>
+                                    <Image
+                                      src={getAttachmentContentUrl(attachmentSummary)}
+                                      alt={attachmentSummary.fileName || "Attachment preview"}
+                                      width={240}
+                                      height={180}
+                                      sizes="240px"
+                                      className={styles.attachmentPreviewImage}
+                                      unoptimized
+                                    />
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>

@@ -40,12 +40,13 @@ function buildBlobName({ treeId, nodeId, fileName }) {
   return `notes/${treeId}/${nodeId}/${randomUUID()}-${safeBaseName}${safeExtension}`;
 }
 
-function buildBlobMetadata({ treeId, nodeId, blobName }) {
+function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName }) {
   const metadata = {
     treeid: String(treeId),
     nodeid: String(nodeId),
     sourcetype: 'attachment',
     blobname: blobName,
+    originalfilename: String(originalFileName),
   };
 
   if (applicationIdentifier) {
@@ -65,7 +66,7 @@ export async function uploadNodeAttachment({ treeId, nodeId, file }) {
     blobHTTPHeaders: {
       blobContentType: file.type || 'application/octet-stream',
     },
-    metadata: buildBlobMetadata({ treeId, nodeId, blobName }),
+    metadata: buildBlobMetadata({ treeId, nodeId, blobName, originalFileName: file.name }),
   });
 
   return {
@@ -101,4 +102,34 @@ export async function deleteNodeAttachmentBlobIfExists(blobName) {
   });
 
   return response.succeeded;
+}
+
+export async function downloadNodeAttachmentBlob(blobName) {
+  if (!blobName) {
+    throw new Error('Blob name is required');
+  }
+
+  const containerClient = getContainerClient();
+  const blobClient = containerClient.getBlobClient(blobName);
+  const properties = await blobClient.getProperties();
+  const metadata = properties.metadata || {};
+
+  if (metadata.sourcetype !== 'attachment') {
+    throw new Error('Requested blob is not an attachment');
+  }
+
+  if (applicationIdentifier && metadata.applicationidentifier !== applicationIdentifier) {
+    throw new Error('Requested blob is outside the allowed application scope');
+  }
+
+  const buffer = await blobClient.downloadToBuffer();
+
+  return {
+    content: buffer,
+    contentType: properties.contentType || 'application/octet-stream',
+    contentLength: buffer.length,
+    originalFileName: metadata.originalfilename || path.basename(blobName),
+    lastModified: properties.lastModified ?? null,
+    etag: properties.etag ?? null,
+  };
 }

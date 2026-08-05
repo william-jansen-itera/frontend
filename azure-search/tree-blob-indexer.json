@@ -31,7 +31,7 @@
       "targetFieldName": "blobName"
     },
     {
-      "sourceFieldName": "metadata_storage_name",
+      "sourceFieldName": "originalfilename",
       "targetFieldName": "attachmentFileName"
     },
     {
