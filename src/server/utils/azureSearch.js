@@ -7,7 +7,7 @@ const DEFAULT_TOP = 10;
 const MAX_TOP = 25;
 const NODE_SCORING_PROFILE = 'node-content-priority';
 const NODE_SEARCH_FIELDS = ['content', 'title', 'breadcrumb'];
-const ATTACHMENT_SEARCH_FIELDS = ['content', 'attachmentFileName'];
+const ATTACHMENT_SEARCH_FIELDS = ['content', 'ocrText', 'imageDescription', 'attachmentFileName'];
 const HIGHLIGHT_PRE_TAG = '[[H]]';
 const HIGHLIGHT_POST_TAG = '[[/H]]';
 const SEARCH_SELECT_FIELDS = [
@@ -26,6 +26,9 @@ const SEARCH_SELECT_FIELDS = [
   'breadcrumb',
   'nodeIdPath',
   'content',
+  'ocrText',
+  'imageDescription',
+  'imageDescriptionConfidence',
   'isLeafNode',
   'depth',
   'sortPath',
@@ -222,6 +225,29 @@ function buildNodeHighlightInfo(document) {
   return { text: null, source: null };
 }
 
+function buildAttachmentHighlightInfo(document) {
+  if (!document) {
+    return { text: null, source: null };
+  }
+
+  const sourceByField = [
+    { fieldName: 'content', source: 'content' },
+    { fieldName: 'ocrText', source: 'ocrText' },
+    { fieldName: 'imageDescription', source: 'imageDescription' },
+    { fieldName: 'attachmentFileName', source: 'fileName' },
+  ];
+
+  for (const { fieldName, source } of sourceByField) {
+    const snippet = buildHighlightSnippet(document.highlights, [fieldName], null);
+
+    if (snippet) {
+      return { text: snippet, source };
+    }
+  }
+
+  return { text: null, source: document.attachmentMatchSource || null };
+}
+
 async function executeSearchQuery({ endpoint, indexName, queryKey, searchText, filter, top, searchFields, scoringProfile = null, queryType = null }) {
   const response = await fetch(
     `${endpoint}/indexes/${encodeURIComponent(indexName)}/docs/search?api-version=${SEARCH_API_VERSION}`,
@@ -398,18 +424,26 @@ function finalizeGroupedResults(groups) {
     const preferredDocument = nodeDocument ?? group.primaryDocument;
     const nodeHighlight = buildNodeHighlightInfo(matchedNodeDocument);
     const attachmentSummaries = attachmentDocuments.map((attachmentDocument) => ({
-      id: attachmentDocument.id,
-      fileName: attachmentDocument.attachmentFileName || 'Attachment',
-      blobName: attachmentDocument.blobName || null,
-      blobUrl: attachmentDocument.blobUrl || null,
-      matchSource: attachmentDocument.attachmentMatchSource || 'content',
-      score: attachmentDocument.score ?? null,
-      summary: buildHighlightSnippet(
-        attachmentDocument.highlights,
-        ['content', 'attachmentFileName'],
-        attachmentDocument.content || attachmentDocument.attachmentFileName,
-      )
-        || 'No preview text is available for this attachment match.',
+      ...(function buildAttachmentSummary() {
+        const attachmentHighlight = buildAttachmentHighlightInfo(attachmentDocument);
+
+        return {
+          id: attachmentDocument.id,
+          fileName: attachmentDocument.attachmentFileName || 'Attachment',
+          blobName: attachmentDocument.blobName || null,
+          blobUrl: attachmentDocument.blobUrl || null,
+          matchSource: attachmentHighlight.source || 'content',
+          score: attachmentDocument.score ?? null,
+          summary: attachmentHighlight.text
+            || buildSummaryText(
+              attachmentDocument.content
+                || attachmentDocument.ocrText
+                || attachmentDocument.imageDescription
+                || attachmentDocument.attachmentFileName,
+            )
+            || 'No preview text is available for this attachment match.',
+        };
+      }()),
     }));
 
     return {
@@ -484,7 +518,7 @@ export async function searchTreeContent({ searchText, treeId, top, allowedTreeId
       : Promise.resolve([]),
   ]);
   const normalizedAttachmentResults = mergeSearchDocuments(
-    addAttachmentMatchSource(attachmentResults, 'content'),
+    attachmentResults,
     addAttachmentMatchSource(attachmentFileNameResults, 'fileName'),
   );
   const normalizedResults = [...nodeResults, ...normalizedAttachmentResults];

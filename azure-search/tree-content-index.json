@@ -138,6 +138,33 @@
       "facetable": false
     },
     {
+      "name": "ocrText",
+      "type": "Collection(Edm.String)",
+      "searchable": true,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
+      "name": "imageDescription",
+      "type": "Collection(Edm.String)",
+      "searchable": true,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
+      "name": "imageDescriptionConfidence",
+      "type": "Collection(Edm.Double)",
+      "searchable": false,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
       "name": "isLeafNode",
       "type": "Edm.Boolean",
       "searchable": false,

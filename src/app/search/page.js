@@ -122,7 +122,16 @@ function getAttachmentContentUrl(attachmentSummary) {
 }
 
 function getAttachmentBadgeLabel(attachmentSummary) {
-  return attachmentSummary?.matchSource === "fileName" ? "FILE NAME" : "FILE CONTENT";
+  switch (attachmentSummary?.matchSource) {
+    case "fileName":
+      return "FILE NAME";
+    case "ocrText":
+      return "IMAGE OCR";
+    case "imageDescription":
+      return "IMAGE CONTENT";
+    default:
+      return "FILE CONTENT";
+  }
 }
 
 function SearchPageContent() {

@@ -1,0 +1,50 @@
+{
+  "name": "tree-image-enrichment-skillset",
+  "description": "Extract OCR text and image descriptions from image attachments and embedded document images.",
+  "cognitiveServices": {
+    "@odata.type": "#Microsoft.Azure.Search.DefaultCognitiveServices"
+  },
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Vision.OcrSkill",
+      "name": "extract-ocr-text",
+      "description": "Extract text from normalized images.",
+      "context": "/document/normalized_images/*",
+      "defaultLanguageCode": "unk",
+      "detectOrientation": true,
+      "inputs": [
+        {
+          "name": "image",
+          "source": "/document/normalized_images/*"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "text",
+          "targetName": "ocrText"
+        }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Vision.ImageAnalysisSkill",
+      "name": "describe-images",
+      "description": "Generate descriptive captions for normalized images.",
+      "context": "/document/normalized_images/*",
+      "visualFeatures": [
+        "description"
+      ],
+      "inputs": [
+        {
+          "name": "image",
+          "source": "/document/normalized_images/*"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "description",
+          "targetName": "imageDescription"
+        }
+      ]
+    }
+  ]
+}

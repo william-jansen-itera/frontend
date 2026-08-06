@@ -1,7 +1,8 @@
 {
   "name": "tree-blob-indexer",
   "dataSourceName": "tree-blob-datasource",
-  "targetIndexName": "<search-index-name>",
+  "targetIndexName": "tree-content-index",
+  "skillsetName": "tree-image-enrichment-skillset",
   "fieldMappings": [
     {
       "sourceFieldName": "metadata_storage_path",
@@ -43,11 +44,26 @@
       "targetFieldName": "content"
     }
   ],
+  "outputFieldMappings": [
+    {
+      "sourceFieldName": "/document/normalized_images/*/ocrText",
+      "targetFieldName": "ocrText"
+    },
+    {
+      "sourceFieldName": "/document/normalized_images/*/imageDescription/captions/*/text",
+      "targetFieldName": "imageDescription"
+    },
+    {
+      "sourceFieldName": "/document/normalized_images/*/imageDescription/captions/*/confidence",
+      "targetFieldName": "imageDescriptionConfidence"
+    }
+  ],
   "parameters": {
     "maxFailedItems": 10,
     "maxFailedItemsPerBatch": 5,
     "configuration": {
       "dataToExtract": "contentAndMetadata",
+      "imageAction": "generateNormalizedImages",
       "indexedFileNameExtensions": ".csv,.doc,.docx,.gif,.html,.jpeg,.jpg,.json,.md,.pdf,.png,.ppt,.pptx,.txt,.webp,.xls,.xlsx"
     }
   }
