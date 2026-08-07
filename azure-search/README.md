@@ -10,6 +10,11 @@ Files:
 - `tree-blob-indexer.json`: blob indexer that writes attachment documents into the shared index.
 - `tree-image-enrichment-skillset.json`: OCR and image-description enrichment for image attachments and embedded document images.
 
+Custom skill notes:
+- The image-enrichment skillset now expects a deployed Azure Function custom skill endpoint for confidence-based qualification.
+- Replace `<custom-skill-function-uri>` in `tree-image-enrichment-skillset.json` with the full HTTPS function invoke URL before updating the skillset in Azure.
+- The custom skill writes filtered descriptions into `imageDescriptionFiltered`, while `imageDescription` and `imageDescriptionConfidence` remain available for debugging.
+
 Before using these in the portal or REST:
 - Replace placeholder values such as `<search-index-name>`, `<storage-account>`, `<container-name>`, `<your-server>`, `<your-database>`, `<your-user>`, and `<your-password>`.
 - The SQL data source uses a high-water-mark change detection policy on `updatedAt`, so the source view must keep that value advancing whenever a searchable node row changes.
@@ -20,4 +25,5 @@ Current design notes:
 - Deep links are computed in the app from `treeId` and `nodeId`.
 - SQL and blob records live in the same index but use different document keys.
 - Attachment documents can now project OCR text and image descriptions into dedicated search fields.
+- Searchable image-description matches should come from `imageDescriptionFiltered`, not the raw caption field.
 - Vector fields and semantic configuration are intentionally omitted from this first saved version to keep the baseline portal setup simple.

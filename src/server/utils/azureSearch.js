@@ -7,7 +7,7 @@ const DEFAULT_TOP = 10;
 const MAX_TOP = 25;
 const NODE_SCORING_PROFILE = 'node-content-priority';
 const NODE_SEARCH_FIELDS = ['content', 'title', 'breadcrumb'];
-const ATTACHMENT_SEARCH_FIELDS = ['content', 'ocrText', 'imageDescription', 'attachmentFileName'];
+const ATTACHMENT_SEARCH_FIELDS = ['content', 'ocrText', 'imageDescriptionFiltered', 'attachmentFileName'];
 const HIGHLIGHT_PRE_TAG = '[[H]]';
 const HIGHLIGHT_POST_TAG = '[[/H]]';
 const SEARCH_SELECT_FIELDS = [
@@ -29,6 +29,7 @@ const SEARCH_SELECT_FIELDS = [
   'ocrText',
   'imageDescription',
   'imageDescriptionConfidence',
+  'imageDescriptionFiltered',
   'isLeafNode',
   'depth',
   'sortPath',
@@ -233,7 +234,7 @@ function buildAttachmentHighlightInfo(document) {
   const sourceByField = [
     { fieldName: 'content', source: 'content' },
     { fieldName: 'ocrText', source: 'ocrText' },
-    { fieldName: 'imageDescription', source: 'imageDescription' },
+    { fieldName: 'imageDescriptionFiltered', source: 'imageDescription' },
     { fieldName: 'attachmentFileName', source: 'fileName' },
   ];
 
@@ -438,6 +439,7 @@ function finalizeGroupedResults(groups) {
             || buildSummaryText(
               attachmentDocument.content
                 || attachmentDocument.ocrText
+                || attachmentDocument.imageDescriptionFiltered
                 || attachmentDocument.imageDescription
                 || attachmentDocument.attachmentFileName,
             )

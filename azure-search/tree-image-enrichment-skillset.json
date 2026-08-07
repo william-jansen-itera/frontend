@@ -45,6 +45,33 @@
           "targetName": "imageDescription"
         }
       ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "custom-skill-processor",
+      "description": "Filter low-confidence custom skill values using the reusable custom-skill processor Azure Function.",
+      "uri": "<custom-skill-function-uri>",
+      "httpMethod": "POST",
+      "timeout": "PT30S",
+      "batchSize": 1,
+      "degreeOfParallelism": 2,
+      "context": "/document/normalized_images/*",
+      "inputs": [
+        {
+          "name": "textValues",
+          "source": "/document/normalized_images/*/imageDescription/captions/*/text"
+        },
+        {
+          "name": "confidenceValues",
+          "source": "/document/normalized_images/*/imageDescription/captions/*/confidence"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "filteredValues",
+          "targetName": "filteredDescriptions"
+        }
+      ]
     }
   ]
 }

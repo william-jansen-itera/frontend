@@ -165,6 +165,15 @@
       "facetable": false
     },
     {
+      "name": "imageDescriptionFiltered",
+      "type": "Collection(Edm.String)",
+      "searchable": true,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
       "name": "isLeafNode",
       "type": "Edm.Boolean",
       "searchable": false,

@@ -56,6 +56,10 @@
     {
       "sourceFieldName": "/document/normalized_images/*/imageDescription/captions/*/confidence",
       "targetFieldName": "imageDescriptionConfidence"
+    },
+    {
+      "sourceFieldName": "/document/normalized_images/*/filteredDescriptions/*",
+      "targetFieldName": "imageDescriptionFiltered"
     }
   ],
   "parameters": {
