@@ -1,0 +1,453 @@
+.pageShell {
+  min-height: calc(100vh - 6rem);
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at top right, rgba(16, 185, 129, 0.15), transparent 24%),
+    linear-gradient(180deg, #edf8f5 0%, #f7fbfd 46%, #eef4f8 100%);
+}
+
+.heroCard {
+  max-width: 1320px;
+  margin: 0 auto 1.5rem;
+  padding: 2rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
+  display: grid;
+  gap: 1.5rem;
+}
+
+.heroCopy {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.eyebrow,
+.panelEyebrow,
+.sectionEyebrow,
+.fieldLabel,
+.messageLabel,
+.toolLabel {
+  margin: 0;
+  color: #0f766e;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(2rem, 4vw, 3.7rem);
+  line-height: 1.02;
+}
+
+.description {
+  max-width: 900px;
+  margin: 0;
+  color: #475569;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.composerForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.composerField {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.textArea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 7rem;
+}
+
+.textArea:focus {
+  outline: 2px solid rgba(8, 145, 178, 0.2);
+  outline-offset: 2px;
+  border-color: #0891b2;
+}
+
+.submitButton {
+  padding: 0.95rem 1.4rem;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0f766e, #0f766e 20%, #0369a1 100%);
+  color: #ffffff;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 10rem;
+}
+
+.submitButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.workspaceGrid {
+  max-width: 1320px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(340px, 0.88fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.chatPanel,
+.debugPanel {
+  min-height: 42rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
+}
+
+.chatPanel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.debugPanel {
+  position: sticky;
+  top: 1.5rem;
+  max-height: calc(100vh - 3rem);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.panelHeader,
+.debugSection {
+  padding: 1.35rem 1.35rem 0;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.panelTitle,
+.sectionTitle {
+  margin: 0.2rem 0 0;
+  color: #0f172a;
+}
+
+.chatFeed,
+.debugSections {
+  padding: 1.35rem;
+  overflow: auto;
+}
+
+.chatFeed {
+  display: grid;
+  gap: 1rem;
+}
+
+.emptyState,
+.debugEmptyState,
+.errorMessage,
+.toolCard,
+.turnCard,
+.debugSection {
+  border-radius: 22px;
+}
+
+.emptyState,
+.debugEmptyState {
+  padding: 1.3rem;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  background: linear-gradient(180deg, rgba(247, 250, 252, 0.98), rgba(240, 249, 255, 0.92));
+}
+
+.emptyState h3,
+.debugEmptyState h2 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.emptyState p,
+.debugEmptyState p,
+.sectionEmpty {
+  margin: 0.6rem 0 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.turnCard {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.1rem;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 252, 0.95));
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.turnCard:hover,
+.turnCard:focus-visible,
+.turnCardSelected {
+  transform: translateY(-1px);
+  border-color: rgba(8, 145, 178, 0.42);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+}
+
+.turnCard:focus-visible {
+  outline: 2px solid rgba(8, 145, 178, 0.2);
+  outline-offset: 3px;
+}
+
+.turnMetaRow,
+.toolChipRow,
+.toolHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.turnTimestamp,
+.turnStatus {
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.messageBubbleUser,
+.messageBubbleAgent {
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+}
+
+.messageBubbleUser {
+  background: linear-gradient(135deg, rgba(204, 251, 241, 0.92), rgba(219, 234, 254, 0.9));
+}
+
+.messageBubbleAgent {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
+}
+
+.messageText {
+  margin: 0.45rem 0 0;
+  color: #0f172a;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.citationSection {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.citationEyebrow {
+  margin: 0;
+  color: #0f766e;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.citationList {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.citationCard {
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.resultBreadcrumbTrail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.resultBreadcrumbLink {
+  display: inline-flex;
+  align-items: baseline;
+  text-decoration: none;
+}
+
+.resultBreadcrumbItem {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.resultBreadcrumbLink:hover .resultBreadcrumbLeaf,
+.resultBreadcrumbLink:hover .resultBreadcrumbPart,
+.resultBreadcrumbLink:focus-visible .resultBreadcrumbLeaf,
+.resultBreadcrumbLink:focus-visible .resultBreadcrumbPart {
+  text-decoration: underline;
+}
+
+.resultBreadcrumbLink:focus-visible {
+  outline: 2px solid rgba(14, 116, 144, 0.2);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.resultBreadcrumbPart {
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+.resultTreeLabel {
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+.resultBreadcrumbLeaf {
+  color: #0f172a;
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+.resultBreadcrumbSeparator {
+  margin-right: 0.25rem;
+  color: #94a3b8;
+}
+
+.toolChipRow {
+  justify-content: flex-start;
+}
+
+.toolChip,
+.toolErrorBadge {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.toolChip {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.toolErrorBadge {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.debugSections {
+  display: grid;
+  gap: 1rem;
+}
+
+.debugSection {
+  padding: 1.2rem;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95));
+}
+
+.sectionHeader {
+  margin-bottom: 0.8rem;
+}
+
+.toolCallList {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.toolCard {
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.toolName {
+  margin: 0.3rem 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.debugDetail {
+  margin-top: 0.75rem;
+}
+
+.debugDetail summary {
+  cursor: pointer;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.jsonBlock {
+  margin: 0.7rem 0 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.94));
+  color: #0f172a;
+  font-family: "IBM Plex Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.errorMessage {
+  max-width: 1320px;
+  margin: 0 auto 1rem;
+  padding: 1rem 1.1rem;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+@media (max-width: 1080px) {
+  .workspaceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .debugPanel {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .pageShell {
+    padding: 1rem;
+  }
+
+  .heroCard,
+  .chatPanel,
+  .debugPanel {
+    border-radius: 22px;
+  }
+
+  .composerForm {
+    grid-template-columns: 1fr;
+  }
+
+  .submitButton {
+    width: 100%;
+  }
+}

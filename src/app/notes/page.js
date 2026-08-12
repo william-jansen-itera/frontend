@@ -690,6 +690,10 @@ function NotesPage() {
                 const nextSelectedNode = nodes.length === 1 ? nodes[0].data : null;
                 const nextSelectedNodeId = nextSelectedNode ? String(nextSelectedNode.id) : null;
 
+                if (!nextSelectedNodeId && selectedNodeId && findNodeById(treeData, selectedNodeId)) {
+                  return;
+                }
+
                 setSelectedNodeId(nextSelectedNodeId);
                 setNodeEditorState(buildNodeEditorState(nextSelectedNode ? {
                   name: nextSelectedNode.name,
@@ -725,13 +729,15 @@ function NotesPage() {
               }}
             >
               {({ node, style, dragHandle }) => {
+                const isSelected = String(node.data.id) === String(selectedNodeId) || node.isSelected;
+
                 return (
                   <div
                     style={style}
                     ref={dragHandle}
                     className={[
                       styles.treeRow,
-                      node.isSelected ? styles.treeRowSelected : "",
+                      isSelected ? styles.treeRowSelected : "",
                       node.willReceiveDrop ? styles.treeRowDropTarget : "",
                     ].filter(Boolean).join(" ")}
                   >
