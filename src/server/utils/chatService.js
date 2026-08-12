@@ -88,10 +88,10 @@ function normalizeToolTop(value) {
   return Math.min(parsedValue, 10);
 }
 
-  function formatTopicList(values) {
+function formatTopicList(values) {
   const topics = Array.from(new Set((values ?? []).map((value) => String(value ?? '').trim()).filter(Boolean)));
 
-    return topics;
+  return topics;
 }
 
 function joinTopicList(values) {
@@ -306,6 +306,13 @@ function buildAgentInstructions() {
     'Use the provided tools to find relevant information.',
     'Ask a brief clarification question when multiple tools may fit.',
     'Ground answers in tool results and say when no relevant result was found.',
+    'If no relevant result was found, do not provide uncited background knowledge immediately. First say that no relevant result was found and ask whether the user wants a broader search or a general background answer.',
+    'Answer concisely in one short paragraph unless the user asks for more detail.',
+    'When the user asks a targeted follow-up question or explicitly asks for more detail, answer more fully and focus on the specific aspect they asked about with as much details as possible.',
+    'Tool results include curated evidenceItems with source-labeled text. Prefer notes first. For attachment evidence, prefer fileContent, then ocrText, then imageDescriptionFiltered when grounding your answer.',
+    'ocrText and imageDescriptionFiltered may be noisy or not written as natural language, but they can still contain important facts and domain terminology.',
+    'When ocrText or imageDescriptionFiltered contains relevant facts, specific terms, labels, measurements, or technical language that fit the overall evidence, preserve and use those details in natural language.',
+    'Do not force every ocrText or imageDescriptionFiltered fragment into the answer, and do not add unsupported facts when rewriting noisy text.',
     'Do not invent documents, notes, filenames, or paths that were not returned by the tools.',
   ].join('\n\n');
 }
@@ -330,6 +337,94 @@ function buildToolDefinition(tree) {
   };
 }
 
+function getUsableEvidenceText(value) {
+  const normalizedText = normalizeWhitespace(value);
+
+  return normalizedText || null;
+}
+
+function buildNodeEvidenceItem(nodeDocument) {
+  const notes = getUsableEvidenceText(nodeDocument?.notes);
+
+  if (!notes) {
+    return null;
+  }
+
+  return {
+    kind: 'node',
+    source: 'notes',
+    text: notes,
+  };
+}
+
+function buildAttachmentEvidenceItems(attachmentDocument) {
+  const content = getUsableEvidenceText(attachmentDocument?.content);
+  const ocrText = getUsableEvidenceText(attachmentDocument?.ocrText);
+  const filteredImageDescription = getUsableEvidenceText(attachmentDocument?.imageDescriptionFiltered);
+  const baseAttachment = {
+    kind: 'attachment',
+    fileName: attachmentDocument?.attachmentFileName || 'Attachment',
+    blobName: attachmentDocument?.blobName || null,
+    blobUrl: attachmentDocument?.blobUrl || null,
+  };
+
+  return [
+    content
+      ? {
+        ...baseAttachment,
+        source: 'fileContent',
+        text: content,
+      }
+      : null,
+    ocrText
+      ? {
+        ...baseAttachment,
+        source: 'ocrText',
+        text: ocrText,
+      }
+      : null,
+    filteredImageDescription
+      ? {
+        ...baseAttachment,
+        source: 'imageDescriptionFiltered',
+        text: filteredImageDescription,
+      }
+      : null,
+  ].filter(Boolean);
+}
+
+function buildAgentSearchResult(rawResult) {
+  const results = (rawResult?.results ?? []).map((entry) => {
+    const nodeEvidenceItem = buildNodeEvidenceItem(entry?.nodeDocument);
+    const attachmentEvidenceItems = (entry?.attachmentDocuments ?? [])
+      .flatMap((attachmentDocument) => buildAttachmentEvidenceItems(attachmentDocument));
+    const evidenceItems = [nodeEvidenceItem, ...attachmentEvidenceItems].filter(Boolean);
+
+    if (evidenceItems.length === 0) {
+      return null;
+    }
+
+    return {
+      treeId: entry.treeId,
+      nodeId: entry.nodeId,
+      title: entry.title,
+      breadcrumb: entry.breadcrumb,
+      nodeIdPath: entry.nodeIdPath,
+      treeDisplayName: entry.treeDisplayName,
+      matchSummary: entry.nodeHighlight
+        || entry.attachmentSummaries?.find((attachment) => normalizeWhitespace(attachment?.summary))?.summary
+        || null,
+      evidenceItems,
+      attachmentFileNames: attachmentEvidenceItems.map((item) => item.fileName),
+    };
+  }).filter(Boolean);
+
+  return {
+    count: results.length,
+    results,
+  };
+}
+
 function buildCitationEntries(result, toolName) {
   return (result?.results ?? []).map((entry) => ({
     toolName,
@@ -339,7 +434,7 @@ function buildCitationEntries(result, toolName) {
     breadcrumb: entry.breadcrumb,
     nodeIdPath: entry.nodeIdPath,
     treeDisplayName: entry.treeDisplayName,
-    attachmentFileNames: (entry.attachmentSummaries ?? []).map((attachment) => attachment.fileName),
+    attachmentFileNames: entry.attachmentFileNames ?? [],
   }));
 }
 
@@ -415,12 +510,14 @@ async function buildTreeSearchContext() {
         };
       }
 
-      return searchTreeContent({
+      const rawResult = await searchTreeContent({
         searchText: normalizedQuery,
         treeId: String(tree.id),
         top: normalizeToolTop(top),
         allowedTreeIds: [String(tree.id)],
       });
+
+      return buildAgentSearchResult(rawResult);
     });
 
     return buildToolDefinition(tree);
