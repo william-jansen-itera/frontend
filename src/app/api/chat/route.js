@@ -32,7 +32,33 @@ function normalizeHistory(history) {
     .filter((entry) => entry.content);
 }
 
+function parseBooleanSetting(value, fallbackValue) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim().toLowerCase();
+
+    if (['true', '1', 'yes', 'on'].includes(normalizedValue)) {
+      return true;
+    }
+
+    if (['false', '0', 'no', 'off'].includes(normalizedValue)) {
+      return false;
+    }
+  }
+
+  return fallbackValue;
+}
+
+function getDefaultIncludeDebug() {
+  return parseBooleanSetting(process.env.AZURE_AI_CHAT_INCLUDE_DEBUG, true);
+}
+
 export async function POST(request) {
+  let includeDebug = getDefaultIncludeDebug();
+
   try {
     const payload = await request.json();
     const message = String(payload?.message ?? '').trim();
@@ -61,14 +87,19 @@ export async function POST(request) {
       }),
     );
 
-    return NextResponse.json(result);
+    return NextResponse.json(includeDebug ? result : { ...result, debug: undefined });
   } catch (error) {
     await logException(error);
 
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : 'Hosted agent request failed',
-      },
+      includeDebug
+        ? {
+          error: error instanceof Error ? error.message : 'Hosted agent request failed',
+          debug: error?.debug ?? null,
+        }
+        : {
+          error: error instanceof Error ? error.message : 'Hosted agent request failed',
+        },
       { status: 500 },
     );
   }

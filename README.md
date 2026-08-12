@@ -1,5 +1,24 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
+## Configuration
+
+The app reads its server-side settings from environment variables, typically through `.env.local` in local development and Azure Static Web App application settings in deployment.
+
+Required Foundry settings:
+
+- `AZURE_AI_PROJECT_ENDPOINT`
+- `AZURE_AI_MODEL_DEPLOYMENT_NAME`
+
+Optional chat settings:
+
+- `AZURE_AI_AGENT_NAME` defaults to `tree-search-agent`
+- `AZURE_AI_AGENT_SYNC_TOKEN` enables manual `/api/chat/sync` protection
+- `AZURE_AI_CHAT_INCLUDE_DEBUG` controls whether `/api/chat` includes the `debug` object
+
+`AZURE_AI_CHAT_INCLUDE_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `true`.
+
+For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.
+
 ## Getting Started
 
 First, run the development server:

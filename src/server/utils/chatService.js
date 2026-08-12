@@ -474,6 +474,70 @@ function extractAnswerText(response) {
   return contentText;
 }
 
+function serializeDebugValue(value) {
+  if (value === undefined) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return {
+      serializationError: 'Value could not be serialized for debug output.',
+      valueType: typeof value,
+      stringValue: String(value),
+    };
+  }
+}
+
+function buildResponseDebugSnapshot(response) {
+  return serializeDebugValue({
+    id: response?.id ?? null,
+    status: response?.status ?? null,
+    output_text: typeof response?.output_text === 'string' ? response.output_text : null,
+    usage: response?.usage ?? null,
+    error: response?.error ?? null,
+    incomplete_details: response?.incomplete_details ?? null,
+  });
+}
+
+function buildToolHandlerResult({ toolOutput, searchResult = null }) {
+  return {
+    toolOutput,
+    debug: {
+      searchResult,
+      toolOutput,
+    },
+  };
+}
+
+function normalizeToolHandlerResult(result) {
+  if (result && typeof result === 'object' && 'toolOutput' in result && 'debug' in result) {
+    return result;
+  }
+
+  return {
+    toolOutput: result,
+    debug: {
+      searchResult: null,
+      toolOutput: result,
+    },
+  };
+}
+
+function attachDebugToError(error, debug) {
+  const normalizedDebug = serializeDebugValue(debug);
+
+  if (error instanceof Error) {
+    error.debug = normalizedDebug;
+    return error;
+  }
+
+  const wrappedError = new Error(String(error ?? 'Hosted agent request failed'));
+  wrappedError.debug = normalizedDebug;
+  return wrappedError;
+}
+
 function isNotFoundError(error) {
   const statusCode = error?.statusCode || error?.code;
   return statusCode === 404 || String(error?.message || '').includes('404');
@@ -504,10 +568,16 @@ async function buildTreeSearchContext() {
       const normalizedQuery = String(query ?? '').trim();
 
       if (!normalizedQuery) {
-        return {
-          count: 0,
-          results: [],
-        };
+        return buildToolHandlerResult({
+          toolOutput: {
+            count: 0,
+            results: [],
+          },
+          searchResult: {
+            count: 0,
+            results: [],
+          },
+        });
       }
 
       const rawResult = await searchTreeContent({
@@ -517,7 +587,10 @@ async function buildTreeSearchContext() {
         allowedTreeIds: [String(tree.id)],
       });
 
-      return buildAgentSearchResult(rawResult);
+      return buildToolHandlerResult({
+        toolOutput: buildAgentSearchResult(rawResult),
+        searchResult: rawResult,
+      });
     });
 
     return buildToolDefinition(tree);
@@ -632,7 +705,7 @@ async function createAgentResponse(openAIClient, agentName, payload) {
   });
 }
 
-async function runToolLoop({ response, openAIClient, agentName, handlerMap }) {
+async function runToolLoop({ response, openAIClient, agentName, handlerMap, debugRounds }) {
   const toolInvocations = [];
   let currentResponse = response;
 
@@ -649,44 +722,67 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap }) {
     }
 
     const functionOutputs = [];
+    const roundDebug = [];
 
     for (const functionCall of functionCalls) {
       const toolName = functionCall.name;
       const handler = handlerMap.get(toolName);
+      let parsedArguments = null;
       let output;
+      let toolDebug = {
+        searchResult: null,
+        toolOutput: null,
+      };
+      let executionError = null;
 
       try {
-        const parsedArguments = JSON.parse(functionCall.arguments || '{}');
+        parsedArguments = JSON.parse(functionCall.arguments || '{}');
 
         if (!handler) {
           output = {
             error: `No handler is registered for tool ${toolName}.`,
           };
         } else {
-          output = await handler(parsedArguments);
+          const handlerResult = normalizeToolHandlerResult(await handler(parsedArguments));
+          output = handlerResult.toolOutput;
+          toolDebug = handlerResult.debug;
         }
       } catch (error) {
+        executionError = error instanceof Error ? error.message : 'Tool execution failed';
         output = {
-          error: error instanceof Error ? error.message : 'Tool execution failed',
+          error: executionError,
         };
       }
+
+      const functionCallOutput = {
+        type: 'function_call_output',
+        call_id: functionCall.call_id,
+        output: JSON.stringify(output),
+      };
 
       toolInvocations.push({
         toolName,
         arguments: functionCall.arguments || '{}',
         output,
       });
-      functionOutputs.push({
-        type: 'function_call_output',
-        call_id: functionCall.call_id,
-        output: JSON.stringify(output),
+      roundDebug.push({
+        round: round + 1,
+        callId: functionCall.call_id ?? null,
+        toolName,
+        parsedArguments: serializeDebugValue(parsedArguments),
+        searchResult: serializeDebugValue(toolDebug.searchResult),
+        toolOutput: serializeDebugValue(output),
+        agentToolInput: serializeDebugValue(functionCallOutput),
+        error: executionError,
       });
+      functionOutputs.push(functionCallOutput);
     }
 
     currentResponse = await createAgentResponse(openAIClient, agentName, {
       input: functionOutputs,
       previous_response_id: currentResponse.id,
     });
+    debugRounds.push(...roundDebug);
   }
 
   throw new Error('The hosted agent exceeded the maximum number of tool rounds');
@@ -703,46 +799,83 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
   const openAIClient = project.getOpenAIClient();
   const agent = await getHostedAgent();
   const { handlerMap } = await buildTreeSearchContext();
+  const normalizedHistory = normalizeHistory(history);
   const initialInput = [
-    ...normalizeHistory(history),
+    ...normalizedHistory,
     {
       type: 'message',
       role: 'user',
       content: normalizedMessage,
     },
   ];
-  const initialResponse = await createAgentResponse(openAIClient, agent.name, {
-    input: initialInput,
-  });
-  const { response, toolInvocations } = await runToolLoop({
-    response: initialResponse,
-    openAIClient,
-    agentName: agent.name,
-    handlerMap,
-  });
-  const citations = dedupeCitations(
-    toolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
-  );
-
-  return {
-    answer: extractAnswerText(response),
-    agent: {
-      id: agent.id,
-      name: agent.name,
-      version: agent.version ?? null,
+  const debug = {
+    userQuery: {
+      message: normalizedMessage,
+      history: serializeDebugValue(normalizedHistory),
     },
-    toolsUsed: Array.from(new Set(toolInvocations.map((invocation) => invocation.toolName))),
-    toolInvocations: toolInvocations.map((invocation) => ({
-      toolName: invocation.toolName,
-      arguments: invocation.arguments,
-      resultCount: invocation.output?.count ?? 0,
-    })),
-    citations,
-    principal: principal
-      ? {
-        userId: principal.userId ?? null,
-        userDetails: principal.userDetails ?? null,
-      }
-      : null,
+    toolCalls: [],
+    curatedAgentInput: {
+      initialMessages: serializeDebugValue(initialInput),
+      toolMessages: [],
+    },
+    agentOutput: null,
   };
+
+  try {
+    const initialResponse = await createAgentResponse(openAIClient, agent.name, {
+      input: initialInput,
+    });
+
+    const { response, toolInvocations } = await runToolLoop({
+      response: initialResponse,
+      openAIClient,
+      agentName: agent.name,
+      handlerMap,
+      debugRounds: debug.toolCalls,
+    });
+    const citations = dedupeCitations(
+      toolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
+    );
+    const answer = extractAnswerText(response);
+
+    debug.curatedAgentInput.toolMessages = serializeDebugValue(
+      debug.toolCalls.map((toolCall) => toolCall.agentToolInput).filter(Boolean),
+    );
+    debug.agentOutput = {
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        version: agent.version ?? null,
+      },
+      response: buildResponseDebugSnapshot(response),
+      answer,
+      citations: serializeDebugValue(citations),
+      error: response?.error ?? null,
+    };
+
+    return {
+      answer,
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        version: agent.version ?? null,
+      },
+      toolsUsed: Array.from(new Set(toolInvocations.map((invocation) => invocation.toolName))),
+      toolInvocations: toolInvocations.map((invocation) => ({
+        toolName: invocation.toolName,
+        arguments: invocation.arguments,
+        resultCount: invocation.output?.count ?? 0,
+      })),
+      citations,
+      principal: principal
+        ? {
+          userId: principal.userId ?? null,
+          userDetails: principal.userDetails ?? null,
+        }
+        : null,
+      debug,
+    };
+  } catch (error) {
+    throw attachDebugToError(error, debug);
+  }
 }
