@@ -1,0 +1,127 @@
+.pageShell {
+  padding: var(--page-shell-padding);
+}
+
+.heroCard,
+.ctaCard {
+  max-width: var(--page-content-width);
+  margin: 0 auto 1.5rem;
+  padding: 2rem;
+  border: var(--surface-border);
+  border-radius: var(--surface-radius-hero);
+  background: var(--surface-card-background);
+  box-shadow: var(--surface-card-shadow-hero);
+  backdrop-filter: blur(14px);
+}
+
+.heroCopy {
+  display: grid;
+  gap: var(--hero-copy-gap);
+}
+
+.eyebrow,
+.cardEyebrow {
+  margin: 0;
+  color: var(--ui-eyebrow-color);
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
+}
+
+.title,
+.cardTitle {
+  margin: 0;
+  color: var(--ui-title-color);
+  font-weight: 800;
+}
+
+.title {
+  font-size: var(--ui-title-size);
+  line-height: var(--ui-title-line-height);
+  max-width: 980px;
+}
+
+.description,
+.cardText {
+  margin: 0;
+  color: var(--ui-body-color);
+  font-size: var(--ui-body-size);
+  line-height: var(--ui-body-line-height);
+}
+
+.contentGrid {
+  max-width: var(--page-content-width);
+  margin: 0 auto 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.infoCard {
+  padding: 1.2rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--surface-radius-card);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 252, 0.95));
+  box-shadow: var(--surface-card-shadow-panel);
+  display: grid;
+  gap: 0.8rem;
+}
+
+.cardTitle {
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+.ctaCard {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ctaLinks {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ctaLink,
+.ctaLinkSecondary {
+  padding: 0.8rem 1rem;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.ctaLink {
+  background: linear-gradient(135deg, #0f766e, #0369a1);
+  color: #ffffff;
+}
+
+.ctaLinkSecondary {
+  background: rgba(219, 234, 254, 0.9);
+  color: #0f172a;
+}
+
+.ctaLink:hover,
+.ctaLink:focus-visible,
+.ctaLinkSecondary:hover,
+.ctaLinkSecondary:focus-visible {
+  filter: brightness(1.04);
+  outline: none;
+}
+
+@media (max-width: 980px) {
+  .contentGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .pageShell {
+    padding: 1rem;
+  }
+}

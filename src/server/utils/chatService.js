@@ -1,6 +1,6 @@
 import { AIProjectClient } from '@azure/ai-projects';
 import { DefaultAzureCredential } from '@azure/identity';
-import { searchTreeContent } from '@/server/utils/azureSearch';
+import { DEFAULT_TOOL_TOP, searchTreeContent } from '@/server/utils/azureSearch';
 import { getAllowedTreeIds, getTreeRoutingProfiles } from '@/server/utils/treeCatalog';
 
 const DEFAULT_AGENT_NAME = 'tree-search-agent';
@@ -82,10 +82,10 @@ function normalizeToolTop(value) {
   const parsedValue = Number.parseInt(value, 10);
 
   if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-    return undefined;
+    return DEFAULT_TOOL_TOP;
   }
 
-  return Math.min(parsedValue, 10);
+  return Math.min(parsedValue, DEFAULT_TOOL_TOP);
 }
 
 function formatTopicList(values) {
@@ -585,6 +585,7 @@ async function buildTreeSearchContext() {
         treeId: String(tree.id),
         top: normalizeToolTop(top),
         allowedTreeIds: [String(tree.id)],
+        defaultTop: DEFAULT_TOOL_TOP,
       });
 
       return buildToolHandlerResult({

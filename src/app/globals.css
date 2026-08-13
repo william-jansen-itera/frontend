@@ -3,6 +3,31 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --page-shell-padding: 2rem;
+  --page-content-width: 1320px;
+  --surface-border: 1px solid rgba(15, 23, 42, 0.08);
+  --surface-card-background: rgba(255, 255, 255, 0.9);
+  --surface-card-background-soft: rgba(255, 255, 255, 0.88);
+  --surface-card-shadow-hero: 0 24px 60px rgba(15, 23, 42, 0.08);
+  --surface-card-shadow-panel: 0 18px 48px rgba(15, 23, 42, 0.06);
+  --surface-radius-hero: 28px;
+  --surface-radius-panel: 24px;
+  --surface-radius-card: 20px;
+  --surface-radius-empty: 22px;
+  --hero-gap: 1.5rem;
+  --hero-copy-gap: 0.9rem;
+  --ui-eyebrow-color: #0f766e;
+  --ui-eyebrow-size: 0.8rem;
+  --ui-eyebrow-weight: 800;
+  --ui-eyebrow-spacing: 0.12em;
+  --ui-title-color: #0f172a;
+  --ui-title-size: clamp(2rem, 4vw, 3.7rem);
+  --ui-title-line-height: 1.02;
+  --ui-title-weight: 800;
+  --ui-body-color: #475569;
+  --ui-body-size: 1rem;
+  --ui-body-line-height: 1.7;
+  --ui-control-radius: 16px;
 }
 
 @theme inline {
@@ -23,4 +48,188 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.appPageSurface {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.appPageSurfaceHome {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 24%),
+    linear-gradient(180deg, #f6fbff 0%, #fbfdff 44%, #eef4f8 100%);
+}
+
+.appPageSurfaceAbout {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 24%),
+    linear-gradient(180deg, #f6fbff 0%, #fbfdff 44%, #eef4f8 100%);
+}
+
+.appPageSurfaceChat {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at top right, rgba(16, 185, 129, 0.15), transparent 24%),
+    linear-gradient(180deg, #edf8f5 0%, #f7fbfd 46%, #eef4f8 100%);
+}
+
+.appPageSurfaceSearch {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 24%),
+    linear-gradient(180deg, #f4f8ff 0%, #f9fbff 44%, #eef4f8 100%);
+}
+
+.appPageSurfaceNotes {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.76), transparent 32%),
+    radial-gradient(circle at top right, rgba(100, 116, 139, 0.08), transparent 24%),
+    linear-gradient(180deg, #f7f8fa 0%, #fafbfc 44%, #eef1f4 100%);
+}
+
+.appChrome {
+  padding: 1rem var(--page-shell-padding) 0;
+}
+
+.appNav {
+  max-width: var(--page-content-width);
+  margin: 0 auto 1.5rem;
+  padding: 1rem 1.25rem;
+  border: var(--surface-border);
+  border-radius: var(--surface-radius-panel);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--surface-card-shadow-panel);
+  backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.appTopLevelPanel,
+.appPanelShell {
+  min-width: 0;
+  border: var(--surface-border);
+  border-radius: var(--surface-radius-hero);
+  background: var(--surface-card-background);
+  box-shadow: var(--surface-card-shadow-hero);
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+}
+
+.appPanelTopBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.35rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+  flex-wrap: wrap;
+}
+
+.appNavBrandGroup {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.appBrandLink {
+  color: var(--ui-title-color);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.appNavLinks {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.appNavLink {
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  color: #475569;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.appNavLink:hover,
+.appNavLink:focus-visible {
+  background: rgba(219, 234, 254, 0.72);
+  color: #0f172a;
+  outline: none;
+}
+
+.appNavLinkActive {
+  background: linear-gradient(135deg, rgba(204, 251, 241, 0.92), rgba(219, 234, 254, 0.92));
+  color: #0f172a;
+  box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.18);
+}
+
+.appAuthGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.appAuthText {
+  color: var(--ui-body-color);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.appAuthButton {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.appAuthButtonPrimary {
+  background: linear-gradient(135deg, #0f766e, #0369a1);
+}
+
+.appAuthButtonSecondary {
+  background: linear-gradient(135deg, #334155, #475569);
+}
+
+@media (max-width: 900px) {
+  .appNav {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .appAuthGroup {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .appChrome {
+    padding: 1rem 1rem 0;
+  }
 }

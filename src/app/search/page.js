@@ -281,7 +281,13 @@ function SearchPageContent() {
 
   return (
     <main className={styles.pageShell}>
-      <section className={styles.heroCard}>
+      <section className={`appTopLevelPanel ${styles.heroCard}`}>
+        <div className={styles.heroCopy}>
+          <p className={styles.description}>
+            Search notes and attachments across your accessible trees, then jump directly to the matching node path.
+          </p>
+        </div>
+
         <form onSubmit={handleSubmit} className={styles.searchForm}>
           <label className={styles.searchField}>
             <span className={styles.fieldLabel}>Search</span>
@@ -322,12 +328,12 @@ function SearchPageContent() {
       {searchError ? <p className={styles.errorMessage}>{searchError}</p> : null}
 
       {!queryParam.trim() ? (
-        <section className={styles.emptyState}>
+        <section className={`appTopLevelPanel ${styles.topLevelEmptyState}`}>
           <h2>Start with a phrase</h2>
           <p>Search runs against both SQL-backed node content and blob attachment content in the shared index.</p>
         </section>
       ) : (
-        <section className={styles.resultsSection}>
+        <section className={`appTopLevelPanel ${styles.resultsSection}`}>
           <div className={styles.resultsHeader}>
             <div>
               <p className={styles.resultsEyebrow}>Node Results</p>

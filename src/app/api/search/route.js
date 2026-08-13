@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { searchTreeContent } from '@/server/utils/azureSearch';
+import { DEFAULT_SEARCH_PAGE_TOP, searchTreeContent } from '@/server/utils/azureSearch';
 import { getAllowedTreeIds } from '@/server/utils/treeCatalog';
 
 export async function GET(request) {
@@ -30,6 +30,7 @@ export async function GET(request) {
       treeId,
       top,
       allowedTreeIds,
+      defaultTop: DEFAULT_SEARCH_PAGE_TOP,
     });
 
     return NextResponse.json(result);

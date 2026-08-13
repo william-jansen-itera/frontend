@@ -1,46 +1,43 @@
 .pageShell {
-  min-height: calc(100vh - 6rem);
-  padding: 2rem;
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.75), transparent 35%),
-    linear-gradient(180deg, #eef6ff 0%, #f8fbff 46%, #eef3f8 100%);
+  padding: var(--page-shell-padding);
 }
 
 .heroCard {
-  max-width: 1120px;
+  max-width: 1320px;
   margin: 0 auto 1.5rem;
   padding: 2rem;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(14px);
+  display: grid;
+  gap: var(--hero-gap);
+}
+
+.heroCopy {
+  display: grid;
+  gap: var(--hero-copy-gap);
 }
 
 .eyebrow {
-  margin: 0 0 0.75rem;
-  color: #0f766e;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  margin: 0;
+  color: var(--ui-eyebrow-color);
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
 }
 
 .title {
   margin: 0;
-  color: #0f172a;
-  font-size: clamp(2rem, 4vw, 3.5rem);
-  line-height: 1.05;
+  color: var(--ui-title-color);
+  font-size: var(--ui-title-size);
+  line-height: var(--ui-title-line-height);
+  font-weight: var(--ui-title-weight);
 }
 
 .description {
-  max-width: 760px;
-  margin: 1rem 0 0;
-   color: #0f766e;
-   font-size: 0.82rem;
-  line-height: 1.6;
-   letter-spacing: 0.12em;
-   text-transform: uppercase;
+  max-width: 900px;
+  margin: 0;
+  color: var(--ui-body-color);
+  font-size: var(--ui-body-size);
+  line-height: var(--ui-body-line-height);
 }
 
 .searchForm {
@@ -57,9 +54,9 @@
 }
 
 .fieldLabel {
-  color: #0f766e;
+  color: var(--ui-eyebrow-color);
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: var(--ui-eyebrow-weight);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -71,7 +68,7 @@
   box-sizing: border-box;
   padding: 0.95rem 1rem;
   border: 1px solid rgba(148, 163, 184, 0.6);
-  border-radius: 16px;
+  border-radius: var(--ui-control-radius);
   background: rgba(255, 255, 255, 0.98);
   color: #0f172a;
   font-size: 1rem;
@@ -88,7 +85,7 @@
   height: fit-content;
   padding: 0.95rem 1.3rem;
   border: 0;
-  border-radius: 16px;
+  border-radius: var(--ui-control-radius);
   background: linear-gradient(135deg, #0f766e, #0369a1);
   color: #ffffff;
   font-size: 0.98rem;
@@ -101,31 +98,38 @@
 }
 
 .errorMessage {
-  max-width: 1120px;
+  max-width: 1320px;
   margin: 0 auto 1rem;
   padding: 1rem 1.1rem;
-  border-radius: 18px;
+  border-radius: calc(var(--ui-control-radius) + 2px);
   background: #fee2e2;
   color: #991b1b;
 }
 
 .resultsSection,
-.emptyState {
-  max-width: 1120px;
+.topLevelEmptyState {
+  max-width: 1320px;
   margin: 0 auto;
   padding: 1.5rem;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
 }
 
+.emptyState {
+  padding: 1.5rem;
+  border: var(--surface-border);
+  border-radius: var(--surface-radius-panel);
+  background: var(--surface-card-background);
+  box-shadow: var(--surface-card-shadow-panel);
+}
+
+.topLevelEmptyState h2,
 .emptyState h2,
 .resultsTitle {
   margin: 0;
   color: #0f172a;
+  font-weight: 800;
 }
 
+.topLevelEmptyState p,
 .emptyState p {
   margin: 0.65rem 0 0;
   color: #475569;
@@ -142,11 +146,11 @@
 
 .resultsEyebrow {
   margin: 0 0 0.35rem;
-  color: #0f766e;
-  font-size: 0.82rem;
-  font-weight: 700;
+  color: var(--ui-eyebrow-color);
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ui-eyebrow-spacing);
 }
 
 .scopeBadge {
@@ -167,7 +171,7 @@
 .resultCard {
   padding: 1.2rem;
   border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 20px;
+  border-radius: var(--surface-radius-card);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
 }
 

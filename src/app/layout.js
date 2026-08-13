@@ -2,6 +2,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAuth } from "./useAuth";
 
 const geistSans = Geist({
@@ -14,30 +15,76 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const navLinks = [
+  { href: "/about", label: "About" },
+  { href: "/notes", label: "Notes" },
+  { href: "/chat", label: "Ask" },
+  { href: "/search", label: "Search" },
+];
+
+function getPageSurfaceClassName(pathname) {
+  if (pathname === "/notes") {
+    return "appPageSurface appPageSurfaceNotes";
+  }
+
+  if (pathname === "/chat") {
+    return "appPageSurface appPageSurfaceChat";
+  }
+
+  if (pathname === "/search") {
+    return "appPageSurface appPageSurfaceSearch";
+  }
+
+  if (pathname === "/about") {
+    return "appPageSurface appPageSurfaceAbout";
+  }
+
+  return "appPageSurface appPageSurfaceHome";
+}
 
 export default function RootLayout({ children }) {
   const { user, signIn, signOut } = useAuth();
+  const pathname = usePathname();
+
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <nav style={{ marginBottom: "2rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-          <Link href="/" style={{ marginRight: "1rem" }}>Home</Link>
-          <Link href="/about" style={{ marginRight: "1rem" }}>About</Link>
-          <Link href="/notes">Notes</Link>
-          <Link href="/chat">Ask</Link>
-          <Link href="/search">Search</Link>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "1rem" }}>
-            {!user ? (
-              <button onClick={signIn} style={{ padding: "0.5rem 1rem", borderRadius: "4px", background: "#2563eb", color: "white", border: "none" }}>Sign In</button>
-            ) : (
-              <>
-                <span>Welcome, {user.userDetails}!</span>
-                <button onClick={signOut} style={{ padding: "0.5rem 1rem", borderRadius: "4px", background: "#374151", color: "white", border: "none" }}>Sign Out</button>
-              </>
-            )}
-          </div>
-        </nav>
-        {children}
+        <div className={getPageSurfaceClassName(pathname)}>
+          <header className="appChrome">
+            <nav className="appNav">
+              <div className="appNavBrandGroup">
+                <Link href="/" className="appBrandLink">Knowledge App</Link>
+                <div className="appNavLinks">
+                  {navLinks.map((link) => {
+                    const isActive = pathname === link.href;
+
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
+                      >
+                        {link.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="appAuthGroup">
+              {!user ? (
+                  <button onClick={signIn} className="appAuthButton appAuthButtonPrimary">Sign In</button>
+              ) : (
+                <>
+                    <span className="appAuthText">Welcome, {user.userDetails}!</span>
+                    <button onClick={signOut} className="appAuthButton appAuthButtonSecondary">Sign Out</button>
+                </>
+              )}
+              </div>
+            </nav>
+          </header>
+          {children}
+        </div>
       </body>
     </html>
   );

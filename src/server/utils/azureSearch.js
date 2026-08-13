@@ -3,7 +3,8 @@ const searchIndexName = process.env.AZURE_SEARCH_INDEX_NAME;
 const searchQueryKey = process.env.AZURE_SEARCH_QUERY_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
 const applicationIdentifier = process.env.APPLICATION_IDENTIFIER;
 const SEARCH_API_VERSION = '2024-07-01';
-const DEFAULT_TOP = 10;
+const DEFAULT_SEARCH_PAGE_TOP = 25;
+const DEFAULT_TOOL_TOP = 5;
 const MAX_TOP = 25;
 const NODE_SCORING_PROFILE = 'node-content-priority';
 const NODE_SEARCH_FIELDS = ['content', 'title', 'breadcrumb'];
@@ -96,11 +97,11 @@ function buildFilter({ treeId, allowedTreeIds }) {
   return clauses.join(' and ');
 }
 
-function normalizeTop(value) {
+function normalizeTop(value, fallbackTop) {
   const parsedValue = Number.parseInt(value, 10);
 
   if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-    return DEFAULT_TOP;
+    return fallbackTop;
   }
 
   return Math.min(parsedValue, MAX_TOP);
@@ -472,7 +473,7 @@ function finalizeGroupedResults(groups) {
   });
 }
 
-export async function searchTreeContent({ searchText, treeId, top, allowedTreeIds }) {
+export async function searchTreeContent({ searchText, treeId, top, allowedTreeIds, defaultTop = DEFAULT_SEARCH_PAGE_TOP }) {
   const trimmedSearchText = String(searchText ?? '').trim();
 
   if (!trimmedSearchText) {
@@ -483,7 +484,7 @@ export async function searchTreeContent({ searchText, treeId, top, allowedTreeId
   }
 
   const { endpoint, indexName, queryKey } = getRequiredSearchConfig();
-  const normalizedTopValue = normalizeTop(top);
+  const normalizedTopValue = normalizeTop(top, defaultTop);
   const baseFilter = buildFilter({ treeId, allowedTreeIds });
   const attachmentFileNameRegexQuery = buildAttachmentFileNameRegexQuery(trimmedSearchText);
   const [nodeResults, attachmentResults, attachmentFileNameResults] = await Promise.all([
@@ -552,3 +553,9 @@ export async function searchTreeContent({ searchText, treeId, top, allowedTreeId
     results: finalizedResults,
   };
 }
+
+export {
+  DEFAULT_SEARCH_PAGE_TOP,
+  DEFAULT_TOOL_TOP,
+  MAX_TOP,
+};

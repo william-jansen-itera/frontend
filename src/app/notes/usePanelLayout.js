@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 export function usePanelLayout() {
   const [availablePageHeight, setAvailablePageHeight] = useState(0);
   const [treeContentHeight, setTreeContentHeight] = useState(0);
+  const [isStackedLayout, setIsStackedLayout] = useState(false);
   const pageContainerRef = useRef(null);
   const treeContentRef = useRef(null);
 
@@ -14,6 +15,9 @@ export function usePanelLayout() {
   useEffect(() => {
     const updateAvailablePageHeight = () => {
       const pageContainer = pageContainerRef.current;
+
+      setIsStackedLayout(window.innerWidth <= 960);
+
       if (!pageContainer) {
         return;
       }
@@ -57,6 +61,7 @@ export function usePanelLayout() {
   return {
     pageContainerRef,
     treeContentRef,
+    isStackedLayout,
     panelHeight,
     treeHeight,
   };

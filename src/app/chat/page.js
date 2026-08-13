@@ -316,8 +316,6 @@ export default function ChatPage() {
     <main className={styles.pageShell}>
       <section className={styles.heroCard}>
         <div className={styles.heroCopy}>
-          <p className={styles.eyebrow}>Ask</p>
-          <h1 className={styles.title}>Chat with the tree agent</h1>
           <p className={styles.description}>
             Ask a question in natural language and inspect exactly how the agent searched, curated evidence, and produced the answer.
           </p>
@@ -343,8 +341,8 @@ export default function ChatPage() {
       {requestError ? <p className={styles.errorMessage}>{requestError}</p> : null}
 
       <section className={styles.workspaceGrid}>
-        <div className={styles.chatPanel}>
-          <div className={styles.panelHeader}>
+        <div className={`appPanelShell ${styles.chatPanel}`}>
+          <div className={`appPanelTopBar ${styles.panelHeader}`}>
             <div>
               <p className={styles.panelEyebrow}>Conversation</p>
               <h2 className={styles.panelTitle}>Ask history</h2>
@@ -408,8 +406,8 @@ export default function ChatPage() {
           </div>
         </div>
 
-        <aside className={styles.debugPanel}>
-          <div className={styles.panelHeader}>
+        <aside className={`appPanelShell ${styles.debugPanel}`}>
+          <div className={`appPanelTopBar ${styles.panelHeader}`}>
             <div>
               <p className={styles.panelEyebrow}>Debug</p>
               <h2 className={styles.panelTitle}>Turn inspector</h2>

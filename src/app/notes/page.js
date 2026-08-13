@@ -23,6 +23,10 @@ import {
 
 const ATTACHMENT_ACCEPT = ".csv,.doc,.docx,.gif,.html,.jpeg,.jpg,.json,.md,.pdf,.png,.ppt,.pptx,.txt,.webp,.xls,.xlsx";
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
+const TREE_ROW_HEIGHT = 30;
+const TREE_PADDING_TOP = 18;
+const TREE_PADDING_BOTTOM = 10;
+const TREE_HEIGHT_BUFFER = TREE_ROW_HEIGHT;
 
 function formatAttachmentSize(byteSize) {
   const size = Number(byteSize);
@@ -58,6 +62,16 @@ function getNodeAttachmentContentUrl(attachment) {
   return `/api/attachments/content?blobName=${encodeURIComponent(attachment.blobName)}`;
 }
 
+function countVisibleNodes(nodes, expandedState) {
+  return nodes.reduce((total, node) => {
+    const childCount = Array.isArray(node.children) && expandedState?.[String(node.id)]
+      ? countVisibleNodes(node.children, expandedState)
+      : 0;
+
+    return total + 1 + childCount;
+  }, 0);
+}
+
 export default function NotesPageWrapper() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -83,7 +97,7 @@ function NotesPage() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState(null);
-  const { pageContainerRef, treeContentRef, panelHeight, treeHeight } = usePanelLayout();
+  const { pageContainerRef, treeContentRef, isStackedLayout, panelHeight, treeHeight } = usePanelLayout();
   const treeRef = useRef();
   const attachmentInputRef = useRef(null);
   const isApplyingExpandedStateRef = useRef(false);
@@ -596,30 +610,37 @@ function NotesPage() {
     return <div className={styles.errorMessage}>Error: {error}</div>;
   }
 
+  const visibleNodeCount = countVisibleNodes(treeData, expandedState);
+  const stackedTreeHeight = Math.max((visibleNodeCount * TREE_ROW_HEIGHT) + TREE_PADDING_TOP + TREE_PADDING_BOTTOM + TREE_HEIGHT_BUFFER, 160);
+  const resolvedTreeHeight = isStackedLayout ? stackedTreeHeight : treeHeight;
+  const pageContainerStyle = isStackedLayout
+    ? { width: "100%" }
+    : {
+      width: "100%",
+      height: panelHeight || undefined,
+    };
+  const panelGridStyle = isStackedLayout ? undefined : { height: "100%" };
+  const treePanelStyle = isStackedLayout ? undefined : { height: "100%" };
+  const detailsPanelStyle = isStackedLayout ? undefined : { height: "100%" };
+
   return (
     <div
       ref={pageContainerRef}
-      style={{
-        width: "100%",
-        height: panelHeight || undefined,
-      }}
+      style={pageContainerStyle}
       className={styles.pageShell}
     >
       <div
         className={styles.panelGrid}
-        style={{ height: "100%" }}
+        style={panelGridStyle}
       >
         <div
-          className={styles.panelShell}
-          style={{ height: "100%" }}
+          className={`appPanelShell ${styles.panelShell}`}
+          style={treePanelStyle}
         >
           <div className={styles.panelHeader}>
-            <div className={styles.panelTitleWrap}>
-              <h2 className={styles.panelTitle}>Tree Nodes</h2>
-            </div>
-            <div className={styles.panelToolbar}>
+            <div className={`appPanelTopBar ${styles.panelToolbar}`}>
+              <span className={styles.panelHeading}>Tree</span>
               <label className={styles.toolbarLabel}>
-                <span className={styles.labelText}>Tree:</span>
                 <select
                   value={treeIdParam ?? ""}
                   onChange={(event) => {
@@ -677,20 +698,25 @@ function NotesPage() {
               initialOpenState={expandedState}
               openByDefault={false}
               width="100%"
-              height={treeHeight}
+              height={resolvedTreeHeight}
               indent={24}
-              rowHeight={36}
+              rowHeight={TREE_ROW_HEIGHT}
               overscanCount={1}
-              paddingTop={18}
-              paddingBottom={10}
+              paddingTop={TREE_PADDING_TOP}
+              paddingBottom={TREE_PADDING_BOTTOM}
               padding={25}
               onMove={handleMove}
               onToggle={handleToggle}
               onSelect={(nodes) => {
                 const nextSelectedNode = nodes.length === 1 ? nodes[0].data : null;
                 const nextSelectedNodeId = nextSelectedNode ? String(nextSelectedNode.id) : null;
+                const currentSelectedNodeId = selectedNodeId ? String(selectedNodeId) : null;
 
-                if (!nextSelectedNodeId && selectedNodeId && findNodeById(treeData, selectedNodeId)) {
+                if (!nextSelectedNodeId && currentSelectedNodeId && findNodeById(treeData, currentSelectedNodeId)) {
+                  return;
+                }
+
+                if (nextSelectedNodeId && nextSelectedNodeId === currentSelectedNodeId) {
                   return;
                 }
 
@@ -741,6 +767,7 @@ function NotesPage() {
                       node.willReceiveDrop ? styles.treeRowDropTarget : "",
                     ].filter(Boolean).join(" ")}
                   >
+                    <span className={styles.treeRowInset} aria-hidden="true" />
                     {dataNodeHasChildren(node.data) && (
                       <span
                         onClick={() => {
@@ -762,14 +789,12 @@ function NotesPage() {
           </div>
         </div>
         <aside
-          className={styles.panelShell}
-          style={{ height: "100%" }}
+          className={`appPanelShell ${styles.panelShell}`}
+          style={detailsPanelStyle}
         >
           <div className={styles.panelHeader}>
-            <div className={styles.panelTitleWrap}>
-              <h2 className={styles.panelTitle}>Node Details</h2>
-            </div>
-            <div className={`${styles.panelToolbar} ${styles.detailsToolbar}`}>
+            <div className={`appPanelTopBar ${styles.panelToolbar} ${styles.detailsToolbar}`}>
+              <span className={styles.panelHeading}>Node Details</span>
               <button
                 onClick={handleSaveNodeDetails}
                 disabled={!selectedNode || isSavingNodeDetails || !nodeEditorState.name.trim()}
