@@ -1,5 +1,6 @@
 // src/app/api/hello/route.js
 import { NextResponse } from 'next/server';
+import { sql, withSqlConnection } from '@/server/utils/sql';
 
 export async function GET(request) {
   const { logTrace, logException } = await import('../../../server/utils/logging');
@@ -17,5 +18,25 @@ export async function GET(request) {
       userName = 'Invalid principal';
     }
   }
-  return new NextResponse(`Hello from next API, ${userName}!`);
+
+  try {
+    const sqlResult = await withSqlConnection(async () => new sql.Request().query(`
+      SELECT DB_NAME() AS databaseName, SYSUTCDATETIME() AS serverUtcTime;
+    `));
+    const databaseName = sqlResult.recordset[0]?.databaseName || 'configured database';
+
+    return NextResponse.json({
+      level: 'ok',
+      message: `Next API ok. DB ok.`, //${databaseName}
+      userName,
+    });
+  } catch (err) {
+    logException(err);
+
+    return NextResponse.json({
+      level: 'warning',
+      message: 'Next API ok. System is waking up, please check back in a minute.',
+      userName,
+    });
+  }
 }

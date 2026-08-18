@@ -49,6 +49,14 @@
   line-height: var(--ui-body-line-height);
 }
 
+.statusValueWarning {
+  color: #c2410c;
+}
+
+.statusValueError {
+  color: #b91c1c;
+}
+
 .statusRow {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

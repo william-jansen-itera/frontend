@@ -3,24 +3,42 @@ import Link from "next/link";
 import { useEffect, useState } from 'react';
 import styles from './page.module.css';
 
+const DEFAULT_STATUS = {
+  level: 'neutral',
+  message: '',
+};
 
 async function callHelloNextApi(name) {
   try {
     const response = await fetch(`/api/hello?name=${encodeURIComponent(name)}`);
-    const data = await response.text();
-    return data;
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        level: 'error',
+        message: String(data?.message || 'Application status check failed.'),
+      };
+    }
+
+    return {
+      level: String(data?.level || 'neutral'),
+      message: String(data?.message || ''),
+    };
   } catch (err) {
     console.error('API error:', err);
-    return 'Error calling next API';
+    return {
+      level: 'error',
+      message: 'Application status: failed.',
+    };
   }
 }
 
 export default function Home() {
-  const [nextApiResult, setNextApiResult] = useState('');
+  const [applicationStatus, setApplicationStatus] = useState(DEFAULT_STATUS);
 
   useEffect(() => {
     callHelloNextApi('from nextapi').then(result => {
-      setNextApiResult(result);
+      setApplicationStatus(result);
     });
   }, []);
 
@@ -31,18 +49,20 @@ export default function Home() {
           <p className={styles.eyebrow}>Knowledge App</p>
           <h1 className={styles.title}>Work with trees, notes, search, and grounded answers in one place.</h1>
           <p className={styles.description}>
-            Use Notes to curate the tree structure, Search to inspect indexed content, and Ask to see how the agent grounds an answer in the underlying material.
+            Use Notes to curate the tree structure, Search to inspect indexed content, and Agent to see how the agent grounds an answer in the underlying material.
           </p>
         </div>
 
         <div className={styles.statusRow}>
           <div className={styles.statusCard}>
-            <p className={styles.statusLabel}>Next API status</p>
-            <p className={styles.statusValue}>{nextApiResult || 'Checking...'}</p>
+            <p className={styles.statusLabel}>System status</p>
+            <p className={`${styles.statusValue} ${styles[`statusValue${applicationStatus.level.charAt(0).toUpperCase()}${applicationStatus.level.slice(1)}`] || ''}`.trim()}>
+              {applicationStatus.message || 'Checking...'}
+            </p>
           </div>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>Primary workflow</p>
-            <p className={styles.statusValue}>Curate in Notes, validate in Search, answer in Ask.</p>
+            <p className={styles.statusValue}>Curate in Notes, validate in Search, answer in Agent.</p>
           </div>
         </div>
       </section>
@@ -63,10 +83,10 @@ export default function Home() {
         </article>
 
         <article className={styles.routeCard}>
-          <p className={styles.cardEyebrow}>Ask</p>
+          <p className={styles.cardEyebrow}>Agent</p>
           <h2 className={styles.cardTitle}>Trace grounded responses</h2>
           <p className={styles.cardDescription}>Send a question to the agent and inspect tool calls, curated input, and the final model response side by side.</p>
-          <Link href="/chat" className={styles.cardLink}>Open Ask</Link>
+          <Link href="/chat" className={styles.cardLink}>Open Agent</Link>
         </article>
       </section>
     </main>

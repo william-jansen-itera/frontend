@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 const navLinks = [
   { href: "/about", label: "About" },
   { href: "/notes", label: "Notes" },
-  { href: "/chat", label: "Agent" },
   { href: "/search", label: "Search" },
+  { href: "/chat", label: "Agent" },
 ];
 
 function getPageSurfaceClassName(pathname) {

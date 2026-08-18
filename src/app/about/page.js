@@ -46,6 +46,12 @@ export default function About() {
         </article>
 
         <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Extensibility</p>
+          <h2 className={styles.cardTitle}>Add tools with their own domain knowledge</h2>
+          <p className={styles.cardText}>The application is not limited to a fixed built-in prompt. As users introduce more domains of knowledge, the system adds the corresponding tools automatically. That lets the GPT model expand its grounded toolset over time and act less like a standalone generator and more like an orchestrator over explicit knowledge-bearing tools.</p>
+        </article>
+
+        <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Runtime split</p>
           <h2 className={styles.cardTitle}>Different surfaces, different defaults</h2>
           <p className={styles.cardText}>Notes handles maintenance, Search supports evidence inspection, and Ask focuses on grounded synthesis. Those surfaces share the same indexed corpus, but they do not have identical retrieval defaults because human browsing and model-facing tool execution benefit from different result counts and presentation tradeoffs.</p>
