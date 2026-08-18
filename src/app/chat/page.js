@@ -413,7 +413,9 @@ export default function ChatPage() {
               <h2 className={styles.panelTitle}>Turn inspector</h2>
             </div>
           </div>
-          <TurnDebugPanel turn={selectedTurn} />
+          <div className={styles.debugBody}>
+            <TurnDebugPanel turn={selectedTurn} />
+          </div>
         </aside>
       </section>
     </main>

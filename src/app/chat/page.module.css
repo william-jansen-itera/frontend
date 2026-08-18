@@ -158,9 +158,13 @@
 }
 
 .chatFeed,
-.debugSections {
+.debugBody {
   padding: 1.35rem;
   overflow: auto;
+}
+
+.debugBody {
+  min-height: 0;
 }
 
 .chatFeed {

@@ -19,6 +19,32 @@ Optional chat settings:
 
 For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.
 
+## Agent Behavior
+
+### Is tool selection behavior internal to the agent?
+
+Yes, mostly.
+
+The decision to call a tool, call multiple tools, or continue into another tool round is internal to the Foundry-backed agent/model runtime once the app submits a chat turn.
+
+The application controls the boundaries and context for that decision:
+
+- which tools are available for the turn
+- how those tools are described
+- which recent chat history is included
+- how many tool rounds are allowed
+- how tool outputs are formatted and sent back
+
+The agent runtime then decides:
+
+- whether to call a tool at all
+- which tool to call
+- whether to call several tools in one round
+- whether to continue into another round after seeing tool outputs
+- when to stop and return a final answer
+
+In other words, tool-choice behavior is not hardcoded in the application, but it is strongly shaped by the tool definitions, instructions, and history that the application sends to the agent.
+
 ## Getting Started
 
 First, run the development server:
