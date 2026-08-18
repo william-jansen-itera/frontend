@@ -103,7 +103,7 @@ export async function getTreeList() {
       ORDER BY tn.sort_order, tn.id
     ) root_node
     WHERE ai.app_identifier = @application_identifier
-    ORDER BY COALESCE(NULLIF(ti.display_name, ''), root_node.text, CONCAT('Tree ', ti.id));`;
+    ORDER BY ti.updated_at DESC, ti.id DESC;`;
 
   return withSqlConnection(async () => {
     const result = await new sql.Request()
