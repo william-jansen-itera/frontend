@@ -395,7 +395,7 @@ export default function ChatPage() {
                     {turn.toolsUsed.length > 0 ? (
                       <div className={styles.toolChipRow}>
                         {turn.toolsUsed.map((toolName) => (
-                          <span key={`${turn.id}-${toolName}`} className={styles.toolChip}>{toolName}</span>
+                          <span key={`${turn.id}-${toolName}`} className={styles.toolChip}>{`tool: ${toolName}`}</span>
                         ))}
                       </div>
                     ) : null}

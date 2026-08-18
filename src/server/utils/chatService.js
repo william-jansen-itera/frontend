@@ -1,7 +1,13 @@
 import { AIProjectClient } from '@azure/ai-projects';
 import { DefaultAzureCredential } from '@azure/identity';
 import { DEFAULT_TOOL_TOP, searchTreeContent } from '@/server/utils/azureSearch';
-import { getAllowedTreeIds, getTreeRoutingProfiles } from '@/server/utils/treeCatalog';
+import {
+  getAllowedTreeIds,
+  getTreeRoutingProfile,
+  getTreeRoutingProfiles,
+  updateTreeDescriptionPublishedStates,
+  updateTreeDescriptions,
+} from '@/server/utils/treeCatalog';
 
 const DEFAULT_AGENT_NAME = 'tree-search-agent';
 const DEFAULT_HISTORY_LIMIT = 8;
@@ -241,63 +247,107 @@ async function generateAiDescription(tree) {
   };
 }
 
+function applyDescriptionDraftDefaults(tree) {
+  tree.generatedToolDescription = null;
+  tree.descriptionSource = 'pending';
+  tree.includedInToolSet = false;
+  tree.generationFailureReason = null;
+  tree.aiInput = null;
+  tree.aiModelOutput = null;
+  tree.aiGeneratedSummary = null;
+  tree.aiSelectedFocusTopics = [];
+}
+
+function applyGeneratedDescriptionToTree(tree, parsedResponse, aiInput) {
+  tree.aiInput = aiInput;
+  tree.aiModelOutput = parsedResponse.parsed ?? parsedResponse.rawText;
+
+  if (parsedResponse.error) {
+    tree.descriptionSource = 'generation-failed';
+    tree.generationFailureReason = parsedResponse.error;
+    return null;
+  }
+
+  const generatedSummary = sanitizeGeneratedSummary(parsedResponse.parsed?.summary);
+
+  if (!generatedSummary) {
+    tree.descriptionSource = 'generation-failed';
+    tree.generationFailureReason = 'Model response did not include a usable summary.';
+    return null;
+  }
+
+  const generatedFocusTopics = Array.isArray(parsedResponse.parsed?.focusTopics)
+    ? formatTopicList(parsedResponse.parsed.focusTopics)
+    : [];
+  const generatedDescription = buildAiToolDescription(tree, generatedSummary, generatedFocusTopics);
+
+  if (!generatedDescription) {
+    tree.descriptionSource = 'generation-failed';
+    tree.generationFailureReason = 'Model response could not be assembled into a tool description.';
+    return null;
+  }
+
+  tree.generatedToolDescription = generatedDescription;
+  tree.descriptionSource = 'ai';
+  tree.aiGeneratedSummary = generatedSummary;
+  tree.aiSelectedFocusTopics = generatedFocusTopics;
+  tree.includedInToolSet = true;
+
+  return generatedDescription;
+}
+
+export async function generateTreeDescriptionDraft(treeId) {
+  const tree = await getTreeRoutingProfile(treeId);
+  applyDescriptionDraftDefaults(tree);
+
+  try {
+    const { aiInput, parsedResponse } = await generateAiDescription(tree);
+    const generatedDescription = applyGeneratedDescriptionToTree(tree, parsedResponse, aiInput);
+
+    if (!generatedDescription) {
+      throw new Error(tree.generationFailureReason || 'Description could not be generated.');
+    }
+
+    return {
+      tree,
+      generatedDescription,
+    };
+  } catch (error) {
+    tree.descriptionSource = 'generation-failed';
+    tree.generationFailureReason = error instanceof Error ? error.message : 'Model generation failed.';
+    throw error;
+  }
+}
+
 async function applyToolDescriptions(treeList) {
   treeList.forEach((tree) => {
-    tree.generatedToolDescription = null;
-    tree.descriptionSource = 'pending';
-    tree.includedInToolSet = false;
-    tree.generationFailureReason = null;
-    tree.aiInput = null;
-    tree.aiModelOutput = null;
-    tree.aiGeneratedSummary = null;
-    tree.aiSelectedFocusTopics = [];
+    applyDescriptionDraftDefaults(tree);
   });
 
   for (const tree of treeList) {
     try {
       const { aiInput, parsedResponse } = await generateAiDescription(tree);
-      tree.aiInput = aiInput;
-      tree.aiModelOutput = parsedResponse.parsed ?? parsedResponse.rawText;
-
-      if (parsedResponse.error) {
-        tree.descriptionSource = 'generation-failed';
-        tree.generationFailureReason = parsedResponse.error;
-        continue;
-      }
-
-      const generatedSummary = sanitizeGeneratedSummary(parsedResponse.parsed?.summary);
-
-      if (!generatedSummary) {
-        tree.descriptionSource = 'generation-failed';
-        tree.generationFailureReason = 'Model response did not include a usable summary.';
-        continue;
-      }
-
-      const generatedFocusTopics = Array.isArray(parsedResponse.parsed?.focusTopics)
-        ? formatTopicList(parsedResponse.parsed.focusTopics)
-        : [];
-      const generatedDescription = buildAiToolDescription(
-        tree,
-        generatedSummary,
-        generatedFocusTopics,
-      );
-
-      if (!generatedDescription) {
-        tree.descriptionSource = 'generation-failed';
-        tree.generationFailureReason = 'Model response could not be assembled into a tool description.';
-        continue;
-      }
-
-      tree.generatedToolDescription = generatedDescription;
-      tree.descriptionSource = 'ai';
-      tree.aiGeneratedSummary = generatedSummary;
-      tree.aiSelectedFocusTopics = generatedFocusTopics;
-      tree.includedInToolSet = true;
+      applyGeneratedDescriptionToTree(tree, parsedResponse, aiInput);
     } catch (error) {
       tree.descriptionSource = 'generation-failed';
       tree.generationFailureReason = error instanceof Error ? error.message : 'Model generation failed.';
     }
   }
+}
+
+function applyStoredToolDescriptions(treeList) {
+  treeList.forEach((tree) => {
+    applyDescriptionDraftDefaults(tree);
+    const storedDescription = normalizeWhitespace(tree.description);
+
+    if (!storedDescription) {
+      return;
+    }
+
+    tree.generatedToolDescription = storedDescription;
+    tree.descriptionSource = 'stored';
+    tree.includedInToolSet = true;
+  });
 }
 
 function buildAgentInstructions() {
@@ -533,7 +583,7 @@ function attachDebugToError(error, debug) {
     return error;
   }
 
-  const wrappedError = new Error(String(error ?? 'Hosted agent request failed'));
+  const wrappedError = new Error(String(error ?? 'Agent request failed'));
   wrappedError.debug = normalizedDebug;
   return wrappedError;
 }
@@ -605,6 +655,89 @@ async function buildTreeSearchContext() {
   };
 }
 
+function buildIncludedTreesAndTools(availableTrees) {
+  const includedTrees = availableTrees.filter((tree) => tree.includedInToolSet && tree.generatedToolDescription);
+  const tools = includedTrees.map((tree) => buildToolDefinition(tree));
+
+  return {
+    includedTrees,
+    tools,
+  };
+}
+
+function buildHandlerMap(includedTrees) {
+  const handlerMap = new Map();
+
+  includedTrees.forEach((tree) => {
+    const toolName = buildToolName(tree);
+
+    handlerMap.set(toolName, async ({ query, top }) => {
+      const normalizedQuery = String(query ?? '').trim();
+
+      if (!normalizedQuery) {
+        return buildToolHandlerResult({
+          toolOutput: {
+            count: 0,
+            results: [],
+          },
+          searchResult: {
+            count: 0,
+            results: [],
+          },
+        });
+      }
+
+      const rawResult = await searchTreeContent({
+        searchText: normalizedQuery,
+        treeId: String(tree.id),
+        top: normalizeToolTop(top),
+        allowedTreeIds: [String(tree.id)],
+        defaultTop: DEFAULT_TOOL_TOP,
+      });
+
+      return buildToolHandlerResult({
+        toolOutput: buildAgentSearchResult(rawResult),
+        searchResult: rawResult,
+      });
+    });
+  });
+
+  return handlerMap;
+}
+
+async function buildTreeSearchContextFromStoredDescriptions() {
+  const [treeList, allowedTreeIds] = await Promise.all([
+    getTreeRoutingProfiles(),
+    getAllowedTreeIds(),
+  ]);
+  const allowedSet = new Set(allowedTreeIds.map((treeId) => String(treeId)));
+  const availableTrees = treeList
+    .filter((tree) => allowedSet.has(String(tree.id)))
+    .map((tree) => ({ ...tree }));
+
+  applyStoredToolDescriptions(availableTrees);
+
+  if (availableTrees.length === 0) {
+    throw new Error('No trees are available for the current application');
+  }
+
+  const { includedTrees, tools } = buildIncludedTreesAndTools(availableTrees);
+  const excludedTrees = availableTrees
+    .filter((tree) => !tree.includedInToolSet)
+    .map((tree) => ({
+      id: String(tree.id),
+      name: tree.name,
+    }));
+
+  return {
+    availableTrees,
+    includedTrees,
+    excludedTrees,
+    tools,
+    handlerMap: buildHandlerMap(includedTrees),
+  };
+}
+
 function buildTreeToolPreview(availableTrees) {
   return availableTrees.map((tree) => ({
     name: buildToolName(tree),
@@ -631,6 +764,14 @@ async function createOrUpdateAgent() {
   const project = getProjectClient();
   const { agentName, modelDeploymentName } = getRequiredFoundryConfig();
   const { availableTrees, includedTrees, tools } = await buildTreeSearchContext();
+  await updateTreeDescriptions(
+    availableTrees
+      .filter((tree) => tree.generatedToolDescription)
+      .map((tree) => ({
+        treeId: tree.id,
+        description: tree.generatedToolDescription,
+      })),
+  );
   const definition = {
     kind: 'prompt',
     model: modelDeploymentName,
@@ -642,6 +783,13 @@ async function createOrUpdateAgent() {
     const agent = await project.agents.update(agentName, definition, {
       foundryFeatures: AGENT_PREVIEW_FEATURES,
     });
+
+    await updateTreeDescriptionPublishedStates(
+      availableTrees.map((tree) => ({
+        treeId: tree.id,
+        isDescriptionPublished: Boolean(tree.includedInToolSet),
+      })),
+    );
 
     return {
       agent,
@@ -658,11 +806,73 @@ async function createOrUpdateAgent() {
       foundryFeatures: AGENT_PREVIEW_FEATURES,
     });
 
+    await updateTreeDescriptionPublishedStates(
+      availableTrees.map((tree) => ({
+        treeId: tree.id,
+        isDescriptionPublished: Boolean(tree.includedInToolSet),
+      })),
+    );
+
     return {
       agent,
       availableTrees,
       includedTrees,
       tools,
+    };
+  }
+}
+
+async function publishTreeToolsFromContext(context) {
+  const project = getProjectClient();
+  const { agentName, modelDeploymentName } = getRequiredFoundryConfig();
+  const definition = {
+    kind: 'prompt',
+    model: modelDeploymentName,
+    instructions: buildAgentInstructions(),
+    tools: context.tools,
+  };
+
+  try {
+    const agent = await project.agents.update(agentName, definition, {
+      foundryFeatures: AGENT_PREVIEW_FEATURES,
+    });
+
+    await updateTreeDescriptionPublishedStates(
+      context.availableTrees.map((tree) => ({
+        treeId: tree.id,
+        isDescriptionPublished: Boolean(tree.includedInToolSet),
+      })),
+    );
+
+    return {
+      agent,
+      availableTrees: context.availableTrees,
+      includedTrees: context.includedTrees,
+      excludedTrees: context.excludedTrees,
+      tools: context.tools,
+    };
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+
+    const agent = await project.agents.create(agentName, definition, {
+      foundryFeatures: AGENT_PREVIEW_FEATURES,
+    });
+
+    await updateTreeDescriptionPublishedStates(
+      context.availableTrees.map((tree) => ({
+        treeId: tree.id,
+        isDescriptionPublished: Boolean(tree.includedInToolSet),
+      })),
+    );
+
+    return {
+      agent,
+      availableTrees: context.availableTrees,
+      includedTrees: context.includedTrees,
+      excludedTrees: context.excludedTrees,
+      tools: context.tools,
     };
   }
 }
@@ -692,6 +902,18 @@ export async function syncHostedAgent() {
   return {
     agent: syncResult.agent,
     tools: buildTreeToolPreview(syncResult.availableTrees),
+    syncMode: 'generate-and-publish',
+  };
+}
+
+export async function publishStoredTreeDescriptions() {
+  const syncResult = await publishTreeToolsFromContext(await buildTreeSearchContextFromStoredDescriptions());
+
+  return {
+    agent: syncResult.agent,
+    tools: buildTreeToolPreview(syncResult.availableTrees),
+    syncMode: 'publish-stored-descriptions',
+    excludedTrees: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees : [],
   };
 }
 
@@ -786,14 +1008,14 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
     debugRounds.push(...roundDebug);
   }
 
-  throw new Error('The hosted agent exceeded the maximum number of tool rounds');
+  throw new Error('The agent exceeded the maximum number of tool rounds');
 }
 
 export async function invokeTreeSearchAgent({ message, history = [], principal = null }) {
   const normalizedMessage = String(message ?? '').trim();
 
   if (!normalizedMessage) {
-    throw new Error('A message is required to invoke the hosted agent');
+    throw new Error('A message is required to invoke the agent');
   }
 
   const project = getProjectClient();

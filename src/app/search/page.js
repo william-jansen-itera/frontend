@@ -290,7 +290,7 @@ function SearchPageContent() {
 
         <form onSubmit={handleSubmit} className={styles.searchForm}>
           <label className={styles.searchField}>
-            <span className="appFieldLabel">Search</span>
+            <span className={`${styles.heroFieldLabel} appFieldLabel`}>Search</span>
             <input
               key={queryParam}
               ref={queryInputRef}
@@ -302,7 +302,7 @@ function SearchPageContent() {
           </label>
 
           <label className={styles.filterField}>
-            <span className="appFieldLabel">Tree</span>
+            <span className={`${styles.heroFieldLabel} appFieldLabel`}>Tree</span>
             <select
               value={treeIdParam}
               onChange={handleTreeChange}

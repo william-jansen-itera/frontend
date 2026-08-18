@@ -64,6 +64,11 @@
   gap: 0.55rem;
 }
 
+.heroFieldLabel {
+  color: var(--ui-eyebrow-color);
+  font-weight: var(--ui-eyebrow-weight);
+}
+
 .listPanel {
   overflow: hidden;
 }
@@ -79,6 +84,14 @@
 .sectionTitle {
   font-size: 1.45rem;
   line-height: 1.2;
+}
+
+.syncHint {
+  margin: 0.45rem 0 0;
+  color: #475569;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  max-width: 60rem;
 }
 
 .errorMessage {
@@ -100,11 +113,22 @@
 
 .treeRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1rem;
-  align-items: center;
+  gap: 0.95rem;
   padding: 1rem 0.1rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.rowSection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 1rem;
+  row-gap: 0.95rem;
+  align-items: start;
+}
+
+.treeMetaRow,
+.descriptionRow {
+  display: contents;
 }
 
 .treeRow:first-child {
@@ -117,17 +141,16 @@
 }
 
 .treeMeta {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.85rem;
+  display: contents;
 }
 
 .treeId {
+  grid-column: 1;
+  grid-row: 1;
   color: #64748b;
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-secondary-label-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -136,7 +159,155 @@
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
+}
+
+.treeMetaRow .rowActions,
+.descriptionRow .rowActions {
+  grid-column: 2;
+  align-self: center;
+  padding-top: 0;
+}
+
+.treeMetaRow .rowActions {
+  grid-row: 2;
+}
+
+.descriptionRow .rowActions {
+  grid-row: 4;
+  align-self: center;
+  padding-top: 0;
+}
+
+.treeNameInput {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.descriptionBlock {
+  display: contents;
+}
+
+.descriptionFieldRow {
+  display: contents;
+}
+
+.descriptionLabel {
+  white-space: nowrap;
+}
+
+.descriptionHeaderRow {
+  grid-column: 1;
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.descriptionBadgeRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.descriptionInput {
+  grid-column: 1;
+  grid-row: 4;
+  width: 100%;
+  min-height: 7.5rem;
+  padding: 10px 12px;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  font: inherit;
+  line-height: 1.5;
+  color: #18181b;
+  background-color: #ffffff;
+  resize: vertical;
+}
+
+.descriptionPreview {
+  grid-column: 1;
+  grid-row: 4;
+  width: 100%;
+  min-height: 7.5rem;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  font: inherit;
+  line-height: 1.5;
+  color: #18181b;
+  background-color: #ffffff;
+  white-space: pre-wrap;
+}
+
+.descriptionPreviewEmpty {
+  color: #94a3b8;
+}
+
+.descriptionInput:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+.descriptionInput:disabled {
+  background-color: #f4f4f5;
+  color: #71717a;
+}
+
+.draftBadge,
+.savedBadge,
+.agentBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.draftBadge {
+  color: #92400e;
+  background: rgba(254, 240, 138, 0.35);
+}
+
+.savedBadge {
+  color: #166534;
+  background: rgba(187, 247, 208, 0.32);
+}
+
+.agentBadge {
+  color: #1d4ed8;
+  background: rgba(191, 219, 254, 0.42);
+}
+
+.rowFeedback {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.rowFeedbackInfo {
+  color: #334155;
+}
+
+.rowFeedbackSuccess {
+  color: #166534;
+}
+
+.rowFeedbackWarning {
+  color: #9a3412;
+}
+
+.rowFeedbackError {
+  color: #b91c1c;
 }
 
 .textInput {
@@ -172,17 +343,45 @@
 
 @media (max-width: 760px) {
   .createForm,
-  .treeRow {
+  .rowSection {
     grid-template-columns: 1fr;
   }
 
-  .treeMeta {
+  .treeMetaRow,
+  .descriptionRow {
+    display: grid;
     grid-template-columns: 1fr;
+    row-gap: 0.45rem;
     align-items: start;
-    gap: 0.45rem;
+  }
+
+  .treeMeta {
+    display: contents;
+  }
+
+  .descriptionFieldRow {
+    display: contents;
+  }
+
+  .treeId,
+  .treeNameInput,
+  .descriptionHeaderRow,
+  .descriptionInput,
+  .descriptionPreview,
+  .rowFeedback,
+  .treeMetaRow .rowActions,
+  .descriptionRow .rowActions {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .rowActions {
     justify-content: flex-start;
+  }
+
+  .treeMetaRow .rowActions,
+  .descriptionRow .rowActions {
+    align-self: start;
+    padding-top: 0;
   }
 }

@@ -12,6 +12,10 @@ function normalizeTreeName(name) {
   return String(name ?? '').trim();
 }
 
+function normalizeTreeDescription(description) {
+  return String(description ?? '').trim();
+}
+
 function buildTreeKey(name) {
   const normalizedBase = normalizeTreeName(name)
     .toLowerCase()
@@ -48,7 +52,9 @@ async function assertScopedTree(treeId) {
     .query(`
       SELECT TOP 1
         ti.id,
-        ti.display_name AS displayName
+        ti.display_name AS displayName,
+        ti.description,
+        CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished
       FROM tree_instance ti
       INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
       WHERE ti.id = @tree_instance_id
@@ -85,7 +91,9 @@ export async function getTreeList() {
   const query = `
     SELECT
       CAST(ti.id AS VARCHAR(10)) AS id,
-      COALESCE(NULLIF(ti.display_name, ''), root_node.text, CONCAT('Tree ', ti.id)) AS name
+      COALESCE(NULLIF(ti.display_name, ''), root_node.text, CONCAT('Tree ', ti.id)) AS name,
+      CAST(COALESCE(ti.description, '') AS NVARCHAR(MAX)) AS description,
+      CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished
     FROM tree_instance ti
     INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
     OUTER APPLY (
@@ -152,6 +160,8 @@ export async function createTree({ name }) {
     return {
       id: String(treeInstanceId),
       name: normalizedName,
+      description: '',
+      isDescriptionPublished: false,
     };
   });
 }
@@ -188,6 +198,105 @@ export async function updateTreeTitle({ treeId, name }) {
       id: String(treeId),
       name: normalizedName,
     };
+  });
+}
+
+export async function updateTreeDescription({ treeId, description }) {
+  const normalizedDescription = normalizeTreeDescription(description);
+
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId);
+    const nextDescription = normalizedDescription;
+
+    const updateResult = await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('description', sql.NVarChar(sql.MAX), nextDescription)
+      .query(`
+        UPDATE ti
+        SET description = @description,
+            description_published_to_agent = 0,
+            updated_at = SYSUTCDATETIME()
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+
+    if (!updateResult.rowsAffected[0]) {
+      throw new Error('Tree was not found for the active application instance');
+    }
+
+    return {
+      id: String(treeId),
+      name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
+      description: nextDescription,
+      isDescriptionPublished: false,
+    };
+  });
+}
+
+export async function updateTreeDescriptions(treeDescriptions) {
+  const normalizedUpdates = Array.isArray(treeDescriptions)
+    ? treeDescriptions
+      .map((entry) => ({
+        treeId: Number.parseInt(String(entry?.treeId ?? ''), 10),
+        description: normalizeTreeDescription(entry?.description),
+      }))
+      .filter((entry) => Number.isFinite(entry.treeId))
+    : [];
+
+  if (normalizedUpdates.length === 0) {
+    return [];
+  }
+
+  return withSqlConnection(async () => {
+    for (const entry of normalizedUpdates) {
+      await updateTreeDescription(entry);
+    }
+
+    return normalizedUpdates.map((entry) => ({
+      treeId: String(entry.treeId),
+      description: entry.description,
+    }));
+  });
+}
+
+export async function updateTreeDescriptionPublishedStates(treeStates) {
+  const normalizedStates = Array.isArray(treeStates)
+    ? treeStates
+      .map((entry) => ({
+        treeId: Number.parseInt(String(entry?.treeId ?? ''), 10),
+        isDescriptionPublished: Boolean(entry?.isDescriptionPublished),
+      }))
+      .filter((entry) => Number.isFinite(entry.treeId))
+    : [];
+
+  if (normalizedStates.length === 0) {
+    return [];
+  }
+
+  return withSqlConnection(async () => {
+    for (const entry of normalizedStates) {
+      await new sql.Request()
+        .input('tree_instance_id', sql.Int, entry.treeId)
+        .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+        .input('description_published_to_agent', sql.Bit, entry.isDescriptionPublished)
+        .query(`
+          UPDATE ti
+          SET description_published_to_agent = @description_published_to_agent,
+              updated_at = SYSUTCDATETIME()
+          FROM tree_instance ti
+          INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+          WHERE ti.id = @tree_instance_id
+            AND ai.app_identifier = @application_identifier;
+        `);
+    }
+
+    return normalizedStates.map((entry) => ({
+      treeId: String(entry.treeId),
+      isDescriptionPublished: entry.isDescriptionPublished,
+    }));
   });
 }
 
@@ -424,4 +533,26 @@ export async function getTreeRoutingProfiles() {
       };
     });
   });
+}
+
+export async function getTreeRoutingProfile(treeId) {
+  const scopedTree = await assertScopedTree(treeId);
+  const treeProfiles = await getTreeRoutingProfiles();
+  const matchingTree = treeProfiles.find((tree) => String(tree.id) === String(treeId));
+
+  if (!matchingTree) {
+    return {
+      id: String(scopedTree.id),
+      name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
+      description: normalizeTreeDescription(scopedTree.description),
+      topLevelTopics: [],
+      supportingTopics: [],
+      nonLeafTitles: [],
+      leafTitleExemplars: [],
+      breadcrumbExemplars: [],
+      attachmentFileNameExemplars: [],
+    };
+  }
+
+  return matchingTree;
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { syncHostedAgent } from '@/server/utils/chatService';
+import { publishStoredTreeDescriptions, syncHostedAgent } from '@/server/utils/chatService';
 import { logException, logTrace } from '@/server/utils/logging';
 
 export const runtime = 'nodejs';
@@ -25,15 +25,18 @@ function isAuthorized(request, payload) {
 export async function POST(request) {
   try {
     const payload = await request.json().catch(() => ({}));
+    const requestedMode = String(payload?.mode ?? '').trim();
 
     if (!isAuthorized(request, payload)) {
       return NextResponse.json(
-        { error: 'Not authorized to sync the hosted agent.' },
+        { error: 'Not authorized to sync the agent.' },
         { status: 403 },
       );
     }
 
-    const syncResult = await syncHostedAgent();
+    const syncResult = requestedMode === 'publish-stored-descriptions'
+      ? await publishStoredTreeDescriptions()
+      : await syncHostedAgent();
     const agent = syncResult.agent;
 
     await logTrace(
@@ -41,6 +44,7 @@ export async function POST(request) {
         event: 'hosted_agent_sync_success',
         agentName: agent.name,
         agentVersion: agent.version ?? null,
+        syncMode: syncResult.syncMode ?? 'manual',
       }),
     );
 
@@ -50,7 +54,9 @@ export async function POST(request) {
         name: agent.name,
         version: agent.version ?? null,
       },
-      syncMode: 'manual',
+      syncMode: syncResult.syncMode ?? 'manual',
+      excludedTreeCount: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees.length : 0,
+      excludedTrees: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees : [],
       tools: syncResult.tools,
     });
   } catch (error) {
@@ -58,7 +64,7 @@ export async function POST(request) {
 
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : 'Hosted agent sync failed',
+        error: error instanceof Error ? error.message : 'Agent sync failed',
       },
       { status: 500 },
     );

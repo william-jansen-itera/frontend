@@ -20,6 +20,7 @@
   --ui-eyebrow-size: 0.8rem;
   --ui-eyebrow-weight: 800;
   --ui-eyebrow-spacing: 0.12em;
+  --ui-secondary-label-weight: 700;
   --ui-title-color: #0f172a;
   --ui-title-size: clamp(2rem, 4vw, 3.7rem);
   --ui-title-line-height: 1.02;
@@ -138,10 +139,10 @@ body {
 
 .appFieldLabel {
   margin: 0;
-  color: var(--ui-eyebrow-color);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: #64748b;
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-secondary-label-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
 }
 

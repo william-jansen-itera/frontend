@@ -53,6 +53,11 @@
   gap: 0.45rem;
 }
 
+.heroFieldLabel {
+  color: var(--ui-eyebrow-color);
+  font-weight: var(--ui-eyebrow-weight);
+}
+
 .textInput,
 .selectInput {
   height: 3.45rem;

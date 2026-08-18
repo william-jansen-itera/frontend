@@ -34,19 +34,19 @@
 
 .sectionEyebrow {
   margin: 0;
-  color: var(--ui-eyebrow-color);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: #64748b;
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-secondary-label-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
 }
 
 .messageLabel {
   margin: 0;
-  color: var(--ui-eyebrow-color);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: #64748b;
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
 }
 
@@ -266,10 +266,10 @@
 
 .citationEyebrow {
   margin: 0;
-  color: var(--ui-eyebrow-color);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: #64748b;
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-secondary-label-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
 }
 

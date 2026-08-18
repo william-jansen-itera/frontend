@@ -94,11 +94,11 @@ export async function POST(request) {
     return NextResponse.json(
       includeDebug
         ? {
-          error: error instanceof Error ? error.message : 'Hosted agent request failed',
+          error: error instanceof Error ? error.message : 'Agent request failed',
           debug: error?.debug ?? null,
         }
         : {
-          error: error instanceof Error ? error.message : 'Hosted agent request failed',
+          error: error instanceof Error ? error.message : 'Agent request failed',
         },
       { status: 500 },
     );

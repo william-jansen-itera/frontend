@@ -19,18 +19,120 @@ function buildDraftNames(trees) {
   }, {});
 }
 
+function buildDraftDescriptions(trees, currentDrafts = {}, resetTreeIds = new Set()) {
+  return trees.reduce((drafts, tree) => {
+    const treeId = String(tree.id);
+    const storedDescription = String(tree.description ?? "");
+
+    drafts[treeId] = resetTreeIds.has(treeId)
+      ? storedDescription
+      : (currentDrafts[treeId] ?? storedDescription);
+
+    return drafts;
+  }, {});
+}
+
+function buildNextDraftNames(trees, currentDrafts = {}, resetTreeIds = new Set()) {
+  return trees.reduce((drafts, tree) => {
+    const treeId = String(tree.id);
+    drafts[treeId] = resetTreeIds.has(treeId) ? tree.name : (currentDrafts[treeId] ?? tree.name);
+    return drafts;
+  }, {});
+}
+
+function filterTreeStateByList(currentState, trees) {
+  const allowedTreeIds = new Set(trees.map((tree) => String(tree.id)));
+
+  return Object.fromEntries(
+    Object.entries(currentState).filter(([treeId]) => allowedTreeIds.has(treeId)),
+  );
+}
+
+function normalizeComparableValue(value) {
+  return String(value ?? "").trim();
+}
+
+function formatSyncError(syncStatus) {
+  if (!syncStatus || syncStatus.status !== "failed") {
+    return "";
+  }
+
+  const missingTrees = Array.isArray(syncStatus.missingTrees) ? syncStatus.missingTrees : [];
+
+  if (missingTrees.length === 0) {
+    return syncStatus.message || "Stored-description sync failed.";
+  }
+
+  const missingTreeLabels = missingTrees.map((tree) => tree?.name || `Tree ${tree?.id ?? "?"}`);
+  return `${syncStatus.message} Missing descriptions: ${missingTreeLabels.join(", ")}.`;
+}
+
+function formatPublishOutcomeMessage(syncStatus, treeId) {
+  const excludedTrees = Array.isArray(syncStatus?.excludedTrees) ? syncStatus.excludedTrees : [];
+
+  const isExcluded = excludedTrees.some((tree) => String(tree?.id ?? "") === String(treeId));
+
+  if (isExcluded) {
+    return "Description was empty and not published to the agent.";
+  }
+
+  return "Stored description was published to the agent.";
+}
+
 export default function TreesPage() {
   const [trees, setTrees] = useState([]);
   const [draftNames, setDraftNames] = useState({});
+  const [draftDescriptions, setDraftDescriptions] = useState({});
+  const [editingDescriptions, setEditingDescriptions] = useState({});
   const [newTreeName, setNewTreeName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
-  const [pendingTreeId, setPendingTreeId] = useState(null);
+  const [rowPendingStates, setRowPendingStates] = useState({});
+  const [rowFeedback, setRowFeedback] = useState({});
   const [errorMessage, setErrorMessage] = useState("");
 
-  const applyTreeList = (nextTrees) => {
+  const applyTreeList = (nextTrees, options = {}) => {
+    const resetNameTreeIds = new Set((options.resetNameTreeIds ?? []).map((treeId) => String(treeId)));
+    const resetDescriptionTreeIds = new Set((options.resetDescriptionTreeIds ?? []).map((treeId) => String(treeId)));
+
     setTrees(nextTrees);
-    setDraftNames(buildDraftNames(nextTrees));
+    setDraftNames((currentDrafts) => buildNextDraftNames(nextTrees, currentDrafts, resetNameTreeIds));
+    setDraftDescriptions((currentDrafts) => buildDraftDescriptions(nextTrees, currentDrafts, resetDescriptionTreeIds));
+    setEditingDescriptions((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setRowPendingStates((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setRowFeedback((currentState) => filterTreeStateByList(currentState, nextTrees));
+  };
+
+  const setDescriptionEditing = (treeId, isEditing) => {
+    setEditingDescriptions((currentState) => ({
+      ...currentState,
+      [treeId]: isEditing,
+    }));
+  };
+
+  const setTreePendingState = (treeId, pendingKey, isPending) => {
+    setRowPendingStates((currentState) => {
+      const currentRowState = currentState[treeId] ?? {};
+      const nextRowState = {
+        ...currentRowState,
+        [pendingKey]: isPending,
+      };
+
+      return {
+        ...currentState,
+        [treeId]: nextRowState,
+      };
+    });
+  };
+
+  const updateRowFeedback = (treeId, updates) => {
+    setRowFeedback((currentState) => ({
+      ...currentState,
+      [treeId]: {
+        ...(currentState[treeId] ?? {}),
+        ...updates,
+      },
+    }));
   };
 
   useEffect(() => {
@@ -94,7 +196,10 @@ export default function TreesPage() {
         throw new Error(data?.error || "Tree could not be created");
       }
 
-      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : [], {
+        resetNameTreeIds: [data?.createdTree?.id],
+        resetDescriptionTreeIds: [data?.createdTree?.id],
+      });
       setNewTreeName("");
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree could not be created"));
@@ -111,7 +216,7 @@ export default function TreesPage() {
       return;
     }
 
-    setPendingTreeId(treeId);
+    setTreePendingState(treeId, "rename", true);
     setErrorMessage("");
 
     try {
@@ -128,12 +233,154 @@ export default function TreesPage() {
         throw new Error(data?.error || "Tree title could not be updated");
       }
 
-      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : [], {
+        resetNameTreeIds: [treeId],
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree title could not be updated"));
     } finally {
-      setPendingTreeId(null);
+      setTreePendingState(treeId, "rename", false);
     }
+  };
+
+  const handleGenerateDescription = async (tree) => {
+    const treeId = String(tree.id);
+
+    setTreePendingState(treeId, "generate", true);
+    setErrorMessage("");
+    updateRowFeedback(treeId, {
+      infoMessage: "",
+      generateError: "",
+      saveError: "",
+      syncError: "",
+      syncMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "generate-description",
+          treeId,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Description draft could not be generated");
+      }
+
+      setDraftDescriptions((currentDrafts) => ({
+        ...currentDrafts,
+        [treeId]: String(data?.generatedDescription ?? ""),
+      }));
+      setDescriptionEditing(treeId, true);
+      updateRowFeedback(treeId, {
+        infoMessage: "Draft description generated. Review or edit it, then click Save to publish.",
+        generateError: "",
+        saveError: "",
+        syncError: "",
+        syncMessage: "",
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        generateError: getErrorMessage(error, "Description draft could not be generated"),
+      });
+    } finally {
+      setTreePendingState(treeId, "generate", false);
+    }
+  };
+
+  const handleSaveDescription = async (tree) => {
+    const treeId = String(tree.id);
+    const nextDescription = String(draftDescriptions[treeId] ?? "");
+
+    if (!nextDescription.trim()) {
+      updateRowFeedback(treeId, {
+        saveError: "Description is required before saving.",
+      });
+      return;
+    }
+
+    setTreePendingState(treeId, "save", true);
+    setTreePendingState(treeId, "sync", true);
+    setErrorMessage("");
+    updateRowFeedback(treeId, {
+      infoMessage: "",
+      saveError: "",
+      syncError: "",
+      syncMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "save-description",
+          treeId,
+          description: nextDescription,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Description could not be saved");
+      }
+
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : [], {
+        resetDescriptionTreeIds: [treeId],
+      });
+      setDescriptionEditing(treeId, false);
+
+      const syncStatus = data?.syncStatus ?? null;
+      const syncError = formatSyncError(syncStatus);
+      const syncMessage = syncStatus?.status === "success"
+        ? formatPublishOutcomeMessage(syncStatus, treeId)
+        : "";
+
+      updateRowFeedback(treeId, {
+        infoMessage: syncError
+          ? "Description was saved, but the hosted-agent publish step did not complete."
+          : "Description was saved.",
+        saveError: "",
+        syncError,
+        syncMessage,
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        saveError: getErrorMessage(error, "Description could not be saved"),
+      });
+    } finally {
+      setTreePendingState(treeId, "save", false);
+      setTreePendingState(treeId, "sync", false);
+    }
+  };
+
+  const handleCancelDescriptionDraft = (tree) => {
+    const treeId = String(tree.id);
+    const storedDescription = String(tree.description ?? "");
+
+    setDraftDescriptions((currentDrafts) => ({
+      ...currentDrafts,
+      [treeId]: storedDescription,
+    }));
+    setDescriptionEditing(treeId, false);
+
+    updateRowFeedback(treeId, {
+      infoMessage: storedDescription
+        ? "Saved description restored."
+        : "Draft removed. This tree has no saved description yet.",
+      generateError: "",
+      saveError: "",
+      syncError: "",
+      syncMessage: "",
+    });
   };
 
   const handleDeleteTree = async (tree) => {
@@ -144,7 +391,7 @@ export default function TreesPage() {
     }
 
     const treeId = String(tree.id);
-    setPendingTreeId(treeId);
+    setTreePendingState(treeId, "delete", true);
     setErrorMessage("");
 
     try {
@@ -161,7 +408,7 @@ export default function TreesPage() {
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree could not be deleted"));
     } finally {
-      setPendingTreeId(null);
+      setTreePendingState(treeId, "delete", false);
     }
   };
 
@@ -176,7 +423,7 @@ export default function TreesPage() {
 
         <form onSubmit={handleCreateTree} className={styles.createForm}>
           <label className={styles.createField}>
-            <span className="appFieldLabel">New tree name</span>
+            <span className={`${styles.heroFieldLabel} appFieldLabel`}>New tree name</span>
             <input
               type="text"
               value={newTreeName}
@@ -200,6 +447,9 @@ export default function TreesPage() {
           <div>
             <p className={styles.sectionEyebrow}>Current trees</p>
             <h2 className={styles.sectionTitle}>{trees.length} tree{trees.length === 1 ? "" : "s"}</h2>
+            <p className={styles.syncHint}>
+              Trees without a saved description are not published to the agent.
+            </p>
           </div>
         </div>
 
@@ -215,51 +465,158 @@ export default function TreesPage() {
               {trees.map((tree) => {
                 const treeId = String(tree.id);
                 const draftName = String(draftNames[treeId] ?? tree.name ?? "");
-                const isPending = pendingTreeId === treeId;
+                const storedDescription = String(tree.description ?? "");
+                const isDescriptionPublished = Boolean(tree.isDescriptionPublished);
+                const draftDescription = String(draftDescriptions[treeId] ?? storedDescription);
+                const rowPendingState = rowPendingStates[treeId] ?? {};
+                const feedback = rowFeedback[treeId] ?? {};
+                const isPending = Object.values(rowPendingState).some(Boolean);
+                const isDescriptionEditing = Boolean(editingDescriptions[treeId]);
                 const isNameChanged = draftName.trim() !== tree.name;
+                const isDescriptionChanged = normalizeComparableValue(draftDescription) !== normalizeComparableValue(storedDescription);
 
                 return (
                   <article key={treeId} className={styles.treeRow}>
-                    <div className={styles.treeMeta}>
-                      <span className={styles.treeId}>Tree {treeId}</span>
-                      <input
-                        type="text"
-                        value={draftName}
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setDraftNames((currentDrafts) => ({
-                            ...currentDrafts,
-                            [treeId]: nextValue,
-                          }));
-                        }}
-                        disabled={isPending}
-                        className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
-                      />
-                    </div>
+                    <div className={styles.rowSection}>
+                      <div className={styles.treeMetaRow}>
+                        <div className={styles.treeMeta}>
+                          <span className={styles.treeId}>Tree {treeId}</span>
+                          <input
+                            type="text"
+                            value={draftName}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setDraftNames((currentDrafts) => ({
+                                ...currentDrafts,
+                                [treeId]: nextValue,
+                              }));
+                            }}
+                            disabled={isPending}
+                            className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
+                          />
+                        </div>
 
-                    <div className={styles.rowActions}>
-                      <Link
-                        href={`/notes?treeId=${encodeURIComponent(treeId)}`}
-                        className={`appCompactActionButton ${styles.actionButtonLink}`}
-                      >
-                        Open
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => handleRenameTree(tree)}
-                        disabled={isPending || !draftName.trim() || !isNameChanged}
-                        className="appCompactActionButton appCompactActionButtonNeutral"
-                      >
-                        {isPending ? "Saving..." : "Save Title"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTree(tree)}
-                        disabled={isPending}
-                        className="appCompactActionButton appCompactActionButtonDanger"
-                      >
-                        {isPending ? "Working..." : "Delete"}
-                      </button>
+                        <div className={styles.rowActions}>
+                          <Link
+                            href={`/notes?treeId=${encodeURIComponent(treeId)}`}
+                            className={`appCompactActionButton ${styles.actionButtonLink}`}
+                          >
+                            Open
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => handleRenameTree(tree)}
+                            disabled={isPending || !draftName.trim() || !isNameChanged}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            {rowPendingState.rename ? "Saving..." : "Save Title"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTree(tree)}
+                            disabled={isPending}
+                            className="appCompactActionButton appCompactActionButtonDanger"
+                          >
+                            {rowPendingState.delete ? "Working..." : "Delete"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.descriptionRow}>
+                        <div className={styles.descriptionBlock}>
+                          <div className={styles.descriptionFieldRow}>
+                            <div className={styles.descriptionHeaderRow}>
+                              <span className={`${styles.descriptionLabel} appFieldLabel`}>Description</span>
+                              {isDescriptionChanged || storedDescription ? (
+                                <div className={styles.descriptionBadgeRow}>
+                                  {isDescriptionChanged ? (
+                                    <span className={styles.draftBadge}>Unsaved draft</span>
+                                  ) : null}
+                                  {storedDescription ? (
+                                    <>
+                                      <span className={styles.savedBadge}>Saved</span>
+                                      {isDescriptionPublished ? (
+                                        <span className={styles.agentBadge}>Published to agent</span>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                            {isDescriptionEditing ? (
+                              <textarea
+                                value={draftDescription}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value;
+                                  setDraftDescriptions((currentDrafts) => ({
+                                    ...currentDrafts,
+                                    [treeId]: nextValue,
+                                  }));
+                                }}
+                                disabled={Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
+                                placeholder="Generate a draft or write a tree description manually"
+                                className={`appTextAreaControl ${styles.descriptionInput}`}
+                                rows={4}
+                              />
+                            ) : (
+                              <div className={`${styles.descriptionPreview} ${!draftDescription.trim() ? styles.descriptionPreviewEmpty : ""}`}>
+                                {draftDescription.trim() || "No summary saved yet."}
+                              </div>
+                            )}
+                          </div>
+
+                          {feedback.infoMessage ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{feedback.infoMessage}</p>
+                          ) : null}
+                          {feedback.generateError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.generateError}</p>
+                          ) : null}
+                          {feedback.saveError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.saveError}</p>
+                          ) : null}
+                          {feedback.syncMessage ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.syncMessage}</p>
+                          ) : null}
+                          {feedback.syncError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackWarning}`}>{feedback.syncError}</p>
+                          ) : null}
+                        </div>
+
+                        <div className={styles.rowActions}>
+                          <button
+                            type="button"
+                            onClick={() => setDescriptionEditing(treeId, true)}
+                            disabled={isPending || isDescriptionEditing}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateDescription(tree)}
+                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            {rowPendingState.generate ? "Generating..." : "Generate"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDescription(tree)}
+                            disabled={Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
+                            className="appCompactActionButton appCompactActionButtonPrimary"
+                          >
+                            {rowPendingState.save ? "Saving..." : rowPendingState.sync ? "Syncing..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCancelDescriptionDraft(tree)}
+                            disabled={isPending || (!isDescriptionChanged && !isDescriptionEditing)}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </article>
                 );
