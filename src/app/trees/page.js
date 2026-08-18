@@ -527,6 +527,7 @@ export default function TreesPage() {
                           <div className={styles.descriptionFieldRow}>
                             <div className={styles.descriptionHeaderRow}>
                               <span className={`${styles.descriptionLabel} appFieldLabel`}>Description</span>
+                              <span className={styles.descriptionContextLabel}>(used by agent)</span>
                               {isDescriptionChanged || storedDescription ? (
                                 <div className={styles.descriptionBadgeRow}>
                                   {isDescriptionChanged ? (

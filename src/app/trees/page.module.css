@@ -196,6 +196,15 @@
   white-space: nowrap;
 }
 
+.descriptionContextLabel {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
 .descriptionHeaderRow {
   grid-column: 1;
   grid-row: 3;
@@ -219,13 +228,18 @@
   grid-row: 4;
   width: 100%;
   min-height: 7.5rem;
-  padding: 10px 12px;
-  border: 1px solid #d4d4d8;
-  border-radius: 8px;
-  font: inherit;
-  line-height: 1.5;
-  color: #18181b;
-  background-color: #ffffff;
+  box-sizing: border-box;
+  margin-top: 0.12rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  font-family: "IBM Plex Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: #0f172a;
   resize: vertical;
 }
 
@@ -235,13 +249,17 @@
   width: 100%;
   min-height: 7.5rem;
   box-sizing: border-box;
-  padding: 10px 12px;
-  border: 1px solid #d4d4d8;
-  border-radius: 8px;
-  font: inherit;
-  line-height: 1.5;
-  color: #18181b;
-  background-color: #ffffff;
+  margin-top: 0.12rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  font-family: "IBM Plex Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: #0f172a;
   white-space: pre-wrap;
 }
 
@@ -251,12 +269,15 @@
 
 .descriptionInput:focus {
   outline: none;
-  border-color: #38bdf8;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 0 0 3px rgba(56, 189, 248, 0.18);
 }
 
 .descriptionInput:disabled {
-  background-color: #f4f4f5;
+  background:
+    linear-gradient(180deg, rgba(244, 244, 245, 0.98), rgba(228, 228, 231, 0.94));
   color: #71717a;
 }
 
