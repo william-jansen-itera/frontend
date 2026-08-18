@@ -52,59 +52,6 @@
   text-transform: uppercase;
 }
 
-.toolbarButton {
-  appearance: none;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
-}
-
-.toolbarButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-  box-shadow: none;
-}
-
-.toolbarButtonNeutral {
-  color: #0f172a;
-  background-color: #f8fafc;
-  border-color: rgba(148, 163, 184, 0.42);
-}
-
-.toolbarButtonNeutral:not(:disabled):hover {
-  background-color: #eef2f7;
-  border-color: #94a3b8;
-}
-
-.toolbarButtonPrimary {
-  color: #ffffff;
-  background: linear-gradient(135deg, #0f766e, #0369a1);
-  border-color: #115e59;
-  box-shadow: 0 1px 2px rgba(15, 118, 110, 0.2);
-}
-
-.toolbarButtonPrimary:not(:disabled):hover {
-  background-color: #115e59;
-  border-color: #134e4a;
-}
-
-.toolbarButtonDanger {
-  color: #ffffff;
-  background-color: #b91c1c;
-  border-color: #991b1b;
-  box-shadow: 0 1px 2px rgba(185, 28, 28, 0.18);
-}
-
-.toolbarButtonDanger:not(:disabled):hover {
-  background-color: #991b1b;
-  border-color: #7f1d1d;
-}
-
 .treeContent {
   flex: 1;
   min-height: 0;
@@ -290,28 +237,9 @@
   gap: 6px;
 }
 
-.fieldLabel {
-  color: var(--ui-eyebrow-color);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .textInput,
 .textArea {
   padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.55);
-  border-radius: var(--ui-control-radius);
-  background: rgba(255, 255, 255, 0.98);
-  color: #0f172a;
-}
-
-.textInput:focus,
-.textArea:focus {
-  outline: 2px solid rgba(8, 145, 178, 0.2);
-  outline-offset: 2px;
-  border-color: #0891b2;
 }
 
 .textArea {

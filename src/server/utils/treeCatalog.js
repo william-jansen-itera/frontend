@@ -1,9 +1,85 @@
+import { randomUUID } from 'crypto';
+import { deleteNodeAttachmentBlobIfExists } from '@/server/utils/blobStorage';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 
 const MAX_NON_LEAF_TITLES = 64;
 const MAX_LEAF_TITLE_EXEMPLARS = 48;
 const MAX_BREADCRUMB_EXEMPLARS = 48;
 const MAX_ATTACHMENT_FILE_NAME_EXEMPLARS = 32;
+const DEFAULT_TREE_MAX_DEPTH = '3';
+
+function normalizeTreeName(name) {
+  return String(name ?? '').trim();
+}
+
+function buildTreeKey(name) {
+  const normalizedBase = normalizeTreeName(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+  const keyBase = normalizedBase || 'tree';
+
+  return `${keyBase}-${randomUUID().slice(0, 8)}`;
+}
+
+async function getScopedApplicationInstanceId() {
+  const result = await new sql.Request()
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`
+      SELECT TOP 1 ai.id
+      FROM application_instance ai
+      WHERE ai.app_identifier = @application_identifier;
+    `);
+
+  const applicationInstanceId = result.recordset[0]?.id;
+
+  if (!applicationInstanceId) {
+    throw new Error('Application instance was not found for the configured application identifier');
+  }
+
+  return Number(applicationInstanceId);
+}
+
+async function assertScopedTree(treeId) {
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`
+      SELECT TOP 1
+        ti.id,
+        ti.display_name AS displayName
+      FROM tree_instance ti
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ti.id = @tree_instance_id
+        AND ai.app_identifier = @application_identifier;
+    `);
+
+  const tree = result.recordset[0] ?? null;
+
+  if (!tree) {
+    throw new Error('Tree was not found for the active application instance');
+  }
+
+  return tree;
+}
+
+async function getScopedTreeAttachmentBlobs(treeId) {
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`
+      SELECT files.blob_name AS blobName
+      FROM tree_node_detail_files files
+      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ti.id = @tree_instance_id
+        AND ai.app_identifier = @application_identifier;
+    `);
+
+  return result.recordset;
+}
 
 export async function getTreeList() {
   const query = `
@@ -33,6 +109,115 @@ export async function getTreeList() {
 export async function getAllowedTreeIds() {
   const treeList = await getTreeList();
   return treeList.map((tree) => String(tree.id));
+}
+
+export async function createTree({ name }) {
+  const normalizedName = normalizeTreeName(name);
+
+  if (!normalizedName) {
+    throw new Error('Tree name is required');
+  }
+
+  return withSqlConnection(async () => {
+    const applicationInstanceId = await getScopedApplicationInstanceId();
+    const insertResult = await new sql.Request()
+      .input('application_instance_id', sql.Int, applicationInstanceId)
+      .input('tree_key', sql.NVarChar(100), buildTreeKey(normalizedName))
+      .input('display_name', sql.NVarChar(200), normalizedName)
+      .query(`
+        DECLARE @createdTrees TABLE (createdTreeId INT);
+
+        INSERT INTO tree_instance (application_instance_id, tree_key, display_name, is_active)
+        OUTPUT INSERTED.id INTO @createdTrees (createdTreeId)
+        VALUES (@application_instance_id, @tree_key, @display_name, 1);
+
+        SELECT createdTreeId FROM @createdTrees;
+      `);
+
+    const treeInstanceId = Number(insertResult.recordset[0]?.createdTreeId);
+
+    if (!treeInstanceId) {
+      throw new Error('Tree could not be created');
+    }
+
+    await new sql.Request()
+      .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('setting_key', sql.NVarChar(100), 'nodes.max_depth')
+      .input('setting_value', sql.NVarChar(500), DEFAULT_TREE_MAX_DEPTH)
+      .query(`
+        INSERT INTO tree_setting (tree_instance_id, setting_key, setting_value)
+        VALUES (@tree_instance_id, @setting_key, @setting_value);
+      `);
+
+    return {
+      id: String(treeInstanceId),
+      name: normalizedName,
+    };
+  });
+}
+
+export async function updateTreeTitle({ treeId, name }) {
+  const normalizedName = normalizeTreeName(name);
+
+  if (!normalizedName) {
+    throw new Error('Tree name is required');
+  }
+
+  return withSqlConnection(async () => {
+    await assertScopedTree(treeId);
+
+    const updateResult = await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('display_name', sql.NVarChar(200), normalizedName)
+      .query(`
+        UPDATE ti
+        SET display_name = @display_name,
+            updated_at = SYSUTCDATETIME()
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+
+    if (!updateResult.rowsAffected[0]) {
+      throw new Error('Tree was not found for the active application instance');
+    }
+
+    return {
+      id: String(treeId),
+      name: normalizedName,
+    };
+  });
+}
+
+export async function deleteTree({ treeId }) {
+  return withSqlConnection(async () => {
+    await assertScopedTree(treeId);
+
+    const attachments = await getScopedTreeAttachmentBlobs(treeId);
+
+    for (const attachment of attachments) {
+      await deleteNodeAttachmentBlobIfExists(attachment.blobName);
+    }
+
+    const deleteResult = await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .query(`
+        DELETE ti
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+
+    if (!deleteResult.rowsAffected[0]) {
+      throw new Error('Tree was not found for the active application instance');
+    }
+
+    return { success: true };
+  });
 }
 
 export async function getTreeRoutingProfiles() {

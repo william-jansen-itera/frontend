@@ -27,6 +27,10 @@ function getPageSurfaceClassName(pathname) {
     return "appPageSurface appPageSurfaceNotes";
   }
 
+  if (pathname === "/trees") {
+    return "appPageSurface appPageSurfaceNotes";
+  }
+
   if (pathname === "/chat") {
     return "appPageSurface appPageSurfaceChat";
   }

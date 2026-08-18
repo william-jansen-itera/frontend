@@ -290,24 +290,24 @@ function SearchPageContent() {
 
         <form onSubmit={handleSubmit} className={styles.searchForm}>
           <label className={styles.searchField}>
-            <span className={styles.fieldLabel}>Search</span>
+            <span className="appFieldLabel">Search</span>
             <input
               key={queryParam}
               ref={queryInputRef}
               type="search"
               defaultValue={queryParam}
               placeholder="Try a node title, note text, or attachment phrase"
-              className={styles.textInput}
+              className={`appTextControl ${styles.textInput}`}
             />
           </label>
 
           <label className={styles.filterField}>
-            <span className={styles.fieldLabel}>Tree</span>
+            <span className="appFieldLabel">Tree</span>
             <select
               value={treeIdParam}
               onChange={handleTreeChange}
               disabled={isLoadingTrees}
-              className={styles.selectInput}
+              className={`appSelectControl ${styles.selectInput}`}
             >
               <option value="">All trees</option>
               {availableTrees.map((tree) => (
@@ -318,7 +318,7 @@ function SearchPageContent() {
             </select>
           </label>
 
-          <button type="submit" className={styles.searchButton}>
+          <button type="submit" className="appPrimaryFormButton">
             {isSearching ? "Searching..." : "Search"}
           </button>
         </form>

@@ -319,28 +319,14 @@ async function CreateTreeNode({ parentId, treeInstanceId, name }) {
 }
 
 async function DeleteTreeNode({ id, treeInstanceId }) {
-  // recursive delete query to remove the node and all its descendants
-  // tree_node_details and tree_node_detail_files will be automatically deleted 
-  // due to foreign key constraints with ON DELETE CASCADE
-  const deleteQuery = `WITH Descendants AS (
-      SELECT id
-      FROM tree_nodes
-      WHERE id = @id AND tree_instance_id = @tree_instance_id
-      UNION ALL
-      SELECT t.id
-      FROM tree_nodes t
-      INNER JOIN Descendants d ON t.parent_id = d.id
-      WHERE t.tree_instance_id = @tree_instance_id
-    )
-    DELETE FROM tree_nodes
-    WHERE tree_instance_id = @tree_instance_id
-      AND id IN (SELECT id FROM Descendants);`;
-
   return withSqlConnection(async () => {
     await new sql.Request()
       .input('id', sql.Int, id)
       .input('tree_instance_id', sql.Int, treeInstanceId)
-      .query(deleteQuery);
+      .query(`
+        DELETE FROM tree_nodes
+        WHERE tree_instance_id = @tree_instance_id AND id = @id;
+      `);
 
     return queryTreeData(treeInstanceId);
   });
@@ -741,24 +727,13 @@ export async function DELETE(request) {
         await deleteNodeAttachmentBlobIfExists(attachment.blobName);
       }
 
-      const deleteQuery = `WITH Descendants AS (
-          SELECT id
-          FROM tree_nodes
-          WHERE id = @id AND tree_instance_id = @tree_instance_id
-          UNION ALL
-          SELECT t.id
-          FROM tree_nodes t
-          INNER JOIN Descendants d ON t.parent_id = d.id
-          WHERE t.tree_instance_id = @tree_instance_id
-        )
-        DELETE FROM tree_nodes
-        WHERE tree_instance_id = @tree_instance_id
-          AND id IN (SELECT id FROM Descendants);`;
-
       await new sql.Request()
         .input('id', sql.Int, nodeId)
         .input('tree_instance_id', sql.Int, treeInstanceId)
-        .query(deleteQuery);
+        .query(`
+          DELETE FROM tree_nodes
+          WHERE tree_instance_id = @tree_instance_id AND id = @id;
+        `);
 
       return queryTreeData(treeInstanceId);
     }));

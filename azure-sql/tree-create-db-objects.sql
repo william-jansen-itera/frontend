@@ -294,6 +294,7 @@ ALTER TABLE [dbo].[tree_setting] ADD  CONSTRAINT [DF_tree_setting_updated_at]  D
 GO
 ALTER TABLE [dbo].[tree_instance]  WITH CHECK ADD  CONSTRAINT [FK_tree_instance_application_instance] FOREIGN KEY([application_instance_id])
 REFERENCES [dbo].[application_instance] ([id])
+ON DELETE CASCADE
 GO
 ALTER TABLE [dbo].[tree_instance] CHECK CONSTRAINT [FK_tree_instance_application_instance]
 GO
@@ -311,16 +312,19 @@ ALTER TABLE [dbo].[tree_node_details] CHECK CONSTRAINT [FK_tree_node_details_tre
 GO
 ALTER TABLE [dbo].[tree_nodes]  WITH CHECK ADD  CONSTRAINT [FK_tree_nodes_parent] FOREIGN KEY([parent_id])
 REFERENCES [dbo].[tree_nodes] ([id])
+ON DELETE CASCADE
 GO
 ALTER TABLE [dbo].[tree_nodes] CHECK CONSTRAINT [FK_tree_nodes_parent]
 GO
 ALTER TABLE [dbo].[tree_nodes]  WITH CHECK ADD  CONSTRAINT [FK_tree_nodes_tree_instance] FOREIGN KEY([tree_instance_id])
 REFERENCES [dbo].[tree_instance] ([id])
+ON DELETE CASCADE
 GO
 ALTER TABLE [dbo].[tree_nodes] CHECK CONSTRAINT [FK_tree_nodes_tree_instance]
 GO
 ALTER TABLE [dbo].[tree_setting]  WITH CHECK ADD  CONSTRAINT [FK_tree_setting_tree_instance] FOREIGN KEY([tree_instance_id])
 REFERENCES [dbo].[tree_instance] ([id])
+ON DELETE CASCADE
 GO
 ALTER TABLE [dbo].[tree_setting] CHECK CONSTRAINT [FK_tree_setting_tree_instance]
 GO

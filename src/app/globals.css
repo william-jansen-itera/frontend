@@ -136,6 +136,114 @@ body {
   flex-wrap: wrap;
 }
 
+.appFieldLabel {
+  margin: 0;
+  color: var(--ui-eyebrow-color);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.appTextControl,
+.appSelectControl,
+.appTextAreaControl {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: var(--ui-control-radius);
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  font: inherit;
+}
+
+.appTextControl,
+.appSelectControl {
+  min-height: 44px;
+}
+
+.appTextControl:focus,
+.appSelectControl:focus,
+.appTextAreaControl:focus {
+  outline: 2px solid rgba(8, 145, 178, 0.2);
+  outline-offset: 2px;
+  border-color: #0891b2;
+}
+
+.appCompactActionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.appCompactActionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.appCompactActionButtonNeutral {
+  color: #0f172a;
+  background-color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.42);
+}
+
+.appCompactActionButtonNeutral:not(:disabled):hover {
+  background-color: #eef2f7;
+  border-color: #94a3b8;
+}
+
+.appCompactActionButtonPrimary {
+  color: #ffffff;
+  background: linear-gradient(135deg, #0f766e, #0369a1);
+  border-color: #115e59;
+  box-shadow: 0 1px 2px rgba(15, 118, 110, 0.2);
+}
+
+.appCompactActionButtonPrimary:not(:disabled):hover {
+  background-color: #115e59;
+  border-color: #134e4a;
+}
+
+.appCompactActionButtonDanger {
+  color: #ffffff;
+  background-color: #b91c1c;
+  border-color: #991b1b;
+  box-shadow: 0 1px 2px rgba(185, 28, 28, 0.18);
+}
+
+.appCompactActionButtonDanger:not(:disabled):hover {
+  background-color: #991b1b;
+  border-color: #7f1d1d;
+}
+
+.appPrimaryFormButton {
+  min-height: 3.45rem;
+  padding: 0.95rem 1.3rem;
+  border: 0;
+  border-radius: var(--ui-control-radius);
+  background: linear-gradient(135deg, #0f766e, #0369a1);
+  color: #ffffff;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.appPrimaryFormButton:hover {
+  filter: brightness(1.04);
+}
+
 .appNavBrandGroup {
   display: flex;
   align-items: center;

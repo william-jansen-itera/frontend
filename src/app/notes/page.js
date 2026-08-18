@@ -664,10 +664,19 @@ function NotesPage() {
                 </select>
               </label>
               <button
+                onClick={() => {
+                  router.push("/trees");
+                }}
+                type="button"
+                className="appCompactActionButton appCompactActionButtonNeutral"
+              >
+                Manage
+              </button>
+              <button
                 onClick={handleAddRoot}
                 disabled={!canAddRoot}
                 type="button"
-                className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral}`}
+                className="appCompactActionButton appCompactActionButtonNeutral"
               >
                 Add Root
               </button>
@@ -675,7 +684,7 @@ function NotesPage() {
                 onClick={handleAddChild}
                 disabled={!canAddChild}
                 type="button"
-                className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral}`}
+                className="appCompactActionButton appCompactActionButtonNeutral"
               >
                 Add Child
               </button>
@@ -683,7 +692,7 @@ function NotesPage() {
                 onClick={handleDelete}
                 disabled={!canDelete}
                 type="button"
-                className={`${styles.toolbarButton} ${styles.toolbarButtonDanger}`}
+                className="appCompactActionButton appCompactActionButtonDanger"
               >
                 Delete
               </button>
@@ -799,7 +808,7 @@ function NotesPage() {
                 onClick={handleSaveNodeDetails}
                 disabled={!selectedNode || isSavingNodeDetails || !nodeEditorState.name.trim()}
                 type="button"
-                className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
+                className="appCompactActionButton appCompactActionButtonPrimary"
               >
                 {isSavingNodeDetails ? "Saving..." : "Save"}
               </button>
@@ -813,19 +822,19 @@ function NotesPage() {
             ) : (
               <div className={styles.detailsForm}>
                 <label className={styles.formField}>
-                  <span className={styles.fieldLabel}>Name</span>
+                  <span className="appFieldLabel">Name</span>
                   <input
                     type="text"
                     value={nodeEditorState.name}
                     onChange={(event) => handleNodeEditorChange("name", event.target.value)}
                     disabled={isNodeDetailsBusy}
-                    className={styles.textInput}
+                    className={`appTextControl ${styles.textInput}`}
                   />
                 </label>
                 {canEditLeafDetails ? (
                   <>
                     <label className={styles.formField}>
-                      <span className={styles.fieldLabel}>Notes</span>
+                      <span className="appFieldLabel">Notes</span>
                       <NotesEditor
                         value={nodeEditorState.notes}
                         onChange={(nextValue) => handleNodeEditorChange("notes", nextValue)}
@@ -834,11 +843,11 @@ function NotesPage() {
                     </label>
                     <section className={styles.attachmentSection}>
                       <div className={styles.attachmentSectionHeader}>
-                        <span className={styles.fieldLabel}>Attachments</span>
+                        <span className="appFieldLabel">Attachments</span>
                         <span className={styles.attachmentHint}>Allowed up to 10 MB each.</span>
                       </div>
                       <div className={styles.attachmentPicker}>
-                        <label className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral} ${isNodeDetailsBusy ? styles.pickerButtonDisabled : ""}`}>
+                        <label className={`appCompactActionButton appCompactActionButtonNeutral ${isNodeDetailsBusy ? styles.pickerButtonDisabled : ""}`}>
                           <span>Choose files</span>
                           <input
                             ref={attachmentInputRef}
@@ -854,7 +863,7 @@ function NotesPage() {
                           onClick={handleUploadAttachments}
                           disabled={isNodeDetailsBusy || pendingFiles.length === 0}
                           type="button"
-                          className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
+                          className="appCompactActionButton appCompactActionButtonPrimary"
                         >
                           {isUploadingAttachments ? "Uploading..." : `Upload${pendingFiles.length ? ` (${pendingFiles.length})` : ""}`}
                         </button>
@@ -894,7 +903,7 @@ function NotesPage() {
                                     href={getNodeAttachmentContentUrl(attachment)}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className={`${styles.toolbarButton} ${styles.toolbarButtonNeutral} ${styles.attachmentActionLink}`}
+                                    className={`appCompactActionButton appCompactActionButtonNeutral ${styles.attachmentActionLink}`}
                                   >
                                     Open
                                   </a>
@@ -903,7 +912,7 @@ function NotesPage() {
                                   onClick={() => handleDeleteAttachment(attachment.id)}
                                   disabled={isNodeDetailsBusy}
                                   type="button"
-                                  className={`${styles.toolbarButton} ${styles.toolbarButtonDanger}`}
+                                  className="appCompactActionButton appCompactActionButtonDanger"
                                 >
                                   {deletingAttachmentId === String(attachment.id) ? "Deleting..." : "Delete file"}
                                 </button>
