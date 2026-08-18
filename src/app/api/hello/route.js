@@ -2,6 +2,30 @@
 import { NextResponse } from 'next/server';
 import { sql, withSqlConnection } from '@/server/utils/sql';
 
+function isLikelySleepingSqlError(error) {
+  const message = String(
+    error?.message
+      || error?.originalError?.message
+      || error?.precedingErrors?.[0]?.message
+      || '',
+  ).toLowerCase();
+  const code = String(error?.code || error?.originalError?.code || '').toLowerCase();
+
+  return [
+    'timeout',
+    'timed out',
+    'connection timeout',
+    'handshake inactivity timeout',
+    'login timeout',
+    'server was not found or was not accessible',
+    'the database is not currently available',
+    'resuming',
+    'warming up',
+    'paused',
+    'sleep',
+  ].some((fragment) => message.includes(fragment)) || ['etimeout', 'esocket'].includes(code);
+}
+
 export async function GET(request) {
   const { logTrace, logException } = await import('../../../server/utils/logging');
   // Try to get the x-ms-client-principal header
@@ -33,9 +57,17 @@ export async function GET(request) {
   } catch (err) {
     logException(err);
 
+    if (isLikelySleepingSqlError(err)) {
+      return NextResponse.json({
+        level: 'warning',
+        message: 'Next API ok. System is waking up, please check back in a minute.',
+        userName,
+      });
+    }
+
     return NextResponse.json({
-      level: 'warning',
-      message: 'Next API ok. System is waking up, please check back in a minute.',
+      level: 'error',
+      message: 'Next API ok. DB connection failed.',
       userName,
     });
   }
