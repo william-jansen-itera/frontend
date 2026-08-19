@@ -56,7 +56,17 @@ const INSERT_GROUPS = [
   },
 ];
 
-export function NotesEditor({ value, onChange, disabled, onGenerate = null, isGenerating = false, canGenerate = false }) {
+export function NotesEditor({
+  value,
+  onChange,
+  disabled,
+  onGenerate = null,
+  isGenerating = false,
+  canGenerate = false,
+  isEditing = false,
+  onStartEditing = null,
+  onCancelEditing = null,
+}) {
   const editorRef = useRef(null);
   const textareaRef = useRef(null);
   const selectionRef = useRef({ start: 0, end: 0 });
@@ -125,11 +135,19 @@ export function NotesEditor({ value, onChange, disabled, onGenerate = null, isGe
       <div className={styles.toolbar}>
         <button
           type="button"
-          className={styles.insertButton}
+          className={styles.toolbarButton}
+          onClick={onStartEditing}
+          disabled={disabled || isEditing}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          className={styles.toolbarButton}
           onClick={() => {
             setIsPanelOpen((currentOpen) => !currentOpen);
           }}
-          disabled={disabled}
+          disabled={disabled || !isEditing}
           aria-expanded={isPanelOpen}
           aria-haspopup="dialog"
         >
@@ -138,16 +156,27 @@ export function NotesEditor({ value, onChange, disabled, onGenerate = null, isGe
         {onGenerate ? (
           <button
             type="button"
-            className={styles.insertButton}
+            className={styles.toolbarButton}
             onClick={onGenerate}
-            disabled={disabled || !canGenerate || isGenerating}
+            disabled={disabled || !isEditing || !canGenerate || isGenerating}
           >
             {isGenerating ? "Generating..." : "Generate"}
           </button>
         ) : null}
+        <button
+          type="button"
+          className={styles.toolbarButton}
+          onClick={() => {
+            setIsPanelOpen(false);
+            onCancelEditing?.();
+          }}
+          disabled={disabled || !isEditing}
+        >
+          Cancel
+        </button>
       </div>
 
-      {isPanelOpen && (
+      {isEditing && isPanelOpen && (
         <div className={styles.insertPanel} role="dialog" aria-label="Insert symbols and templates">
           {INSERT_GROUPS.map((group) => (
             <section key={group.title} className={styles.insertGroup}>
@@ -178,18 +207,24 @@ export function NotesEditor({ value, onChange, disabled, onGenerate = null, isGe
         </div>
       )}
 
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={handleChange}
-        onBlur={rememberSelection}
-        onClick={rememberSelection}
-        onKeyUp={rememberSelection}
-        onSelect={rememberSelection}
-        disabled={disabled}
-        rows={12}
-        className={styles.textArea}
-      />
+      {isEditing ? (
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={handleChange}
+          onBlur={rememberSelection}
+          onClick={rememberSelection}
+          onKeyUp={rememberSelection}
+          onSelect={rememberSelection}
+          disabled={disabled}
+          rows={12}
+          className={styles.textArea}
+        />
+      ) : (
+        <div className={styles.readView}>
+          {String(value || "").trim() ? value : <span className={styles.readViewEmpty}>No notes yet.</span>}
+        </div>
+      )}
     </div>
   );
 }

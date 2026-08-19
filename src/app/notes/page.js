@@ -92,10 +92,12 @@ function NotesPage() {
   const [expandedState, setExpandedState] = useState({});
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [nodeEditorState, setNodeEditorState] = useState(() => buildNodeEditorState());
+  const [savedNodeEditorState, setSavedNodeEditorState] = useState(() => buildNodeEditorState());
   const [nodeDetailsError, setNodeDetailsError] = useState(null);
   const [isSavingNodeDetails, setIsSavingNodeDetails] = useState(false);
   const [isGeneratingChildren, setIsGeneratingChildren] = useState(false);
   const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState(null);
@@ -131,8 +133,11 @@ function NotesPage() {
     setTreeData(buildNestedTreeData(flatData));
     setExpandedState(nextExpandedState);
     setSelectedNodeId(nextSelectedNodeId);
-    setNodeEditorState(buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null));
+    const nextEditorState = buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null);
+    setNodeEditorState(nextEditorState);
+    setSavedNodeEditorState(nextEditorState);
     setNodeDetailsError(null);
+    setIsEditingNotes(false);
     setPendingFiles([]);
 
     if (attachmentInputRef.current) {
@@ -144,8 +149,11 @@ function NotesPage() {
     setTreeData([]);
     setExpandedState({});
     setSelectedNodeId(null);
-    setNodeEditorState(buildNodeEditorState());
+    const nextEditorState = buildNodeEditorState();
+    setNodeEditorState(nextEditorState);
+    setSavedNodeEditorState(nextEditorState);
     setNodeDetailsError(null);
+    setIsEditingNotes(false);
     setPendingFiles([]);
 
     if (attachmentInputRef.current) {
@@ -165,14 +173,20 @@ function NotesPage() {
             setTreeData([]);
             setExpandedState({});
             setSelectedNodeId(null);
-            setNodeEditorState(buildNodeEditorState());
+            const nextEditorState = buildNodeEditorState();
+            setNodeEditorState(nextEditorState);
+            setSavedNodeEditorState(nextEditorState);
+            setIsEditingNotes(false);
           }
         } else {
           setAvailableTrees([]);
           setTreeData([]);
           setExpandedState({});
           setSelectedNodeId(null);
-          setNodeEditorState(buildNodeEditorState());
+          const nextEditorState = buildNodeEditorState();
+          setNodeEditorState(nextEditorState);
+          setSavedNodeEditorState(nextEditorState);
+          setIsEditingNotes(false);
           setError(trees.error || "Unknown error, data is not array");
         }
       })
@@ -182,7 +196,10 @@ function NotesPage() {
         setTreeData([]);
         setExpandedState({});
         setSelectedNodeId(null);
-        setNodeEditorState(buildNodeEditorState());
+        const nextEditorState = buildNodeEditorState();
+        setNodeEditorState(nextEditorState);
+        setSavedNodeEditorState(nextEditorState);
+        setIsEditingNotes(false);
         setError(err.message);
       });
   }, []);
@@ -230,14 +247,20 @@ function NotesPage() {
           setTreeData(buildNestedTreeData(flatData));
           setExpandedState(nextExpandedState);
           setSelectedNodeId(nextSelectedNodeId);
-          setNodeEditorState(buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null));
+          const nextEditorState = buildNodeEditorState(nextSelectedNode ? { name: nextSelectedNode.name } : null);
+          setNodeEditorState(nextEditorState);
+          setSavedNodeEditorState(nextEditorState);
           setNodeDetailsError(null);
+          setIsEditingNotes(false);
           setError(null);
         } else {
           setTreeData([]);
           setExpandedState({});
           setSelectedNodeId(null);
-          setNodeEditorState(buildNodeEditorState());
+          const nextEditorState = buildNodeEditorState();
+          setNodeEditorState(nextEditorState);
+          setSavedNodeEditorState(nextEditorState);
+          setIsEditingNotes(false);
           setError(flatData.error || "Unknown error, data is not array");
         }
       })
@@ -246,7 +269,10 @@ function NotesPage() {
         setTreeData([]);
         setExpandedState({});
         setSelectedNodeId(null);
-        setNodeEditorState(buildNodeEditorState());
+        const nextEditorState = buildNodeEditorState();
+        setNodeEditorState(nextEditorState);
+        setSavedNodeEditorState(nextEditorState);
+        setIsEditingNotes(false);
         setError(err.message);
       });
   }, [treeIdParam, nodeIdParam]);
@@ -274,7 +300,10 @@ function NotesPage() {
           throw new Error(result.error || "Failed to load node details");
         }
 
-        setNodeEditorState(buildNodeEditorState(result));
+        const nextEditorState = buildNodeEditorState(result);
+        setNodeEditorState(nextEditorState);
+        setSavedNodeEditorState(nextEditorState);
+        setIsEditingNotes(false);
         setNodeDetailsError(null);
       })
       .catch((err) => {
@@ -562,6 +591,8 @@ function NotesPage() {
       }
 
       setNodeEditorState(buildNodeEditorState(result));
+      setSavedNodeEditorState(buildNodeEditorState(result));
+      setIsEditingNotes(false);
       setPendingFiles([]);
 
       if (attachmentInputRef.current) {
@@ -605,7 +636,10 @@ function NotesPage() {
         throw new Error(result.error || "Failed to delete attachment");
       }
 
-      setNodeEditorState(buildNodeEditorState(result));
+      const nextEditorState = buildNodeEditorState(result);
+      setNodeEditorState(nextEditorState);
+      setSavedNodeEditorState(nextEditorState);
+      setIsEditingNotes(false);
     } catch (err) {
       console.error("Failed to delete attachment:", err);
       setNodeDetailsError(err.message);
@@ -615,7 +649,7 @@ function NotesPage() {
   };
 
   const handleGenerateNotes = async () => {
-    if (!treeIdParam || !selectedNodeId || !canGenerateNotes) {
+    if (!treeIdParam || !selectedNodeId || !canGenerateNotes || !isEditingNotes) {
       return;
     }
 
@@ -686,13 +720,33 @@ function NotesPage() {
       }
 
       applyTreeResponse(result.flatData, selectedNodeId);
-      setNodeEditorState(buildNodeEditorState(result.details));
+      const nextEditorState = buildNodeEditorState(result.details);
+      setNodeEditorState(nextEditorState);
+      setSavedNodeEditorState(nextEditorState);
+      setIsEditingNotes(false);
     } catch (err) {
       console.error("Failed to save node details:", err);
       setNodeDetailsError(err.message);
     } finally {
       setIsSavingNodeDetails(false);
     }
+  };
+
+  const handleStartEditingNotes = () => {
+    if (!canEditLeafDetails || isNodeDetailsBusy) {
+      return;
+    }
+
+    setIsEditingNotes(true);
+  };
+
+  const handleCancelEditingNotes = () => {
+    setNodeEditorState((currentState) => ({
+      ...currentState,
+      notes: savedNodeEditorState.notes,
+    }));
+    setNodeDetailsError(null);
+    setIsEditingNotes(false);
   };
 
   if (error) {
@@ -827,11 +881,14 @@ function NotesPage() {
                 }
 
                 setSelectedNodeId(nextSelectedNodeId);
-                setNodeEditorState(buildNodeEditorState(nextSelectedNode ? {
+                const nextEditorState = buildNodeEditorState(nextSelectedNode ? {
                   name: nextSelectedNode.name,
                   isLeafNode: nextSelectedNode.isLeafNode,
-                } : null));
+                } : null);
+                setNodeEditorState(nextEditorState);
+                setSavedNodeEditorState(nextEditorState);
                 setNodeDetailsError(null);
+                setIsEditingNotes(false);
                 setPendingFiles([]);
 
                 if (attachmentInputRef.current) {
@@ -938,7 +995,10 @@ function NotesPage() {
                         disabled={isNodeDetailsBusy}
                         onGenerate={handleGenerateNotes}
                         isGenerating={isGeneratingNotes}
-                        canGenerate={canGenerateNotes}
+                        canGenerate={canGenerateNotes && isEditingNotes}
+                        isEditing={isEditingNotes}
+                        onStartEditing={handleStartEditingNotes}
+                        onCancelEditing={handleCancelEditingNotes}
                       />
                     </div>
                     <section className={styles.attachmentSection}>
