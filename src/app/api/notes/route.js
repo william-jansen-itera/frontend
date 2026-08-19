@@ -1,7 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { deleteNodeAttachmentBlobIfExists, uploadNodeAttachment } from '@/server/utils/blobStorage';
-import { generateChildTitlesFromBreadcrumb } from '@/server/utils/chatService';
+import { generateChildTitlesFromBreadcrumb, generateLeafNotesDraft } from '@/server/utils/chatService';
 import { sql, withSqlConnection } from '@/server/utils/sql';
 import { getTreeList } from '@/server/utils/treeCatalog';
 
@@ -823,6 +823,33 @@ export async function POST(request) {
         parentId: selectedNodeId,
         children: generatedChildren.children,
       }));
+    }
+
+    if (action === 'generate-notes') {
+      if (!nodeId) {
+        return NextResponse.json({ error: 'Invalid request, nodeId is required for note generation' }, { status: 400 });
+      }
+
+      const treeInstanceId = parseInt(String(treeId), 10);
+      const selectedNodeId = parseInt(String(nodeId), 10);
+      const generationContext = await withSqlConnection(async () => getNodeGenerationContext(treeInstanceId, selectedNodeId));
+
+      if (!generationContext) {
+        return NextResponse.json({ error: 'Node was not found for the selected tree' }, { status: 404 });
+      }
+
+      if (!generationContext.isLeafNode) {
+        return NextResponse.json({ error: 'Cannot generate notes for a non-leaf node' }, { status: 400 });
+      }
+
+      const generatedDraft = await generateLeafNotesDraft({
+        treeName: generationContext.treeName,
+        breadcrumbTitles: generationContext.breadcrumbTitles,
+      });
+
+      return NextResponse.json({
+        notes: generatedDraft.notes,
+      });
     }
 
     return NextResponse.json(await CreateTreeNode({

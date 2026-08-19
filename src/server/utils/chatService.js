@@ -303,6 +303,19 @@ const GENERATED_CHILDREN_SCHEMA = {
   additionalProperties: false,
 };
 
+const GENERATED_NOTES_SCHEMA = {
+  type: 'object',
+  properties: {
+    notes: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_NOTES_LENGTH,
+    },
+  },
+  required: ['notes'],
+  additionalProperties: false,
+};
+
 function parseTreePopulationResponse(response) {
   const rawText = normalizeWhitespace(response?.output_text ?? '');
 
@@ -646,6 +659,94 @@ export async function generateChildTitlesFromBreadcrumb({ treeName, breadcrumbTi
   }
 
   throw lastError ?? new Error('Generated child payload was invalid.');
+}
+
+function buildLeafNoteGenerationPrompt({ treeName, breadcrumbTitles }) {
+  const normalizedTreeName = normalizeWhitespace(treeName);
+  const breadcrumbPath = breadcrumbTitles.map((title) => normalizeWhitespace(title)).filter(Boolean).join(' > ');
+
+  return [
+    'Generate notes for a leaf node in a tree-based knowledge application.',
+    'Use the tree title and breadcrumb path below as the only semantic context.',
+    'Return valid JSON only, matching the provided schema.',
+    'The notes must contain actionable detailed information and concrete facts relevant to the leaf topic.',
+    'You may organize the notes into short subsections when that improves clarity, but every subsection must contain substantive content.',
+    'Do not return empty structure, outline-only headings, hierarchy suggestions, placeholders, or meta commentary.',
+    'Write concise but substantive notes that a user could keep as working reference material for this leaf topic.',
+    'Prefer specific guidance, clear factual statements, and practical details over generic framing.',
+    `Keep the notes within ${MAX_GENERATED_NOTES_LENGTH} characters.`,
+    'Use a mix of short explanatory paragraphs and lists when helpful, rather than lists only.',
+    'When listing steps or procedures, use numbered lists.',
+    'For non-step lists such as facts, examples, warnings, options, or checklists, use bullet lists.',
+    '',
+    'Tree title:',
+    normalizedTreeName,
+    '',
+    'Breadcrumb path:',
+    breadcrumbPath,
+  ].filter(Boolean).join('\n');
+}
+
+export function validateGeneratedLeafNotesPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Generated notes payload must be an object.');
+  }
+
+  const notes = normalizeGeneratedNodeNotes(payload.notes);
+
+  if (!notes) {
+    throw new Error('Generated notes payload must include non-empty notes.');
+  }
+
+  return { notes };
+}
+
+async function requestGeneratedLeafNotes({ treeName, breadcrumbTitles }) {
+  const project = getProjectClient();
+  const openAIClient = project.getOpenAIClient();
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+
+  return openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: buildLeafNoteGenerationPrompt({ treeName, breadcrumbTitles }),
+      },
+    ],
+    text: {
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'generated_leaf_notes',
+        strict: true,
+        schema: GENERATED_NOTES_SCHEMA,
+      },
+    },
+  });
+}
+
+export async function generateLeafNotesDraft({ treeName, breadcrumbTitles }) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await requestGeneratedLeafNotes({ treeName, breadcrumbTitles });
+    const parsedResponse = parseTreePopulationResponse(response);
+
+    if (parsedResponse.error) {
+      lastError = new Error(parsedResponse.error);
+      continue;
+    }
+
+    try {
+      return validateGeneratedLeafNotesPayload(parsedResponse.parsed);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Generated notes payload was invalid.');
+    }
+  }
+
+  throw lastError ?? new Error('Generated notes payload was invalid.');
 }
 
 async function generateAiDescription(tree) {

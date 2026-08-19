@@ -95,6 +95,7 @@ function NotesPage() {
   const [nodeDetailsError, setNodeDetailsError] = useState(null);
   const [isSavingNodeDetails, setIsSavingNodeDetails] = useState(false);
   const [isGeneratingChildren, setIsGeneratingChildren] = useState(false);
+  const [isGeneratingNotes, setIsGeneratingNotes] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState(null);
@@ -109,7 +110,8 @@ function NotesPage() {
   const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode);
   const canDelete = Boolean(selectedNode);
   const canEditLeafDetails = Boolean(selectedNode?.isLeafNode);
-  const isNodeDetailsBusy = isSavingNodeDetails || isUploadingAttachments || deletingAttachmentId !== null;
+  const canGenerateNotes = Boolean(selectedNode?.isLeafNode);
+  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null;
 
   const applyTreeResponse = (flatData, targetSelectedNodeId = null) => {
     if (!Array.isArray(flatData)) {
@@ -612,6 +614,50 @@ function NotesPage() {
     }
   };
 
+  const handleGenerateNotes = async () => {
+    if (!treeIdParam || !selectedNodeId || !canGenerateNotes) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Generate draft notes for "${selectedNode?.name || 'this node'}"? The generated notes will be inserted into the editor and will not be saved until you press Save.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsGeneratingNotes(true);
+      setNodeDetailsError(null);
+
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate-notes",
+          treeId: treeIdParam,
+          nodeId: selectedNodeId,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to generate draft notes");
+      }
+
+      setNodeEditorState((currentState) => ({
+        ...currentState,
+        notes: typeof result.notes === "string" ? result.notes : currentState.notes,
+      }));
+    } catch (err) {
+      console.error("Failed to generate draft notes:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setIsGeneratingNotes(false);
+    }
+  };
+
   // Save node editor state to the server 
   // and update state with the response, including treeData and nodeEditorState
   const handleSaveNodeDetails = async () => {
@@ -857,7 +903,7 @@ function NotesPage() {
               <span className={styles.panelHeading}>Node Details</span>
               <button
                 onClick={handleSaveNodeDetails}
-                disabled={!selectedNode || isSavingNodeDetails || !nodeEditorState.name.trim()}
+                disabled={!selectedNode || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim()}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonPrimary"
               >
@@ -884,14 +930,17 @@ function NotesPage() {
                 </label>
                 {canEditLeafDetails ? (
                   <>
-                    <label className={styles.formField}>
+                    <div className={styles.formField}>
                       <span className="appFieldLabel">Notes</span>
                       <NotesEditor
                         value={nodeEditorState.notes}
                         onChange={(nextValue) => handleNodeEditorChange("notes", nextValue)}
                         disabled={isNodeDetailsBusy}
+                        onGenerate={handleGenerateNotes}
+                        isGenerating={isGeneratingNotes}
+                        canGenerate={canGenerateNotes}
                       />
-                    </label>
+                    </div>
                     <section className={styles.attachmentSection}>
                       <div className={styles.attachmentSectionHeader}>
                         <span className="appFieldLabel">Attachments</span>

@@ -56,7 +56,7 @@ const INSERT_GROUPS = [
   },
 ];
 
-export function NotesEditor({ value, onChange, disabled }) {
+export function NotesEditor({ value, onChange, disabled, onGenerate = null, isGenerating = false, canGenerate = false }) {
   const editorRef = useRef(null);
   const textareaRef = useRef(null);
   const selectionRef = useRef({ start: 0, end: 0 });
@@ -135,6 +135,16 @@ export function NotesEditor({ value, onChange, disabled }) {
         >
           Insert
         </button>
+        {onGenerate ? (
+          <button
+            type="button"
+            className={styles.insertButton}
+            onClick={onGenerate}
+            disabled={disabled || !canGenerate || isGenerating}
+          >
+            {isGenerating ? "Generating..." : "Generate"}
+          </button>
+        ) : null}
       </div>
 
       {isPanelOpen && (
