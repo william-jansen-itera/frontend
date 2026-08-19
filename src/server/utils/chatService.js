@@ -15,6 +15,7 @@ const MAX_TOOL_ROUNDS = 5;
 const AGENT_PREVIEW_FEATURES = 'WorkflowAgents=V1Preview';
 const MAX_GENERATED_ROOT_NODES = 5;
 const MAX_GENERATED_CHILDREN_PER_NODE = 5;
+const MAX_GENERATED_LEAF_CHILDREN_PER_NODE = 10;
 const MAX_GENERATED_TITLE_LENGTH = 255;
 const MAX_GENERATED_NOTES_LENGTH = 4000;
 
@@ -216,7 +217,7 @@ const LEVEL_THREE_NODE_SCHEMA = {
     children: {
       type: 'array',
       minItems: 1,
-      maxItems: MAX_GENERATED_CHILDREN_PER_NODE,
+      maxItems: MAX_GENERATED_LEAF_CHILDREN_PER_NODE,
       items: LEAF_NODE_SCHEMA,
     },
   },
@@ -289,19 +290,21 @@ const GENERATED_CHILD_NODE_SCHEMA = {
   additionalProperties: false,
 };
 
-const GENERATED_CHILDREN_SCHEMA = {
-  type: 'object',
-  properties: {
-    children: {
-      type: 'array',
-      minItems: 1,
-      maxItems: MAX_GENERATED_CHILDREN_PER_NODE,
-      items: GENERATED_CHILD_NODE_SCHEMA,
+function buildGeneratedChildrenSchema(maxChildren) {
+  return {
+    type: 'object',
+    properties: {
+      children: {
+        type: 'array',
+        minItems: 1,
+        maxItems: maxChildren,
+        items: GENERATED_CHILD_NODE_SCHEMA,
+      },
     },
-  },
-  required: ['children'],
-  additionalProperties: false,
-};
+    required: ['children'],
+    additionalProperties: false,
+  };
+}
 
 const GENERATED_NOTES_SCHEMA = {
   type: 'object',
@@ -392,8 +395,8 @@ function validateGeneratedLevelThreeNode(node, pathLabel) {
     throw new Error(`${pathLabel} must include a non-empty title.`);
   }
 
-  if (!children || children.length === 0 || children.length > MAX_GENERATED_CHILDREN_PER_NODE) {
-    throw new Error(`${pathLabel} must include between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} leaf children.`);
+  if (!children || children.length === 0 || children.length > MAX_GENERATED_LEAF_CHILDREN_PER_NODE) {
+    throw new Error(`${pathLabel} must include between 1 and ${MAX_GENERATED_LEAF_CHILDREN_PER_NODE} leaf children.`);
   }
 
   return {
@@ -481,36 +484,69 @@ export function validateGeneratedTreePayload(payload) {
   };
 }
 
+
 function buildTreePopulationPrompt({ treeName, description }) {
   return [
     `Tree name: ${treeName}.`,
-    'Use the stored tree description below as the only semantic source.',
-    'Generate a hierarchy for a tree-based knowledge application.',
-    'Upper levels organize the topic. Level-4 leaves carry actionable detail in notes.',
-    'Return valid JSON only, matching the provided schema.',
-    `Produce between 1 and ${MAX_GENERATED_ROOT_NODES} root nodes.`,
-    `Each structural node must have between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} children.`,
-    'Keep exactly three structural levels before the leaf layer.',
-    'Leaves must appear at level 4 only.',
+    'This tree has four levels: root, level-2, level-3, and level-4 leaf nodes.',
+    'Follow all instruction blocks exactly as written. Do not merge, reinterpret, or generalize instructions across blocks.',
 
-    // 🔥 Inserted extraction instruction block
-    'Extract the top-level topics from the stored tree description. Use the extracted top-level topics as the root-node candidates for the hierarchy.',
+    // Corrected top-level topic rule
+    'Use the stored tree description only to identify top-level topics. Top-level topics must be taken exactly as enumerated; do not reinterpret, merge, broaden, or reorganize them based on other parts of the description.',
+    'During child-node generation (level-2, level-3, and leaf nodes), you may use relevant domain knowledge to expand and enrich the top-level topics, but all generated content must remain fully consistent with the ancestor chain.',
+
     '',
     'Extraction instruction:',
-    'Extract the top-level topics from the stored tree description. A top-level topic is a high-level category explicitly presented as an overall area, domain, or major skill group. Identify only major conceptual groups, not details, examples, or sub-skills. Prefer phrases that describe broad areas of capability. Ignore descriptive sentences, explanations, and lists of techniques unless they define a major category. Do not infer or invent new categories; extract only what is explicitly stated. Preserve the original wording where possible. Output the result as a flat list of concise phrases.',
-    '',
+    'Extract all explicitly enumerated overall areas from the stored tree description. If the description lists N overall areas (e.g., “five overall areas: A, B, C, D, E”), extract each one as a separate top-level topic.',
+    'Extract only major conceptual groups; do not infer new categories.',
+    'Preserve original wording.',
+    'Every extracted top-level topic must become a root node.',
+    'Output a flat list of concise phrases.',
 
-    'Use concise titles and a logical order from broad categories to specific details.',
-    'Do not collapse clearly distinct top-level topic areas into fewer root nodes unless two areas are truly the same topic.',
-    'Put practical user-facing guidance into leaf notes.',
-    'Prefer broader coverage when the description supports it, but do not invent filler just to increase counts.',
-    'For a narrow topic, a single branch with one node at each structural level and one leaf is valid.',
-    'Do not emit duplicate sibling titles, empty categories, notes on structural nodes, or properties outside the schema.',
+    '',
+    'Root-level instruction:',
+    'The number of root nodes must exactly match the number of extracted top-level topics.',
+    'Do not merge or collapse topics.',
+    'Each root node defines the primary semantic anchor for its entire branch.',
+    'Use concise titles.',
+    'Each root node must be a direct semantic parent of its level-2 children.',
+
+    '',
+    'Level-2 instruction:',
+    `Generate between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} children per root node.`,
+    'Each level-2 node must be a coherent subtopic of its root node and semantically derived from it.',
+    'Use domain knowledge to expand the root topic into meaningful subtopics while staying fully aligned with the root.',
+
+    '',
+    'Level-3 instruction:',
+    `Generate between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} children per level-2 node.`,
+    'Each level-3 node must be a narrow, specific subtopic of its level-2 parent and root ancestor.',
+    'Use domain knowledge to refine the level-2 topic into more specific areas that naturally support leaf-level detail.',
+
+    '',
+    'Leaf instruction:',
+    `Generate between 1 and ${MAX_GENERATED_LEAF_CHILDREN_PER_NODE} leaf nodes per level-3 node.`,
+    'Preferred number of leaf nodes is 5–10. Generate fewer than 5 only when the level-3 topic is genuinely narrow.',
+    'Leaf nodes must be narrow, concrete, and actionable.',
+    'Each leaf must be semantically derived from the entire ancestor chain (root → level-2 → level-3).',
+    'Do not introduce concepts not implied by the ancestors.',
+    'Use domain knowledge to produce realistic, actionable leaf-level details.',
+
+    '',
+    'General constraints:',
+    'Upper levels organize the topic; leaves carry actionable detail.',
+    'Do not produce duplicate sibling titles, empty categories, or structural-node notes.',
+    'Do not place content intended for one level into another.',
+    'All descendant nodes must reinforce the top-level topic of their branch.',
+    'Use the rest of the stored tree description only to enrich and specify content without redirecting the top-level topic.',
+
     '',
     'Stored tree description:',
     description,
   ].filter(Boolean).join('\n');
 }
+
+
 
 async function requestGeneratedTreeNodes(tree) {
   const project = getProjectClient();
@@ -563,18 +599,21 @@ export async function generateTreeNodesFromDescription(tree) {
   throw lastError ?? new Error('Generated payload was invalid.');
 }
 
-function buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles }) {
+function buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles, generateLeafChildren = false }) {
   const normalizedTreeName = normalizeWhitespace(treeName);
   const breadcrumbPath = breadcrumbTitles.map((title) => normalizeWhitespace(title)).filter(Boolean).join(' > ');
+  const maxChildren = generateLeafChildren ? MAX_GENERATED_LEAF_CHILDREN_PER_NODE : MAX_GENERATED_CHILDREN_PER_NODE;
 
   return [
     'Generate immediate child node titles for a tree-based knowledge application.',
     'Use the tree title and breadcrumb path below as the only semantic context.',
-    `Generate between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} immediate children for the final node in the breadcrumb path.`,
+    `Generate between 1 and ${maxChildren} immediate ${generateLeafChildren ? 'leaf ' : ''}children for the final node in the breadcrumb path.`,
     'Return valid JSON only, matching the provided schema.',
     'Each child must include title only.',
     'Do not generate grandchildren, notes, explanations, numbering, or extra properties.',
-    'Use concise, specific titles that fit naturally as the next layer below the final node in the breadcrumb path.',
+    generateLeafChildren
+      ? 'Use concise, low-level, narrowly scoped titles that fit naturally as leaf topics below the final node in the breadcrumb path.'
+      : 'Use concise, specific titles that fit naturally as the next structural layer below the final node in the breadcrumb path.',
     'Avoid duplicate titles within the generated output when possible.',
     '',
     'Tree title:',
@@ -585,15 +624,15 @@ function buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles }) {
   ].filter(Boolean).join('\n');
 }
 
-export function validateGeneratedChildTitlePayload(payload) {
+export function validateGeneratedChildTitlePayload(payload, maxChildren = MAX_GENERATED_CHILDREN_PER_NODE) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('Generated child payload must be an object.');
   }
 
   const children = Array.isArray(payload.children) ? payload.children : null;
 
-  if (!children || children.length === 0 || children.length > MAX_GENERATED_CHILDREN_PER_NODE) {
-    throw new Error(`Generated child payload must include between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} children.`);
+  if (!children || children.length === 0 || children.length > maxChildren) {
+    throw new Error(`Generated child payload must include between 1 and ${maxChildren} children.`);
   }
 
   return {
@@ -613,10 +652,11 @@ export function validateGeneratedChildTitlePayload(payload) {
   };
 }
 
-async function requestGeneratedChildTitles({ treeName, breadcrumbTitles }) {
+async function requestGeneratedChildTitles({ treeName, breadcrumbTitles, generateLeafChildren = false }) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const { modelDeploymentName } = getRequiredFoundryConfig();
+  const maxChildren = generateLeafChildren ? MAX_GENERATED_LEAF_CHILDREN_PER_NODE : MAX_GENERATED_CHILDREN_PER_NODE;
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
@@ -624,7 +664,7 @@ async function requestGeneratedChildTitles({ treeName, breadcrumbTitles }) {
       {
         type: 'message',
         role: 'system',
-        content: buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles }),
+        content: buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles, generateLeafChildren }),
       },
     ],
     text: {
@@ -633,17 +673,18 @@ async function requestGeneratedChildTitles({ treeName, breadcrumbTitles }) {
         type: 'json_schema',
         name: 'generated_child_titles',
         strict: true,
-        schema: GENERATED_CHILDREN_SCHEMA,
+        schema: buildGeneratedChildrenSchema(maxChildren),
       },
     },
   });
 }
 
-export async function generateChildTitlesFromBreadcrumb({ treeName, breadcrumbTitles }) {
+export async function generateChildTitlesFromBreadcrumb({ treeName, breadcrumbTitles, generateLeafChildren = false }) {
   let lastError = null;
+  const maxChildren = generateLeafChildren ? MAX_GENERATED_LEAF_CHILDREN_PER_NODE : MAX_GENERATED_CHILDREN_PER_NODE;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await requestGeneratedChildTitles({ treeName, breadcrumbTitles });
+    const response = await requestGeneratedChildTitles({ treeName, breadcrumbTitles, generateLeafChildren });
     const parsedResponse = parseTreePopulationResponse(response);
 
     if (parsedResponse.error) {
@@ -652,7 +693,7 @@ export async function generateChildTitlesFromBreadcrumb({ treeName, breadcrumbTi
     }
 
     try {
-      return validateGeneratedChildTitlePayload(parsedResponse.parsed);
+      return validateGeneratedChildTitlePayload(parsedResponse.parsed, maxChildren);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Generated child payload was invalid.');
     }

@@ -395,10 +395,18 @@ async function getNodeGenerationContext(treeInstanceId, nodeId, transaction = nu
   }
 
   const selectedNode = result.recordset[result.recordset.length - 1];
+  const createContext = await getTreeCreateContext(treeInstanceId, nodeId, transaction);
+  const parentDepth = Number(createContext?.parentDepth);
+  const maxDepth = Number(createContext?.maxDepth);
+  const generatedChildIsLeaf = !Boolean(selectedNode.isLeafNode)
+    && Number.isFinite(parentDepth)
+    && Number.isFinite(maxDepth)
+    && parentDepth + 1 >= maxDepth;
 
   return {
     nodeId: selectedNode.id,
     isLeafNode: Boolean(selectedNode.isLeafNode),
+    generatedChildIsLeaf,
     treeName: String(selectedNode.treeName ?? '').trim(),
     breadcrumbTitles: result.recordset.map((row) => String(row.name ?? '').trim()).filter(Boolean),
   };
@@ -816,6 +824,7 @@ export async function POST(request) {
       const generatedChildren = await generateChildTitlesFromBreadcrumb({
         treeName: generationContext.treeName,
         breadcrumbTitles: generationContext.breadcrumbTitles,
+        generateLeafChildren: generationContext.generatedChildIsLeaf,
       });
 
       return NextResponse.json(await CreateGeneratedChildNodes({
