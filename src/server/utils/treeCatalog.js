@@ -70,6 +70,85 @@ async function assertScopedTree(treeId) {
   return tree;
 }
 
+function normalizeGeneratedTreeText(value) {
+  return String(value ?? '').trim();
+}
+
+function normalizeGeneratedTreeNotes(value) {
+  return String(value ?? '').trim();
+}
+
+async function upsertTreeNodeDetails(request, treeNodeId, notes) {
+  await request
+    .input('tree_node_id', sql.Int, treeNodeId)
+    .input('notes', sql.NVarChar(sql.MAX), notes)
+    .query(`
+      MERGE tree_node_details AS target
+      USING (SELECT @tree_node_id AS tree_node_id) AS source
+        ON target.tree_node_id = source.tree_node_id
+      WHEN MATCHED THEN
+        UPDATE SET
+          notes = @notes,
+          updated_at = SYSUTCDATETIME()
+      WHEN NOT MATCHED THEN
+        INSERT (tree_node_id, notes, created_at, updated_at)
+        VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME());
+    `);
+}
+
+async function insertGeneratedNodeBranch({ transaction, treeInstanceId, parentId, nodes, startingSortOrder = 0 }) {
+  let insertedCount = 0;
+
+  for (const [nodeIndex, node] of nodes.entries()) {
+    const isLeafNode = !Array.isArray(node.children);
+    const nodeText = normalizeGeneratedTreeText(node.title);
+    const insertResult = await new sql.Request(transaction)
+      .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('parent_id', sql.Int, parentId)
+      .input('text', sql.NVarChar(255), nodeText)
+      .input('is_leaf_node', sql.Bit, isLeafNode ? 1 : 0)
+      .input('is_expanded', sql.Bit, isLeafNode ? 0 : 1)
+      .input('draggable', sql.Bit, 1)
+      .input('sort_order', sql.Int, startingSortOrder + nodeIndex)
+      .query(`
+        DECLARE @createdNodes TABLE (createdNodeId INT);
+
+        INSERT INTO tree_nodes (tree_instance_id, parent_id, text, is_leaf_node, is_expanded, draggable, sort_order)
+        OUTPUT INSERTED.id INTO @createdNodes (createdNodeId)
+        VALUES (@tree_instance_id, @parent_id, @text, @is_leaf_node, @is_expanded, @draggable, @sort_order);
+
+        SELECT createdNodeId FROM @createdNodes;
+      `);
+
+    const createdNodeId = Number(insertResult.recordset[0]?.createdNodeId);
+
+    if (!createdNodeId) {
+      throw new Error('A generated tree node could not be inserted.');
+    }
+
+    insertedCount += 1;
+
+    if (isLeafNode) {
+      await upsertTreeNodeDetails(
+        new sql.Request(transaction),
+        createdNodeId,
+        normalizeGeneratedTreeNotes(node.notes),
+      );
+      continue;
+    }
+
+    insertedCount += await insertGeneratedNodeBranch({
+      transaction,
+      treeInstanceId,
+      parentId: createdNodeId,
+      nodes: node.children,
+      startingSortOrder: 0,
+    });
+  }
+
+  return insertedCount;
+}
+
 async function getScopedTreeAttachmentBlobs(treeId) {
   const result = await new sql.Request()
     .input('tree_instance_id', sql.Int, Number(treeId))
@@ -117,6 +196,19 @@ export async function getTreeList() {
 export async function getAllowedTreeIds() {
   const treeList = await getTreeList();
   return treeList.map((tree) => String(tree.id));
+}
+
+export async function getTreeForPopulation(treeId) {
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId);
+
+    return {
+      id: String(scopedTree.id),
+      name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
+      description: normalizeTreeDescription(scopedTree.description),
+      isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
+    };
+  });
 }
 
 export async function createTree({ name }) {
@@ -174,7 +266,15 @@ export async function updateTreeTitle({ treeId, name }) {
   }
 
   return withSqlConnection(async () => {
-    await assertScopedTree(treeId);
+    const scopedTree = await assertScopedTree(treeId);
+    const currentName = String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`;
+
+    if (normalizedName === currentName) {
+      return {
+        id: String(treeId),
+        name: currentName,
+      };
+    }
 
     const updateResult = await new sql.Request()
       .input('tree_instance_id', sql.Int, Number(treeId))
@@ -207,6 +307,17 @@ export async function updateTreeDescription({ treeId, description }) {
   return withSqlConnection(async () => {
     const scopedTree = await assertScopedTree(treeId);
     const nextDescription = normalizedDescription;
+    const currentDescription = normalizeTreeDescription(scopedTree.description);
+    const currentPublishedState = Boolean(scopedTree.isDescriptionPublished);
+
+    if (nextDescription === currentDescription && !currentPublishedState) {
+      return {
+        id: String(treeId),
+        name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
+        description: currentDescription,
+        isDescriptionPublished: false,
+      };
+    }
 
     const updateResult = await new sql.Request()
       .input('tree_instance_id', sql.Int, Number(treeId))
@@ -278,6 +389,12 @@ export async function updateTreeDescriptionPublishedStates(treeStates) {
 
   return withSqlConnection(async () => {
     for (const entry of normalizedStates) {
+      const scopedTree = await assertScopedTree(entry.treeId);
+
+      if (Boolean(scopedTree.isDescriptionPublished) === entry.isDescriptionPublished) {
+        continue;
+      }
+
       await new sql.Request()
         .input('tree_instance_id', sql.Int, entry.treeId)
         .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
@@ -326,6 +443,62 @@ export async function deleteTree({ treeId }) {
     }
 
     return { success: true };
+  });
+}
+
+export async function appendGeneratedNodesToTree({ treeId, generatedNodes }) {
+  return withSqlConnection(async () => {
+    await assertScopedTree(treeId);
+
+    const transaction = new sql.Transaction();
+
+    try {
+      await transaction.begin();
+
+      const rootSortOrderResult = await new sql.Request(transaction)
+        .input('tree_instance_id', sql.Int, Number(treeId))
+        .query(`
+          SELECT ISNULL(MAX(sort_order), -1) AS maxRootSortOrder
+          FROM tree_nodes
+          WHERE tree_instance_id = @tree_instance_id
+            AND parent_id IS NULL;
+        `);
+
+      const maxRootSortOrder = Number(rootSortOrderResult.recordset[0]?.maxRootSortOrder ?? -1);
+      const totalNodeCount = await insertGeneratedNodeBranch({
+        transaction,
+        treeInstanceId: Number(treeId),
+        parentId: null,
+        nodes: generatedNodes,
+        startingSortOrder: maxRootSortOrder + 1,
+      });
+
+      await new sql.Request(transaction)
+        .input('tree_instance_id', sql.Int, Number(treeId))
+        .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+        .query(`
+          UPDATE ti
+          SET updated_at = SYSUTCDATETIME()
+          FROM tree_instance ti
+          INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+          WHERE ti.id = @tree_instance_id
+            AND ai.app_identifier = @application_identifier;
+        `);
+
+      await transaction.commit();
+
+      return {
+        treeId: String(treeId),
+        rootNodeCount: Array.isArray(generatedNodes) ? generatedNodes.length : 0,
+        totalNodeCount,
+      };
+    } catch (error) {
+      if (transaction._aborted !== true) {
+        await transaction.rollback();
+      }
+
+      throw error;
+    }
   });
 }
 

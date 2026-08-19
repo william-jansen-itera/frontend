@@ -13,6 +13,10 @@ const DEFAULT_AGENT_NAME = 'tree-search-agent';
 const DEFAULT_HISTORY_LIMIT = 8;
 const MAX_TOOL_ROUNDS = 5;
 const AGENT_PREVIEW_FEATURES = 'WorkflowAgents=V1Preview';
+const MAX_GENERATED_ROOT_NODES = 5;
+const MAX_GENERATED_CHILDREN_PER_NODE = 5;
+const MAX_GENERATED_TITLE_LENGTH = 255;
+const MAX_GENERATED_NOTES_LENGTH = 4000;
 
 let cachedProjectClient;
 
@@ -181,6 +185,342 @@ function parseDescriptionResponse(response) {
       error: 'Model response was not valid JSON.',
     };
   }
+}
+
+const LEAF_NODE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    },
+    notes: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_NOTES_LENGTH,
+    },
+  },
+  required: ['title', 'notes'],
+  additionalProperties: false,
+};
+
+const LEVEL_THREE_NODE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    },
+    children: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_GENERATED_CHILDREN_PER_NODE,
+      items: LEAF_NODE_SCHEMA,
+    },
+  },
+  required: ['title', 'children'],
+  additionalProperties: false,
+};
+
+const LEVEL_TWO_NODE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    },
+    children: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_GENERATED_CHILDREN_PER_NODE,
+      items: LEVEL_THREE_NODE_SCHEMA,
+    },
+  },
+  required: ['title', 'children'],
+  additionalProperties: false,
+};
+
+const ROOT_NODE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    },
+    children: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_GENERATED_CHILDREN_PER_NODE,
+      items: LEVEL_TWO_NODE_SCHEMA,
+    },
+  },
+  required: ['title', 'children'],
+  additionalProperties: false,
+};
+
+const TREE_POPULATION_SCHEMA = {
+  type: 'object',
+  properties: {
+    nodes: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_GENERATED_ROOT_NODES,
+      items: ROOT_NODE_SCHEMA,
+    },
+  },
+  required: ['nodes'],
+  additionalProperties: false,
+};
+
+function parseTreePopulationResponse(response) {
+  const rawText = normalizeWhitespace(response?.output_text ?? '');
+
+  if (!rawText) {
+    return {
+      rawText,
+      parsed: null,
+      error: 'Model returned an empty response.',
+    };
+  }
+
+  try {
+    return {
+      rawText,
+      parsed: JSON.parse(rawText),
+      error: null,
+    };
+  } catch {
+    return {
+      rawText,
+      parsed: null,
+      error: 'Model response was not valid JSON.',
+    };
+  }
+}
+
+function normalizeGeneratedNodeTitle(value) {
+  return normalizeWhitespace(value).slice(0, MAX_GENERATED_TITLE_LENGTH);
+}
+
+function normalizeGeneratedNodeNotes(value) {
+  return String(value ?? '').trim().slice(0, MAX_GENERATED_NOTES_LENGTH);
+}
+
+function validateGeneratedLeafNode(node, pathLabel) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) {
+    throw new Error(`${pathLabel} must be an object.`);
+  }
+
+  if ('children' in node) {
+    throw new Error(`${pathLabel} must not include children.`);
+  }
+
+  const title = normalizeGeneratedNodeTitle(node.title);
+  const notes = normalizeGeneratedNodeNotes(node.notes);
+
+  if (!title) {
+    throw new Error(`${pathLabel} must include a non-empty title.`);
+  }
+
+  if (!notes) {
+    throw new Error(`${pathLabel} must include non-empty notes.`);
+  }
+
+  return {
+    title,
+    notes,
+  };
+}
+
+function validateGeneratedLevelThreeNode(node, pathLabel) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) {
+    throw new Error(`${pathLabel} must be an object.`);
+  }
+
+  if ('notes' in node) {
+    throw new Error(`${pathLabel} must not include notes.`);
+  }
+
+  const title = normalizeGeneratedNodeTitle(node.title);
+  const children = Array.isArray(node.children) ? node.children : null;
+
+  if (!title) {
+    throw new Error(`${pathLabel} must include a non-empty title.`);
+  }
+
+  if (!children || children.length === 0 || children.length > MAX_GENERATED_CHILDREN_PER_NODE) {
+    throw new Error(`${pathLabel} must include between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} leaf children.`);
+  }
+
+  return {
+    title,
+    children: children.map((childNode, childIndex) => validateGeneratedLeafNode(childNode, `${pathLabel}.children[${childIndex}]`)),
+  };
+}
+
+function validateGeneratedLevelTwoNode(node, pathLabel) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) {
+    throw new Error(`${pathLabel} must be an object.`);
+  }
+
+  if ('notes' in node) {
+    throw new Error(`${pathLabel} must not include notes.`);
+  }
+
+  const title = normalizeGeneratedNodeTitle(node.title);
+  const children = Array.isArray(node.children) ? node.children : null;
+
+  if (!title) {
+    throw new Error(`${pathLabel} must include a non-empty title.`);
+  }
+
+  if (!children || children.length === 0 || children.length > MAX_GENERATED_CHILDREN_PER_NODE) {
+    throw new Error(`${pathLabel} must include between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} structural children.`);
+  }
+
+  return {
+    title,
+    children: children.map((childNode, childIndex) => validateGeneratedLevelThreeNode(childNode, `${pathLabel}.children[${childIndex}]`)),
+  };
+}
+
+function validateGeneratedRootNode(node, pathLabel) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) {
+    throw new Error(`${pathLabel} must be an object.`);
+  }
+
+  if ('notes' in node) {
+    throw new Error(`${pathLabel} must not include notes.`);
+  }
+
+  const title = normalizeGeneratedNodeTitle(node.title);
+  const children = Array.isArray(node.children) ? node.children : null;
+
+  if (!title) {
+    throw new Error(`${pathLabel} must include a non-empty title.`);
+  }
+
+  if (!children || children.length === 0 || children.length > MAX_GENERATED_CHILDREN_PER_NODE) {
+    throw new Error(`${pathLabel} must include between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} structural children.`);
+  }
+
+  return {
+    title,
+    children: children.map((childNode, childIndex) => validateGeneratedLevelTwoNode(childNode, `${pathLabel}.children[${childIndex}]`)),
+  };
+}
+
+function countGeneratedNodes(nodes) {
+  return nodes.reduce((totalCount, node) => {
+    const childCount = Array.isArray(node.children) ? countGeneratedNodes(node.children) : 0;
+    return totalCount + 1 + childCount;
+  }, 0);
+}
+
+export function validateGeneratedTreePayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Generated payload must be an object.');
+  }
+
+  const rootNodes = Array.isArray(payload.nodes) ? payload.nodes : null;
+
+  if (!rootNodes || rootNodes.length === 0 || rootNodes.length > MAX_GENERATED_ROOT_NODES) {
+    throw new Error(`Generated payload must include between 1 and ${MAX_GENERATED_ROOT_NODES} root nodes.`);
+  }
+
+  const nodes = rootNodes.map((node, nodeIndex) => validateGeneratedRootNode(node, `nodes[${nodeIndex}]`));
+
+  return {
+    nodes,
+    rootNodeCount: nodes.length,
+    totalNodeCount: countGeneratedNodes(nodes),
+  };
+}
+
+function buildTreePopulationPrompt({ treeName, description }) {
+  return [
+    `Tree name: ${treeName}.`,
+    'Use the stored tree description below as the only semantic source.',
+    'Generate a hierarchy for a tree-based knowledge application.',
+    'Upper levels organize the topic. Level-4 leaves carry actionable detail in notes.',
+    'Return valid JSON only, matching the provided schema.',
+    `Produce between 1 and ${MAX_GENERATED_ROOT_NODES} root nodes.`,
+    `Each structural node must have between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} children.`,
+    'Keep exactly three structural levels before the leaf layer.',
+    'Leaves must appear at level 4 only.',
+
+    // 🔥 Inserted extraction instruction block
+    'Extract the top-level topics from the stored tree description. Use the extracted top-level topics as the root-node candidates for the hierarchy.',
+    '',
+    'Extraction instruction:',
+    'Extract the top-level topics from the stored tree description. A top-level topic is a high-level category explicitly presented as an overall area, domain, or major skill group. Identify only major conceptual groups, not details, examples, or sub-skills. Prefer phrases that describe broad areas of capability. Ignore descriptive sentences, explanations, and lists of techniques unless they define a major category. Do not infer or invent new categories; extract only what is explicitly stated. Preserve the original wording where possible. Output the result as a flat list of concise phrases.',
+    '',
+
+    'Use concise titles and a logical order from broad categories to specific details.',
+    'Do not collapse clearly distinct top-level topic areas into fewer root nodes unless two areas are truly the same topic.',
+    'Put practical user-facing guidance into leaf notes.',
+    'Prefer broader coverage when the description supports it, but do not invent filler just to increase counts.',
+    'For a narrow topic, a single branch with one node at each structural level and one leaf is valid.',
+    'Do not emit duplicate sibling titles, empty categories, notes on structural nodes, or properties outside the schema.',
+    '',
+    'Stored tree description:',
+    description,
+  ].filter(Boolean).join('\n');
+}
+
+async function requestGeneratedTreeNodes(tree) {
+  const project = getProjectClient();
+  const openAIClient = project.getOpenAIClient();
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+
+  return openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: buildTreePopulationPrompt({
+          treeName: tree.name,
+          description: tree.description,
+        }),
+      },
+    ],
+    text: {
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'generated_tree_nodes',
+        strict: true,
+        schema: TREE_POPULATION_SCHEMA,
+      },
+    },
+  });
+}
+
+export async function generateTreeNodesFromDescription(tree) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await requestGeneratedTreeNodes(tree);
+    const parsedResponse = parseTreePopulationResponse(response);
+
+    if (parsedResponse.error) {
+      lastError = new Error(parsedResponse.error);
+      continue;
+    }
+
+    try {
+      return validateGeneratedTreePayload(parsedResponse.parsed);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Generated payload was invalid.');
+    }
+  }
+
+  throw lastError ?? new Error('Generated payload was invalid.');
 }
 
 async function generateAiDescription(tree) {

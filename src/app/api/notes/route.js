@@ -320,13 +320,31 @@ async function CreateTreeNode({ parentId, treeInstanceId, name }) {
 
 async function DeleteTreeNode({ id, treeInstanceId }) {
   return withSqlConnection(async () => {
-    await new sql.Request()
+    const deleteResult = await new sql.Request()
       .input('id', sql.Int, id)
       .input('tree_instance_id', sql.Int, treeInstanceId)
       .query(`
-        DELETE FROM tree_nodes
-        WHERE tree_instance_id = @tree_instance_id AND id = @id;
+        WITH Descendants AS (
+          SELECT id
+          FROM tree_nodes
+          WHERE id = @id AND tree_instance_id = @tree_instance_id
+
+          UNION ALL
+
+          SELECT child.id
+          FROM tree_nodes child
+          INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
+          WHERE child.tree_instance_id = @tree_instance_id
+        )
+        DELETE tree_nodes
+        FROM tree_nodes
+        INNER JOIN Descendants ON Descendants.id = tree_nodes.id
+        WHERE tree_nodes.tree_instance_id = @tree_instance_id;
       `);
+
+    if (!deleteResult.rowsAffected.some((count) => count > 0)) {
+      throw new Error('Node was not found for the selected tree');
+    }
 
     return queryTreeData(treeInstanceId);
   });
@@ -727,15 +745,7 @@ export async function DELETE(request) {
         await deleteNodeAttachmentBlobIfExists(attachment.blobName);
       }
 
-      await new sql.Request()
-        .input('id', sql.Int, nodeId)
-        .input('tree_instance_id', sql.Int, treeInstanceId)
-        .query(`
-          DELETE FROM tree_nodes
-          WHERE tree_instance_id = @tree_instance_id AND id = @id;
-        `);
-
-      return queryTreeData(treeInstanceId);
+      return DeleteTreeNode({ id: nodeId, treeInstanceId });
     }));
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

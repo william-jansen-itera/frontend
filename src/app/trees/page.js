@@ -251,6 +251,8 @@ export default function TreesPage() {
     updateRowFeedback(treeId, {
       infoMessage: "",
       generateError: "",
+      populateError: "",
+      populateMessage: "",
       saveError: "",
       syncError: "",
       syncMessage: "",
@@ -281,6 +283,8 @@ export default function TreesPage() {
       updateRowFeedback(treeId, {
         infoMessage: "Draft description generated. Review or edit it, then click Save to publish.",
         generateError: "",
+        populateError: "",
+        populateMessage: "",
         saveError: "",
         syncError: "",
         syncMessage: "",
@@ -310,6 +314,8 @@ export default function TreesPage() {
     setErrorMessage("");
     updateRowFeedback(treeId, {
       infoMessage: "",
+      populateError: "",
+      populateMessage: "",
       saveError: "",
       syncError: "",
       syncMessage: "",
@@ -348,6 +354,8 @@ export default function TreesPage() {
         infoMessage: syncError
           ? "Description was saved, but the hosted-agent publish step did not complete."
           : "Description was saved.",
+        populateError: "",
+        populateMessage: "",
         saveError: "",
         syncError,
         syncMessage,
@@ -377,10 +385,78 @@ export default function TreesPage() {
         ? "Saved description restored."
         : "Draft removed. This tree has no saved description yet.",
       generateError: "",
+      populateError: "",
+      populateMessage: "",
       saveError: "",
       syncError: "",
       syncMessage: "",
     });
+  };
+
+  const handlePopulateTree = async (tree) => {
+    const treeId = String(tree.id);
+    const storedDescription = String(tree.description ?? "");
+    const draftDescription = String(draftDescriptions[treeId] ?? storedDescription);
+    const isDescriptionChanged = normalizeComparableValue(draftDescription) !== normalizeComparableValue(storedDescription);
+
+    if (!storedDescription.trim()) {
+      updateRowFeedback(treeId, {
+        populateError: "Save a description before populating this tree.",
+        populateMessage: "",
+      });
+      return;
+    }
+
+    if (isDescriptionChanged) {
+      updateRowFeedback(treeId, {
+        populateError: "Save the current description draft before populating this tree.",
+        populateMessage: "",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Populate tree \"${tree.name}\"? This will generate new data and insert it into the tree.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setTreePendingState(treeId, "populate", true);
+    setErrorMessage("");
+    updateRowFeedback(treeId, {
+      populateError: "",
+      populateMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ treeId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Tree could not be populated");
+      }
+
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+      updateRowFeedback(treeId, {
+        populateError: "",
+        populateMessage: data?.message || "Tree content was appended successfully.",
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        populateError: getErrorMessage(error, "Tree could not be populated"),
+        populateMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, "populate", false);
+    }
   };
 
   const handleDeleteTree = async (tree) => {
@@ -405,6 +481,12 @@ export default function TreesPage() {
       }
 
       applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+
+      if (data?.syncStatus?.status === "failed") {
+        setErrorMessage(
+          `Tree was deleted, but the agent tool update did not complete: ${data.syncStatus.message || "Stored-description sync failed."}`,
+        );
+      }
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree could not be deleted"));
     } finally {
@@ -474,6 +556,7 @@ export default function TreesPage() {
                 const isDescriptionEditing = Boolean(editingDescriptions[treeId]);
                 const isNameChanged = draftName.trim() !== tree.name;
                 const isDescriptionChanged = normalizeComparableValue(draftDescription) !== normalizeComparableValue(storedDescription);
+                const hasSavedDescription = Boolean(normalizeComparableValue(storedDescription));
 
                 return (
                   <article key={treeId} className={styles.treeRow}>
@@ -497,12 +580,6 @@ export default function TreesPage() {
                         </div>
 
                         <div className={styles.rowActions}>
-                          <Link
-                            href={`/notes?treeId=${encodeURIComponent(treeId)}`}
-                            className={`appCompactActionButton ${styles.actionButtonLink}`}
-                          >
-                            Open
-                          </Link>
                           <button
                             type="button"
                             onClick={() => handleRenameTree(tree)}
@@ -511,6 +588,20 @@ export default function TreesPage() {
                           >
                             {rowPendingState.rename ? "Saving..." : "Save Title"}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePopulateTree(tree)}
+                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !hasSavedDescription || isDescriptionChanged}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            {rowPendingState.populate ? "Populating..." : "Populate"}
+                          </button>
+                          <Link
+                            href={`/notes?treeId=${encodeURIComponent(treeId)}`}
+                            className={`appCompactActionButton ${styles.actionButtonLink}`}
+                          >
+                            Open
+                          </Link>
                           <button
                             type="button"
                             onClick={() => handleDeleteTree(tree)}
@@ -575,6 +666,12 @@ export default function TreesPage() {
                           {feedback.saveError ? (
                             <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.saveError}</p>
                           ) : null}
+                          {feedback.populateMessage ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.populateMessage}</p>
+                          ) : null}
+                          {feedback.populateError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.populateError}</p>
+                          ) : null}
                           {feedback.syncMessage ? (
                             <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.syncMessage}</p>
                           ) : null}
@@ -595,7 +692,7 @@ export default function TreesPage() {
                           <button
                             type="button"
                             onClick={() => handleGenerateDescription(tree)}
-                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
+                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             {rowPendingState.generate ? "Generating..." : "Generate"}
@@ -603,7 +700,7 @@ export default function TreesPage() {
                           <button
                             type="button"
                             onClick={() => handleSaveDescription(tree)}
-                            disabled={Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
+                            disabled={Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
                             className="appCompactActionButton appCompactActionButtonPrimary"
                           >
                             {rowPendingState.save ? "Saving..." : rowPendingState.sync ? "Syncing..." : "Save"}

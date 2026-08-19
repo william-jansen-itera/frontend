@@ -152,10 +152,37 @@ export async function DELETE(request) {
 
     await deleteTree({ treeId: parsedTreeId });
 
-    return NextResponse.json({
-      success: true,
-      trees: await getTreeList(),
-    });
+    try {
+      const syncResult = await publishStoredTreeDescriptions();
+
+      return NextResponse.json({
+        success: true,
+        trees: await getTreeList(),
+        syncStatus: {
+          status: 'success',
+          message: 'Stored descriptions were published to the agent.',
+          mode: syncResult.syncMode,
+          excludedTreeCount: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees.length : 0,
+          excludedTrees: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees : [],
+          agent: {
+            id: syncResult.agent.id,
+            name: syncResult.agent.name,
+            version: syncResult.agent.version ?? null,
+          },
+        },
+      });
+    } catch (error) {
+      return NextResponse.json({
+        success: true,
+        trees: await getTreeList(),
+        syncStatus: {
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Stored-description sync failed after tree deletion.',
+          code: error?.code ?? null,
+          missingTrees: Array.isArray(error?.missingTrees) ? error.missingTrees : [],
+        },
+      });
+    }
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
