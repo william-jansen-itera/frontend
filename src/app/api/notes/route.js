@@ -1,6 +1,7 @@
 
 import { NextResponse } from 'next/server';
 import { deleteNodeAttachmentBlobIfExists, uploadNodeAttachment } from '@/server/utils/blobStorage';
+import { generateChildTitlesFromBreadcrumb } from '@/server/utils/chatService';
 import { sql, withSqlConnection } from '@/server/utils/sql';
 import { getTreeList } from '@/server/utils/treeCatalog';
 
@@ -200,7 +201,24 @@ async function getTreeMaxDepth(treeInstanceId) {
   return Number(result.recordset[0]?.maxDepth);
 }
 
-async function getTreeCreateContext(treeInstanceId, parentId) {
+function createSqlRequest(transaction) {
+  return transaction ? new sql.Request(transaction) : new sql.Request();
+}
+
+async function getTreeMaxDepthForRequest(treeInstanceId, transaction = null) {
+  const result = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .query(`
+      SELECT TOP 1 TRY_CAST(setting_value AS INT) AS maxDepth
+      FROM tree_setting
+      WHERE tree_instance_id = @tree_instance_id
+        AND setting_key = 'nodes.max_depth';
+    `);
+
+  return Number(result.recordset[0]?.maxDepth);
+}
+
+async function getTreeCreateContext(treeInstanceId, parentId, transaction = null) {
   const query = `WITH RecursiveTree AS (
       SELECT
         id,
@@ -233,7 +251,7 @@ async function getTreeCreateContext(treeInstanceId, parentId) {
     WHERE parent_node.tree_instance_id = @tree_instance_id
       AND parent_node.id = @parent_id;`;
 
-  const result = await new sql.Request()
+  const result = await createSqlRequest(transaction)
     .input('tree_instance_id', sql.Int, treeInstanceId)
     .input('parent_id', sql.Int, parentId)
     .query(query);
@@ -241,78 +259,192 @@ async function getTreeCreateContext(treeInstanceId, parentId) {
   return result.recordset[0] ?? null;
 }
 
-async function CreateTreeNode({ parentId, treeInstanceId, name }) {
+async function createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeafDetails = false, transaction = null }) {
+  const isRootInsert = parentId === null || parentId === undefined;
+  let nextDepth = 0;
+  let maxDepth;
+
+  if (isRootInsert) {
+    maxDepth = await getTreeMaxDepthForRequest(treeInstanceId, transaction);
+  } else {
+    const createContext = await getTreeCreateContext(treeInstanceId, parentId, transaction);
+    if (!createContext) {
+      throw new Error('Parent node was not found for the selected tree');
+    }
+
+    if (createContext.isLeafNode) {
+      throw new Error('Cannot add a child node to a leaf node');
+    }
+
+    const parentDepth = Number(createContext.parentDepth);
+    maxDepth = Number(createContext.maxDepth);
+    nextDepth = parentDepth + 1;
+
+    if (Number.isFinite(maxDepth) && nextDepth > maxDepth) {
+      throw new Error(`Cannot create nodes deeper than nodes.max_depth (${maxDepth})`);
+    }
+  }
+
+  const isLeafNode = Number.isFinite(maxDepth) && nextDepth >= maxDepth;
+
+  const sortOrderQuery = isRootInsert
+    ? `
+      SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
+      FROM tree_nodes
+      WHERE tree_instance_id = @tree_instance_id AND parent_id IS NULL
+    `
+    : `
+      SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
+      FROM tree_nodes
+      WHERE tree_instance_id = @tree_instance_id AND parent_id = @parent_id
+    `;
+
+  const sortOrderRequest = createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, treeInstanceId);
+
+  if (!isRootInsert) {
+    sortOrderRequest.input('parent_id', sql.Int, parentId);
+  }
+
+  const sortOrderResult = await sortOrderRequest.query(sortOrderQuery);
+  const nextSortOrder = sortOrderResult.recordset[0].nextSortOrder;
+
+  const insertResult = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .input('parent_id', sql.Int, isRootInsert ? null : parentId)
+    .input('text', sql.NVarChar, name)
+    .input('is_leaf_node', sql.Bit, isLeafNode ? 1 : 0)
+    .input('is_expanded', sql.Bit, 0)
+    .input('draggable', sql.Bit, 1)
+    .input('sort_order', sql.Int, nextSortOrder)
+    .query(`
+      DECLARE @createdNodes TABLE (createdNodeId INT);
+
+      INSERT INTO tree_nodes (tree_instance_id, parent_id, text, is_leaf_node, is_expanded, draggable, sort_order)
+      OUTPUT INSERTED.id INTO @createdNodes (createdNodeId)
+      VALUES (@tree_instance_id, @parent_id, @text, @is_leaf_node, @is_expanded, @draggable, @sort_order)
+
+      SELECT createdNodeId FROM @createdNodes;
+    `);
+  const createdNodeId = insertResult.recordset[0].createdNodeId;
+
+  if (ensureLeafDetails && isLeafNode) {
+    await ensureTreeNodeDetailsRow(createdNodeId, transaction);
+  }
+
+  return {
+    createdNodeId: String(createdNodeId),
+    isLeafNode,
+  };
+}
+
+async function CreateTreeNode({ parentId, treeInstanceId, name, ensureLeafDetails = false }) {
   return withSqlConnection(async () => {
-    const isRootInsert = parentId === null || parentId === undefined;
-    let nextDepth = 0;
-    let maxDepth;
-
-    if (isRootInsert) {
-      maxDepth = await getTreeMaxDepth(treeInstanceId);
-    } else {
-      const createContext = await getTreeCreateContext(treeInstanceId, parentId);
-      if (!createContext) {
-        throw new Error('Parent node was not found for the selected tree');
-      }
-
-      if (createContext.isLeafNode) {
-        throw new Error('Cannot add a child node to a leaf node');
-      }
-
-      const parentDepth = Number(createContext.parentDepth);
-      maxDepth = Number(createContext.maxDepth);
-      nextDepth = parentDepth + 1;
-
-      if (Number.isFinite(maxDepth) && nextDepth > maxDepth) {
-        throw new Error(`Cannot create nodes deeper than nodes.max_depth (${maxDepth})`);
-      }
-    }
-
-    const isLeafNode = Number.isFinite(maxDepth) && nextDepth >= maxDepth;
-
-    const sortOrderQuery = isRootInsert
-      ? `
-        SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
-        FROM tree_nodes
-        WHERE tree_instance_id = @tree_instance_id AND parent_id IS NULL
-      `
-      : `
-        SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
-        FROM tree_nodes
-        WHERE tree_instance_id = @tree_instance_id AND parent_id = @parent_id
-      `;
-
-    const sortOrderRequest = new sql.Request()
-      .input('tree_instance_id', sql.Int, treeInstanceId);
-
-    if (!isRootInsert) {
-      sortOrderRequest.input('parent_id', sql.Int, parentId);
-    }
-
-    const sortOrderResult = await sortOrderRequest.query(sortOrderQuery);
-    const nextSortOrder = sortOrderResult.recordset[0].nextSortOrder;
-
-    const insertResult = await new sql.Request()
-      .input('tree_instance_id', sql.Int, treeInstanceId)
-      .input('parent_id', sql.Int, isRootInsert ? null : parentId)
-      .input('text', sql.NVarChar, name)
-      .input('is_leaf_node', sql.Bit, isLeafNode ? 1 : 0)
-      .input('is_expanded', sql.Bit, 0)
-      .input('draggable', sql.Bit, 1)
-      .input('sort_order', sql.Int, nextSortOrder)
-      .query(`
-        DECLARE @createdNodes TABLE (createdNodeId INT);
-
-        INSERT INTO tree_nodes (tree_instance_id, parent_id, text, is_leaf_node, is_expanded, draggable, sort_order)
-        OUTPUT INSERTED.id INTO @createdNodes (createdNodeId)
-        VALUES (@tree_instance_id, @parent_id, @text, @is_leaf_node, @is_expanded, @draggable, @sort_order)
-
-        SELECT createdNodeId FROM @createdNodes;
-      `);
-    const createdNodeId = insertResult.recordset[0].createdNodeId;
+    const createdNode = await createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeafDetails });
 
     return {
-      createdNodeId: String(createdNodeId),
+      createdNodeId: createdNode.createdNodeId,
+      flatData: await queryTreeData(treeInstanceId),
+    };
+  });
+}
+
+async function getNodeGenerationContext(treeInstanceId, nodeId, transaction = null) {
+  const result = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .input('id', sql.Int, nodeId)
+    .query(`
+      WITH SelectedPath AS (
+        SELECT
+          id,
+          parent_id,
+          text,
+          is_leaf_node,
+          0 AS distance_from_selected
+        FROM tree_nodes
+        WHERE tree_instance_id = @tree_instance_id AND id = @id
+
+        UNION ALL
+
+        SELECT
+          parent.id,
+          parent.parent_id,
+          parent.text,
+          parent.is_leaf_node,
+          child.distance_from_selected + 1 AS distance_from_selected
+        FROM tree_nodes parent
+        INNER JOIN SelectedPath child ON child.parent_id = parent.id
+        WHERE parent.tree_instance_id = @tree_instance_id
+      )
+      SELECT
+        CAST(id AS VARCHAR(10)) AS id,
+        text AS name,
+        is_leaf_node AS isLeafNode,
+        distance_from_selected AS distanceFromSelected,
+        (
+          SELECT TOP 1 COALESCE(NULLIF(ti.display_name, ''), CONCAT('Tree ', ti.id))
+          FROM tree_instance ti
+          WHERE ti.id = @tree_instance_id
+        ) AS treeName
+      FROM SelectedPath
+      ORDER BY distance_from_selected DESC;
+    `);
+
+  if (result.recordset.length === 0) {
+    return null;
+  }
+
+  const selectedNode = result.recordset[result.recordset.length - 1];
+
+  return {
+    nodeId: selectedNode.id,
+    isLeafNode: Boolean(selectedNode.isLeafNode),
+    treeName: String(selectedNode.treeName ?? '').trim(),
+    breadcrumbTitles: result.recordset.map((row) => String(row.name ?? '').trim()).filter(Boolean),
+  };
+}
+
+async function CreateGeneratedChildNodes({ treeInstanceId, parentId, children }) {
+  return withSqlConnection(async () => {
+    const generationContext = await getNodeGenerationContext(treeInstanceId, parentId);
+
+    if (!generationContext) {
+      throw new Error('Node was not found for the selected tree');
+    }
+
+    if (generationContext.isLeafNode) {
+      throw new Error('Cannot generate child nodes for a leaf node');
+    }
+
+    const transaction = new sql.Transaction();
+    const createdNodeIds = [];
+
+    try {
+      await transaction.begin();
+
+      for (const child of children) {
+        const createdNode = await createTreeNodeRecord({
+          parentId,
+          treeInstanceId,
+          name: child.title,
+          ensureLeafDetails: true,
+          transaction,
+        });
+
+        createdNodeIds.push(createdNode.createdNodeId);
+      }
+
+      await transaction.commit();
+    } catch (error) {
+      if (transaction._aborted !== true) {
+        await transaction.rollback();
+      }
+
+      throw error;
+    }
+
+    return {
+      createdNodeIds,
       flatData: await queryTreeData(treeInstanceId),
     };
   });
@@ -437,8 +569,8 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
   });
 }
 
-async function ensureTreeNodeDetailsRow(treeNodeId) {
-  await new sql.Request()
+async function ensureTreeNodeDetailsRow(treeNodeId, transaction = null) {
+  await createSqlRequest(transaction)
     .input('tree_node_id', sql.Int, treeNodeId)
     .query(`
       MERGE tree_node_details AS target
@@ -658,15 +790,44 @@ export async function POST(request) {
       }));
     }
 
-    const { parentId, treeId, name } = await request.json();
+    const { action, parentId, treeId, name, nodeId } = await request.json();
 
     if (!treeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
     }
 
+    if (action === 'generate-children') {
+      if (!nodeId) {
+        return NextResponse.json({ error: 'Invalid request, nodeId is required for child generation' }, { status: 400 });
+      }
+
+      const treeInstanceId = parseInt(String(treeId), 10);
+      const selectedNodeId = parseInt(String(nodeId), 10);
+      const generationContext = await withSqlConnection(async () => getNodeGenerationContext(treeInstanceId, selectedNodeId));
+
+      if (!generationContext) {
+        return NextResponse.json({ error: 'Node was not found for the selected tree' }, { status: 404 });
+      }
+
+      if (generationContext.isLeafNode) {
+        return NextResponse.json({ error: 'Cannot generate child nodes for a leaf node' }, { status: 400 });
+      }
+
+      const generatedChildren = await generateChildTitlesFromBreadcrumb({
+        treeName: generationContext.treeName,
+        breadcrumbTitles: generationContext.breadcrumbTitles,
+      });
+
+      return NextResponse.json(await CreateGeneratedChildNodes({
+        treeInstanceId,
+        parentId: selectedNodeId,
+        children: generatedChildren.children,
+      }));
+    }
+
     return NextResponse.json(await CreateTreeNode({
       parentId: parentId === null || parentId === undefined ? null : parseInt(parentId, 10),
-      treeInstanceId: parseInt(treeId),
+      treeInstanceId: parseInt(treeId, 10),
       name: name?.trim() || 'New node',
     }));
   } catch (err) {

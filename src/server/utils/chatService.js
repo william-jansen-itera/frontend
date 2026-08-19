@@ -276,6 +276,33 @@ const TREE_POPULATION_SCHEMA = {
   additionalProperties: false,
 };
 
+const GENERATED_CHILD_NODE_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    },
+  },
+  required: ['title'],
+  additionalProperties: false,
+};
+
+const GENERATED_CHILDREN_SCHEMA = {
+  type: 'object',
+  properties: {
+    children: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_GENERATED_CHILDREN_PER_NODE,
+      items: GENERATED_CHILD_NODE_SCHEMA,
+    },
+  },
+  required: ['children'],
+  additionalProperties: false,
+};
+
 function parseTreePopulationResponse(response) {
   const rawText = normalizeWhitespace(response?.output_text ?? '');
 
@@ -521,6 +548,104 @@ export async function generateTreeNodesFromDescription(tree) {
   }
 
   throw lastError ?? new Error('Generated payload was invalid.');
+}
+
+function buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles }) {
+  const normalizedTreeName = normalizeWhitespace(treeName);
+  const breadcrumbPath = breadcrumbTitles.map((title) => normalizeWhitespace(title)).filter(Boolean).join(' > ');
+
+  return [
+    'Generate immediate child node titles for a tree-based knowledge application.',
+    'Use the tree title and breadcrumb path below as the only semantic context.',
+    `Generate between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} immediate children for the final node in the breadcrumb path.`,
+    'Return valid JSON only, matching the provided schema.',
+    'Each child must include title only.',
+    'Do not generate grandchildren, notes, explanations, numbering, or extra properties.',
+    'Use concise, specific titles that fit naturally as the next layer below the final node in the breadcrumb path.',
+    'Avoid duplicate titles within the generated output when possible.',
+    '',
+    'Tree title:',
+    normalizedTreeName,
+    '',
+    'Breadcrumb path:',
+    breadcrumbPath,
+  ].filter(Boolean).join('\n');
+}
+
+export function validateGeneratedChildTitlePayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Generated child payload must be an object.');
+  }
+
+  const children = Array.isArray(payload.children) ? payload.children : null;
+
+  if (!children || children.length === 0 || children.length > MAX_GENERATED_CHILDREN_PER_NODE) {
+    throw new Error(`Generated child payload must include between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} children.`);
+  }
+
+  return {
+    children: children.map((child, childIndex) => {
+      if (!child || typeof child !== 'object' || Array.isArray(child)) {
+        throw new Error(`children[${childIndex}] must be an object.`);
+      }
+
+      const title = normalizeGeneratedNodeTitle(child.title);
+
+      if (!title) {
+        throw new Error(`children[${childIndex}] must include a non-empty title.`);
+      }
+
+      return { title };
+    }),
+  };
+}
+
+async function requestGeneratedChildTitles({ treeName, breadcrumbTitles }) {
+  const project = getProjectClient();
+  const openAIClient = project.getOpenAIClient();
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+
+  return openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles }),
+      },
+    ],
+    text: {
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'generated_child_titles',
+        strict: true,
+        schema: GENERATED_CHILDREN_SCHEMA,
+      },
+    },
+  });
+}
+
+export async function generateChildTitlesFromBreadcrumb({ treeName, breadcrumbTitles }) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await requestGeneratedChildTitles({ treeName, breadcrumbTitles });
+    const parsedResponse = parseTreePopulationResponse(response);
+
+    if (parsedResponse.error) {
+      lastError = new Error(parsedResponse.error);
+      continue;
+    }
+
+    try {
+      return validateGeneratedChildTitlePayload(parsedResponse.parsed);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Generated child payload was invalid.');
+    }
+  }
+
+  throw lastError ?? new Error('Generated child payload was invalid.');
 }
 
 async function generateAiDescription(tree) {

@@ -94,6 +94,7 @@ function NotesPage() {
   const [nodeEditorState, setNodeEditorState] = useState(() => buildNodeEditorState());
   const [nodeDetailsError, setNodeDetailsError] = useState(null);
   const [isSavingNodeDetails, setIsSavingNodeDetails] = useState(false);
+  const [isGeneratingChildren, setIsGeneratingChildren] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState(null);
@@ -105,6 +106,7 @@ function NotesPage() {
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
   const canAddRoot = Boolean(treeIdParam);
   const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode);
+  const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode);
   const canDelete = Boolean(selectedNode);
   const canEditLeafDetails = Boolean(selectedNode?.isLeafNode);
   const isNodeDetailsBusy = isSavingNodeDetails || isUploadingAttachments || deletingAttachmentId !== null;
@@ -478,6 +480,47 @@ function NotesPage() {
     }
   };
 
+  const handleGenerateChildren = async () => {
+    if (!treeIdParam || !selectedNode || !canGenerateChildren) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Generate new child nodes under "${selectedNode.name}"? Existing child nodes will be kept and any generated nodes will be added after them.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsGeneratingChildren(true);
+      setNodeDetailsError(null);
+
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate-children",
+          treeId: treeIdParam,
+          nodeId: selectedNode.id,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to generate child nodes");
+      }
+
+      applyTreeResponse(result.flatData, selectedNode.id);
+    } catch (err) {
+      console.error("Failed to generate child nodes:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setIsGeneratingChildren(false);
+    }
+  };
+
   // Overwrites just the one field edited in current state, while keeping the other fields intact
   const handleNodeEditorChange = (field, value) => {
     setNodeEditorState((currentState) => ({
@@ -687,6 +730,14 @@ function NotesPage() {
                 className="appCompactActionButton appCompactActionButtonNeutral"
               >
                 Add Child
+              </button>
+              <button
+                onClick={handleGenerateChildren}
+                disabled={!canGenerateChildren || isGeneratingChildren || isNodeDetailsBusy}
+                type="button"
+                className="appCompactActionButton appCompactActionButtonNeutral"
+              >
+                {isGeneratingChildren ? "Generating..." : "Generate"}
               </button>
               <button
                 onClick={handleDelete}
