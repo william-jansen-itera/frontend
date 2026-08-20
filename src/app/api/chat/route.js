@@ -53,7 +53,7 @@ function parseBooleanSetting(value, fallbackValue) {
 }
 
 function getDefaultIncludeDebug() {
-  return parseBooleanSetting(process.env.AZURE_AI_CHAT_INCLUDE_DEBUG, true);
+  return parseBooleanSetting(process.env.AZURE_AI_CHAT_INCLUDE_DEBUG, false);
 }
 
 export async function POST(request) {

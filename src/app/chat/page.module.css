@@ -124,6 +124,10 @@
   align-items: start;
 }
 
+.workspaceGridSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .chatPanel,
 .debugPanel {
   min-height: 42rem;

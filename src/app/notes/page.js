@@ -970,8 +970,10 @@ function NotesPage() {
           </div>
           <div className={styles.detailsContent}>
             {!selectedNode ? (
-              <div className={styles.emptyState}>
-                Select a node to edit its details.
+              <div className={styles.detailsForm}>
+                <div className={styles.emptyState}>
+                  Select a node to edit its details.
+                </div>
               </div>
             ) : (
               <div className={styles.detailsForm}>
