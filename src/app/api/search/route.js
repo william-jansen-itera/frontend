@@ -31,6 +31,8 @@ export async function GET(request) {
       top,
       allowedTreeIds,
       defaultTop: DEFAULT_SEARCH_PAGE_TOP,
+      includeExecutedSearches: true,
+      searchMode: 'any',
     });
 
     return NextResponse.json(result);

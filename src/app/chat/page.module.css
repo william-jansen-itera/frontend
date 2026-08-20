@@ -54,6 +54,10 @@
 .sectionEyebrow {
   margin: 0;
   color: #64748b;
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
 }
 
 .messageLabel {
@@ -210,8 +214,16 @@
   min-width: 0;
 }
 
+.chatPanelSingleTurn {
+  min-height: 22rem;
+}
+
 .chatPanelInitialPending {
   min-height: 18rem;
+}
+
+.chatPanelEmpty {
+  min-height: 0;
 }
 
 .debugPanel {
@@ -221,6 +233,10 @@
   overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.debugPanelEmpty {
+  min-height: 16rem;
 }
 
 .debugSection {
@@ -244,7 +260,10 @@
 }
 
 .sectionTitle {
-  font-size: 1.1rem;
+  color: #334155;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .chatFeed,
@@ -259,12 +278,26 @@
   gap: 1rem;
 }
 
+.chatFeedSingleTurn {
+  align-content: start;
+}
+
 .chatFeedInitialPending {
   align-content: start;
 }
 
+.chatFeedEmpty {
+  align-content: start;
+  padding-top: 0.75rem;
+  padding-bottom: 1.35rem;
+}
+
 .debugBody {
   min-height: 0;
+}
+
+.debugBodyEmpty {
+  padding-top: 1rem;
 }
 
 .debugIntro {
@@ -288,6 +321,11 @@
   padding: 1.3rem;
   border: 1px dashed rgba(148, 163, 184, 0.5);
   background: linear-gradient(180deg, rgba(247, 250, 252, 0.98), rgba(240, 249, 255, 0.92));
+}
+
+.emptyStateCompact,
+.debugEmptyState {
+  padding: 1rem 1.05rem;
 }
 
 .emptyState h3,
@@ -597,6 +635,47 @@
   cursor: pointer;
   color: #0f172a;
   font-weight: 700;
+}
+
+.searchExecutionList {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+}
+
+.searchExecutionCard {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: var(--ui-control-radius);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.94));
+}
+
+.searchExecutionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.searchExecutionKind {
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.searchExecutionMeta {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.searchExecutionQuery {
+  margin: 0.45rem 0 0;
+  color: #0f172a;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  word-break: break-word;
 }
 
 .jsonBlock {

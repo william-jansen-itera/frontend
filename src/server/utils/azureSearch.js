@@ -266,7 +266,17 @@ function buildDebugSearchHitSnapshot(document) {
   };
 }
 
-function buildDebugSearchExecution({ kind, query, top, filter, searchFields, scoringProfile = null, queryType = null, results }) {
+function buildDebugSearchExecution({
+  kind,
+  query,
+  top,
+  filter,
+  searchFields,
+  scoringProfile = null,
+  queryType = null,
+  searchMode = null,
+  results,
+}) {
   return {
     kind,
     query,
@@ -275,6 +285,7 @@ function buildDebugSearchExecution({ kind, query, top, filter, searchFields, sco
     searchFields,
     scoringProfile,
     queryType,
+    searchMode,
     resultCount: Array.isArray(results) ? results.length : 0,
     results: Array.isArray(results)
       ? results.map((document) => buildDebugSearchHitSnapshot(document)).filter(Boolean)
@@ -282,7 +293,18 @@ function buildDebugSearchExecution({ kind, query, top, filter, searchFields, sco
   };
 }
 
-async function executeSearchQuery({ endpoint, indexName, queryKey, searchText, filter, top, searchFields, scoringProfile = null, queryType = null }) {
+async function executeSearchQuery({
+  endpoint,
+  indexName,
+  queryKey,
+  searchText,
+  filter,
+  top,
+  searchFields,
+  scoringProfile = null,
+  queryType = null,
+  searchMode = 'all',
+}) {
   const response = await fetch(
     `${endpoint}/indexes/${encodeURIComponent(indexName)}/docs/search?api-version=${SEARCH_API_VERSION}`,
     {
@@ -294,7 +316,7 @@ async function executeSearchQuery({ endpoint, indexName, queryKey, searchText, f
       body: JSON.stringify({
         search: searchText,
         top,
-        searchMode: 'all',
+        searchMode,
         filter,
         searchFields: searchFields.join(','),
         ...(queryType ? { queryType } : {}),
@@ -512,6 +534,7 @@ export async function searchTreeContent({
   allowedTreeIds,
   defaultTop = DEFAULT_SEARCH_PAGE_TOP,
   includeExecutedSearches = false,
+  searchMode = 'all',
 }) {
   const trimmedSearchText = String(searchText ?? '').trim();
 
@@ -536,6 +559,7 @@ export async function searchTreeContent({
       filter: `${baseFilter} and sourceType eq 'node'`,
       searchFields: NODE_SEARCH_FIELDS,
       scoringProfile: NODE_SCORING_PROFILE,
+      searchMode,
     }),
     executeSearchQuery({
       endpoint,
@@ -545,6 +569,7 @@ export async function searchTreeContent({
       top: normalizedTopValue,
       filter: `${baseFilter} and sourceType eq 'attachment'`,
       searchFields: ATTACHMENT_SEARCH_FIELDS,
+      searchMode,
     }),
     attachmentFileNameRegexQuery
       ? executeSearchQuery({
@@ -596,6 +621,7 @@ export async function searchTreeContent({
         filter: `${baseFilter} and sourceType eq 'node'`,
         searchFields: NODE_SEARCH_FIELDS,
         scoringProfile: NODE_SCORING_PROFILE,
+        searchMode,
         results: nodeResults,
       }),
       buildDebugSearchExecution({
@@ -604,6 +630,7 @@ export async function searchTreeContent({
         top: normalizedTopValue,
         filter: `${baseFilter} and sourceType eq 'attachment'`,
         searchFields: ATTACHMENT_SEARCH_FIELDS,
+        searchMode,
         results: attachmentResults,
       }),
       ...(attachmentFileNameRegexQuery
@@ -614,6 +641,7 @@ export async function searchTreeContent({
           filter: `${baseFilter} and sourceType eq 'attachment'`,
           searchFields: ['attachmentFileName'],
           queryType: 'full',
+          searchMode: 'all',
           results: addAttachmentMatchSource(attachmentFileNameResults, 'fileName'),
         })]
         : []),

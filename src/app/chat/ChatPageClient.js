@@ -12,13 +12,11 @@ function buildHistoryFromTurns(turns) {
     const messages = [];
     const turnType = String(turn?.turnType ?? "default").trim();
 
-    if (turnType === TURN_TYPE_NO_RESULT_OFFER) {
+    if (turnType === TURN_TYPE_NO_RESULT_OFFER || turnType === TURN_TYPE_BROADER_ANSWER) {
       return messages;
     }
 
-    const userHistoryText = turnType === TURN_TYPE_BROADER_ANSWER
-      ? String(turn?.originalQuestion ?? turn?.question ?? "").trim()
-      : String(turn?.question ?? "").trim();
+    const userHistoryText = String(turn?.question ?? "").trim();
 
     const assistantHistoryText = String(turn?.answer ?? "").trim();
 
@@ -120,6 +118,28 @@ function CitationBreadcrumbs({ citations }) {
   );
 }
 
+function ToolSearchExecutionSummary({ searches }) {
+  if (!Array.isArray(searches) || searches.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.searchExecutionList}>
+      {searches.map((search, index) => (
+        <div key={`${search.kind || "search"}-${index}`} className={styles.searchExecutionCard}>
+          <div className={styles.searchExecutionHeader}>
+            <span className={styles.searchExecutionKind}>{search.kind || "search"}</span>
+            <span className={styles.searchExecutionMeta}>
+              mode {search.searchMode || "n/a"} · {Number(search.resultCount ?? 0)} result{Number(search.resultCount ?? 0) === 1 ? "" : "s"}
+            </span>
+          </div>
+          <p className={styles.searchExecutionQuery}>{String(search.query ?? "") || "n/a"}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function getTurnToolBadgeState(turn) {
   const toolInvocations = Array.isArray(turn?.toolInvocations) ? turn.toolInvocations : [];
   const invokedTools = Array.from(new Set(
@@ -166,6 +186,15 @@ function TurnDebugPanel({ turn }) {
     );
   }
 
+  if (turn.isPending) {
+    return (
+      <div className={styles.debugEmptyState}>
+        <h2>Waiting for response</h2>
+        <p>Debug details will appear here after the current turn finishes.</p>
+      </div>
+    );
+  }
+
   if (!turn.debug) {
     return (
       <div className={styles.debugEmptyState}>
@@ -176,6 +205,10 @@ function TurnDebugPanel({ turn }) {
   }
 
   const toolCalls = Array.isArray(turn.debug.toolCalls) ? turn.debug.toolCalls : [];
+  const debugUserQuery = {
+    turnType: String(turn?.turnType ?? "default").trim() || "default",
+    ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
+  };
 
   return (
     <div className={styles.debugSections}>
@@ -184,7 +217,7 @@ function TurnDebugPanel({ turn }) {
           <p className={styles.sectionEyebrow}>1. User Query</p>
           <h2 className={styles.sectionTitle}>Conversation input</h2>
         </div>
-        <pre className={styles.jsonBlock}>{formatJson(turn.debug.userQuery)}</pre>
+        <pre className={styles.jsonBlock}>{formatJson(debugUserQuery)}</pre>
       </section>
 
       <section className={styles.debugSection}>
@@ -200,7 +233,7 @@ function TurnDebugPanel({ turn }) {
               <article key={toolCall.callId || `${toolCall.round}-${toolCall.toolName}`} className={styles.toolCard}>
                 <div className={styles.toolHeader}>
                   <div>
-                    <p className={styles.toolLabel}>Round {toolCall.round}</p>
+                    <p className={styles.toolLabel}>Tool cycle {toolCall.round}</p>
                     <h3 className={styles.toolName}>{toolCall.toolName || "Tool call"}</h3>
                   </div>
                   {toolCall.error ? <span className={styles.toolErrorBadge}>Error</span> : null}
@@ -210,6 +243,13 @@ function TurnDebugPanel({ turn }) {
                   <summary>Parsed arguments</summary>
                   <pre className={styles.jsonBlock}>{formatJson(toolCall.parsedArguments)}</pre>
                 </details>
+
+                {Array.isArray(toolCall.searchResult?.searches) && toolCall.searchResult.searches.length > 0 ? (
+					<details className={styles.debugDetail} open>
+						<summary>Search execution</summary>
+						<ToolSearchExecutionSummary searches={toolCall.searchResult.searches} />
+					</details>
+				) : null}
 
                 <details className={styles.debugDetail}>
                   <summary>Actual search results</summary>
@@ -288,7 +328,12 @@ export default function ChatPageClient({ includeDebug }) {
   const displayedTurns = [...turns].reverse();
   const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
   const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
-  const isInitialPendingState = turns.length === 1 && Boolean(turns[0]?.isPending) && !turns[0]?.error;
+  const isSingleTurnLayout = turns.length === 1;
+  const isInitialTransientState = turns.length === 1 && (Boolean(turns[0]?.isPending) || Boolean(turns[0]?.error));
+  const isHistoryEmpty = turns.length === 0;
+  const isDebugPending = includeDebug && Boolean(selectedTurn?.isPending);
+  const isDebugEmpty = includeDebug && !selectedTurn;
+  const isDebugCompactState = isDebugEmpty || isDebugPending;
 
   async function submitTurn({ question, message, followUpSelection = null }) {
     const turnId = `${Date.now()}`;
@@ -542,7 +587,7 @@ export default function ChatPageClient({ includeDebug }) {
         status: "success",
         turnId: turn.id,
         toolName: addActionState.toolName,
-        message: `Creating \"${payload.generatedLeafTitle}\" under ${payload.selectedBreadcrumb}. Opening Notes...`,
+        message: `Created \"${payload.generatedLeafTitle}\" under ${payload.selectedBreadcrumb}.`,
       });
 
       const notesHref = `/notes?treeId=${encodeURIComponent(payload.treeId)}&nodeId=${encodeURIComponent(payload.createdNodeId)}`;
@@ -616,14 +661,14 @@ export default function ChatPageClient({ includeDebug }) {
 
           {requestError ? <p className={`${styles.errorMessage} ${styles.errorMessageInline}`}>{requestError}</p> : null}
 
-          <div className={`${styles.chatPanel} ${isInitialPendingState ? styles.chatPanelInitialPending : ""}`}>
-            <div ref={chatFeedRef} className={`${styles.chatFeed} ${isInitialPendingState ? styles.chatFeedInitialPending : ""}`}>
+          <div className={`${styles.chatPanel} ${isSingleTurnLayout ? styles.chatPanelSingleTurn : ""} ${isInitialTransientState ? styles.chatPanelInitialPending : ""} ${isHistoryEmpty ? styles.chatPanelEmpty : ""}`}>
+            <div ref={chatFeedRef} className={`${styles.chatFeed} ${isSingleTurnLayout ? styles.chatFeedSingleTurn : ""} ${isInitialTransientState ? styles.chatFeedInitialPending : ""} ${isHistoryEmpty ? styles.chatFeedEmpty : ""}`}>
               {turns.length === 0 ? (
-                <div className={styles.emptyState}>
+                <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
                   <h3>Start a turn</h3>
                   <p>
                     {includeDebug
-                      ? "The left side will show the conversation. The right side will show the debug trace for the selected turn."
+                      ? "This will show the conversation."
                       : "The conversation history and grounded citations will appear here as you ask questions."}
                   </p>
                 </div>
@@ -631,11 +676,12 @@ export default function ChatPageClient({ includeDebug }) {
                 displayedTurns.map((turn) => {
                   const isSelected = turn.id === selectedTurn?.id;
                   const toolBadgeState = getTurnToolBadgeState(turn);
+                  const isCompactTurnState = turn.isPending || Boolean(turn.error);
 
                   return (
                     <article
                       key={turn.id}
-                      className={`${styles.turnCard} ${turn.isPending ? styles.turnCardPending : ""} ${isSelected ? styles.turnCardSelected : ""}`}
+                      className={`${styles.turnCard} ${isCompactTurnState ? styles.turnCardPending : ""} ${isSelected ? styles.turnCardSelected : ""}`}
                       onClick={() => setSelectedTurnId(turn.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -662,7 +708,7 @@ export default function ChatPageClient({ includeDebug }) {
                         </div>
                       ) : null}
 
-                      <div className={`${styles.messageBubbleAgent} ${turn.isPending ? styles.messageBubblePending : ""}`}>
+                      <div className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
                         <div className={styles.messageHeaderRow}>
                           <p className={styles.messageLabel}>Agent</p>
                           {toolBadgeState.addTargets.map((target) => (
@@ -677,7 +723,7 @@ export default function ChatPageClient({ includeDebug }) {
                             </button>
                           ))}
                         </div>
-                        <p className={`${styles.messageText} ${turn.isPending ? styles.messageTextPending : ""}`}>
+                        <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>
                           {turn.isPending ? "Waiting for response..." : turn.error ? turn.error : turn.answer || "No answer returned."}
                         </p>
                         {addActionState?.turnId === turn.id ? (
@@ -711,9 +757,9 @@ export default function ChatPageClient({ includeDebug }) {
                         ) : null}
                       </div>
 
-                      <div className={`${styles.messageBubbleUser} ${turn.isPending ? styles.messageBubblePending : ""}`}>
+                      <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
                         <p className={styles.messageLabel}>User</p>
-                        <p className={`${styles.messageText} ${turn.isPending ? styles.messageTextPending : ""}`}>{turn.question}</p>
+                        <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>
                       </div>
 
                       {!turn.isPending && !turn.error ? <CitationBreadcrumbs citations={turn.citations} /> : null}
@@ -726,17 +772,18 @@ export default function ChatPageClient({ includeDebug }) {
         </div>
 
         {includeDebug ? (
-          <aside className={`appPanelShell ${styles.debugPanel}`}>
+          <aside className={`appPanelShell ${styles.debugPanel} ${isDebugCompactState ? styles.debugPanelEmpty : ""}`}>
             <div className={`appPanelTopBar ${styles.panelHeader}`}>
               <div>
-                <p className={styles.panelEyebrow}>Debug</p>
-                <h2 className={styles.panelTitle}>Turn inspector</h2>
+                <p className={styles.panelEyebrow}>Turn inspector</p>
               </div>
             </div>
-            <div className={styles.debugBody}>
-              <p className={styles.debugIntro}>
-                Inspect exactly how the agent searched, curated evidence, and produced the answer.
-              </p>
+            <div className={`${styles.debugBody} ${isDebugCompactState ? styles.debugBodyEmpty : ""}`}>
+              {!isDebugPending ? (
+                <p className={styles.debugIntro}>
+                  Inspect exactly how the agent searched, curated evidence, and produced the answer.
+                </p>
+              ) : null}
               <TurnDebugPanel turn={selectedTurn} />
             </div>
           </aside>

@@ -44,6 +44,8 @@ const TURN_TYPE_DEFAULT = 'default';
 const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer';
 const TURN_TYPE_BROADER_ANSWER = 'broader_answer';
 const FOLLOW_UP_OPTION_BROADER_ANSWER = 'broader_answer';
+const ENABLE_NO_TOOL_RESPONSE_REVIEW = false;
+const ENABLE_PERMISSION_TO_BROADER_DETECTION = true;
 
 let cachedProjectClient;
 
@@ -345,6 +347,22 @@ const GENERATED_NOTES_SCHEMA = {
   additionalProperties: false,
 };
 
+const NO_TOOL_RESPONSE_REVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    classification: {
+      type: 'string',
+      enum: ['clarification', 'request_permission', 'broad_knowledge'],
+    },
+    answer: {
+      type: 'string',
+      minLength: 1,
+    },
+  },
+  required: ['classification', 'answer'],
+  additionalProperties: false,
+};
+
 function parseTreePopulationResponse(response) {
   const rawText = normalizeWhitespace(response?.output_text ?? '');
 
@@ -369,6 +387,89 @@ function parseTreePopulationResponse(response) {
       error: 'Model response was not valid JSON.',
     };
   }
+}
+
+async function reviewNoToolResponse({ openAIClient, userMessage, assistantAnswer }) {
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const response = await openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: [
+          'You are reviewing an assistant response from a grounded tree-search workflow.',
+          'No tool was called for the turn being reviewed.',
+          'Classify the assistant response into exactly one of three categories.',
+          'Use classification "clarification" only when the assistant is asking a brief question needed to determine the correct grounded tool or resolve missing scope.',
+          'Use classification "request_permission" when the assistant is asking whether to broaden the search or provide a general background explanation without answering from background knowledge.',
+          'Use classification "broad_knowledge" when the assistant answered from general knowledge, included ungrounded explanatory content, or otherwise failed to stay within clarification or permission-asking behavior.',
+          'Always rewrite the answer to comply with the classification.',
+          'For "clarification", return one brief clarification question only.',
+          'For "request_permission", return one brief compliant message that does not answer from background knowledge, states that no grounded tool path was established, and asks whether the user wants a broader search or a general background explanation.',
+          'For "broad_knowledge", return a short diagnostic sentence describing that the response answered from background knowledge instead of using a tool or asking permission.',
+          'Do not include apologies, self-critique, process explanations, or extra commentary.',
+          'Return JSON only.',
+        ].join(' '),
+      },
+      {
+        type: 'message',
+        role: 'user',
+        content: JSON.stringify({
+          userMessage,
+          assistantAnswer,
+        }),
+      },
+    ],
+    text: {
+      verbosity: 'low',
+      format: {
+        type: 'json_schema',
+        name: 'no_tool_response_review',
+        strict: true,
+        schema: NO_TOOL_RESPONSE_REVIEW_SCHEMA,
+      },
+    },
+  });
+
+  const parsedResponse = parseTreePopulationResponse(response);
+
+  if (parsedResponse.error) {
+    throw new Error(parsedResponse.error);
+  }
+
+  const classification = String(parsedResponse.parsed?.classification ?? '').trim();
+  const answer = String(parsedResponse.parsed?.answer ?? '').trim();
+
+  if ((classification !== 'clarification' && classification !== 'request_permission' && classification !== 'broad_knowledge') || !answer) {
+    throw new Error('No-tool response review returned an invalid payload.');
+  }
+
+  return {
+    classification,
+    answer,
+    raw: parsedResponse.parsed,
+  };
+}
+
+function buildNoToolCorrectionMessage({ userMessage, assistantAnswer }) {
+  return [
+    'Your previous response did not follow the grounded workflow because you answered without calling a tool.',
+    'Re-handle the original user request now.',
+    'You must either call the appropriate grounded tool, or, if no grounded tool applies, briefly ask whether the user wants a broader search or a general background explanation.',
+    'Do not answer from general background knowledge in this retry.',
+    `Original user request: "${userMessage}"`,
+    `Previous non-compliant response: "${assistantAnswer}"`,
+  ].join(' ');
+}
+
+function buildBroaderAnswerOption() {
+  return [
+    {
+      optionId: FOLLOW_UP_OPTION_BROADER_ANSWER,
+      label: getFollowUpOptionLabel(FOLLOW_UP_OPTION_BROADER_ANSWER),
+    },
+  ];
 }
 
 function normalizeGeneratedNodeTitle(value) {
@@ -1127,21 +1228,34 @@ function applyStoredToolDescriptions(treeList) {
 function buildAgentInstructions() {
   return [
     'You are an assistant for a tree-based knowledge application.',
-    'Use the provided tools to find relevant information.',
 
-    // Unified strict grounding rule
-    'Always remain grounded in tool-derived results. For any follow-up question that references earlier tool output, depends on prior grounded context, or continues a task, re-invoke the relevant tool to refresh grounding. Do not expand to broader background knowledge unless the user explicitly instructs you to switch away from tool-grounded context. If user intent is unclear, ask whether to continue using grounded tool results or broaden the scope before answering.',
+    'You must always remain grounded in tool-derived results. You must not answer from conversation memory or broader background knowledge unless the user explicitly instructs you to do so.',
+    'This grounding rule overrides all other instructions.',
 
-    // Clarification rule
-    'Ask a brief clarification question when multiple tools may fit.',
+    // NEW: forbid implicit permission
+    'You must not infer or assume user permission to switch to background knowledge. Only explicit user instructions count.',
 
-    // Unified “no background knowledge unless asked” rule
-    'If no relevant result was found, state that clearly and ask whether the user wants a broader search or a general background answer before providing any ungrounded information.',
+    'If no tool is applicable, you must not switch to broader knowledge. You must tell the user that no tool applies and ask whether they want to broaden the search or switch to background knowledge. You may not provide any ungrounded information until the user explicitly chooses.',
 
-    // Unified answer-length rule
+    'If a tool is applicable but returns no relevant result, you must not switch to broader knowledge. You must tell the user that the tool returned no relevant result and ask whether they want to broaden the search or switch to background knowledge. You may not provide any ungrounded information until the user explicitly chooses.',
+
+    // NEW: forbid memory use in follow-ups
+    'For any follow-up question that references earlier tool output, depends on prior grounded context, or continues a task, you must re-invoke the relevant tool. You must not answer from conversation memory.',
+
+    // NEW: forbid guessing
+    'If there is any uncertainty about whether a tool applies, you must ask the user. You may not guess or infer tool applicability.',
+
+    'If multiple tools could satisfy the request, you must ask a brief clarification question before choosing a tool.',
+    'If user intent is unclear—such as when a question could be answered by multiple tools or by broader knowledge—you must ask whether to continue using grounded tool results or broaden the scope before answering.',
+
+    // NEW: prevent stylistic override
+    'Answer-length rules apply only after grounding is established.',
+
     'Answer concisely unless the user requests more detail; when they do, provide a fuller answer focused precisely on the aspect they asked about.',
 
-    // Evidence-handling rules
+    // NEW: evidence rules apply only after tool invocation
+    'Evidence rules apply only after a tool has been invoked.',
+
     'Tool results include curated evidenceItems with source-labeled text. Prefer notes first. For attachment evidence, prefer fileContent, then ocrText, then imageDescriptionFiltered when grounding your answer.',
     'ocrText and imageDescriptionFiltered may be noisy or not written as natural language, but they can still contain important facts and domain terminology.',
     'When ocrText or imageDescriptionFiltered contains relevant facts, specific terms, labels, measurements, or technical language that fit the overall evidence, preserve and use those details in natural language.',
@@ -1149,6 +1263,11 @@ function buildAgentInstructions() {
     'Do not invent documents, notes, filenames, or paths that were not returned by the tools.',
   ].join('\n\n');
 }
+
+
+
+
+
 
 
 function buildToolDefinition(tree) {
@@ -1405,8 +1524,75 @@ function hasToolResults(toolInvocations) {
     && toolInvocations.some((invocation) => Number(invocation?.output?.count ?? 0) > 0);
 }
 
-function buildFollowUpOptions(toolInvocations) {
-  if (!Array.isArray(toolInvocations) || toolInvocations.length === 0 || hasToolResults(toolInvocations)) {
+function isPermissionToBroadenAnswer(answer) {
+  if (!ENABLE_PERMISSION_TO_BROADER_DETECTION) {
+    return false;
+  }
+
+  const normalizedAnswer = normalizeWhitespace(answer).toLowerCase();
+
+  if (!normalizedAnswer) {
+    return false;
+  }
+
+  const asksPermission = [
+    /do you want/,
+    /would you like/,
+    /would you prefer/,
+    /should i/,
+    /shall i/,
+    /if you want/,
+    /let me know if you'd like/,
+    /let me know whether you'd like/,
+    /let me know if you want/,
+  ].some((pattern) => pattern.test(normalizedAnswer));
+  const mentionsBroadening = [
+    /broader search/,
+    /broader answer/,
+    /background knowledge/,
+    /general background answer/,
+    /background answer/,
+    /broaden(?: the)? search/,
+    /broaden(?: your)? search scope/,
+    /broaden(?: the)? scope/,
+    /search more broadly/,
+    /answer more broadly/,
+    /switch to background knowledge/,
+    /switch to a general background explanation/,
+    /provide a general background explanation/,
+  ].some((pattern) => pattern.test(normalizedAnswer));
+  const mentionsNoGroundedMatch = [
+    /no tool applies/,
+    /no applicable tool(?: is)? available/,
+    /no applicable tool/,
+    /no suitable tool/,
+    /no matching tool/,
+    /no grounded tool(?: path)?(?: is| was)? available/,
+    /no grounded tool(?: path)?(?: is| was)? established/,
+    /no relevant result(?: was found)?/,
+    /could not find/,
+    /couldn't find/,
+    /did not find/,
+    /no tool found/,
+  ].some((pattern) => pattern.test(normalizedAnswer));
+
+  return asksPermission && mentionsBroadening && mentionsNoGroundedMatch;
+}
+
+function shouldOfferBroaderAnswerOption(toolInvocations, normalizedFollowUpSelection, answer) {
+  if (normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER) {
+    return false;
+  }
+
+  if (Array.isArray(toolInvocations) && toolInvocations.length > 0) {
+    return !hasToolResults(toolInvocations);
+  }
+
+  return isPermissionToBroadenAnswer(answer);
+}
+
+function buildFollowUpOptions(toolInvocations, normalizedFollowUpSelection, answer) {
+  if (!shouldOfferBroaderAnswerOption(toolInvocations, normalizedFollowUpSelection, answer)) {
     return [];
   }
 
@@ -1529,6 +1715,7 @@ async function buildTreeSearchContext() {
         allowedTreeIds: [String(tree.id)],
         defaultTop: DEFAULT_TOOL_TOP,
         includeExecutedSearches: true,
+        searchMode: 'any',
       });
 
       return buildToolHandlerResult({
@@ -1586,6 +1773,7 @@ function buildHandlerMap(includedTrees) {
         allowedTreeIds: [String(tree.id)],
         defaultTop: DEFAULT_TOOL_TOP,
         includeExecutedSearches: true,
+        searchMode: 'any',
       });
 
       return buildToolHandlerResult({
@@ -1952,14 +2140,83 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       handlerMap,
       debugRounds: debug.toolCalls,
     });
+    let finalResponse = response;
+    let finalToolInvocations = [...toolInvocations];
+    let answer = extractAnswerText(finalResponse);
+    const noToolReviewSteps = [];
+
+    if (ENABLE_NO_TOOL_RESPONSE_REVIEW && !normalizedFollowUpSelection && finalToolInvocations.length === 0 && answer) {
+      const initialNoToolReview = await reviewNoToolResponse({
+        openAIClient,
+        userMessage: normalizedMessage,
+        assistantAnswer: answer,
+      });
+      noToolReviewSteps.push(initialNoToolReview.raw);
+
+      if (initialNoToolReview.classification === 'broad_knowledge') {
+        const correctionMessage = buildNoToolCorrectionMessage({
+          userMessage: normalizedMessage,
+          assistantAnswer: answer,
+        });
+
+        debug.curatedAgentInput.noToolCorrectionMessage = serializeDebugValue({
+          type: 'message',
+          role: 'user',
+          content: correctionMessage,
+        });
+
+        const correctedResponse = await createAgentResponse(openAIClient, agent.name, {
+          input: [
+            {
+              type: 'message',
+              role: 'user',
+              content: correctionMessage,
+            },
+          ],
+          previous_response_id: finalResponse.id,
+        });
+
+        const correctedRun = await runToolLoop({
+          response: correctedResponse,
+          openAIClient,
+          agentName: agent.name,
+          handlerMap,
+          debugRounds: debug.toolCalls,
+        });
+
+        finalResponse = correctedRun.response;
+        finalToolInvocations = correctedRun.toolInvocations;
+        answer = extractAnswerText(finalResponse);
+
+        if (finalToolInvocations.length === 0 && answer) {
+          const correctedNoToolReview = await reviewNoToolResponse({
+            openAIClient,
+            userMessage: normalizedMessage,
+            assistantAnswer: answer,
+          });
+          noToolReviewSteps.push(correctedNoToolReview.raw);
+
+          if (correctedNoToolReview.classification !== 'broad_knowledge') {
+            answer = correctedNoToolReview.answer;
+          }
+        }
+      } else {
+        answer = initialNoToolReview.answer;
+      }
+    }
+
     const citations = dedupeCitations(
-      toolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
+      finalToolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
     );
-    const answer = extractAnswerText(response);
-    const followUpOptions = buildFollowUpOptions(toolInvocations);
-    const responseToolInvocations = buildResponseToolInvocations(toolInvocations, normalizedFollowUpSelection);
+    const latestNoToolReview = noToolReviewSteps.length > 0 ? noToolReviewSteps.at(-1) : null;
+    const followUpOptions = latestNoToolReview?.classification === 'request_permission'
+      ? buildBroaderAnswerOption()
+      : buildFollowUpOptions(finalToolInvocations, normalizedFollowUpSelection, answer);
+    const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations, normalizedFollowUpSelection);
     const turnType = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
       ? TURN_TYPE_BROADER_ANSWER
+      : latestNoToolReview?.classification === 'clarification'
+        ? TURN_TYPE_DEFAULT
       : followUpOptions.length > 0
         ? TURN_TYPE_NO_RESULT_OFFER
         : TURN_TYPE_DEFAULT;
@@ -1977,10 +2234,11 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
         name: agent.name,
         version: agent.version ?? null,
       },
-      response: buildResponseDebugSnapshot(response),
+      response: buildResponseDebugSnapshot(finalResponse),
       answer,
       citations: serializeDebugValue(citations),
-      error: response?.error ?? null,
+      noToolReview: serializeDebugValue(noToolReviewSteps),
+      error: finalResponse?.error ?? null,
     };
 
     return {

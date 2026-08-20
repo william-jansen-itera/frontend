@@ -134,6 +134,14 @@ function getAttachmentBadgeLabel(attachmentSummary) {
   }
 }
 
+function formatJson(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value ?? "");
+  }
+}
+
 function SearchPageContent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -146,6 +154,7 @@ function SearchPageContent() {
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState([]);
   const [resultCount, setResultCount] = useState(0);
+  const [executedSearches, setExecutedSearches] = useState([]);
   const [treeError, setTreeError] = useState(null);
   const [searchError, setSearchError] = useState(null);
 
@@ -214,6 +223,7 @@ function SearchPageContent() {
 
         setResults(Array.isArray(data.results) ? data.results : []);
         setResultCount(Number(data.count ?? 0));
+        setExecutedSearches(Array.isArray(data.executedSearches) ? data.executedSearches : []);
         setSearchError(null);
       })
       .catch((searchError) => {
@@ -224,6 +234,7 @@ function SearchPageContent() {
         console.error("Search request error:", searchError);
         setResults([]);
         setResultCount(0);
+        setExecutedSearches([]);
         setSearchError(searchError.message);
       })
       .finally(() => {
@@ -340,6 +351,45 @@ function SearchPageContent() {
               <h2 className={styles.resultsTitle}>{resultCount} match{resultCount === 1 ? "" : "es"}</h2>
             </div>
           </div>
+
+          {executedSearches.length > 0 ? (
+            <section className={styles.debugSection}>
+              <div className={styles.debugHeader}>
+                <p className={styles.resultsEyebrow}>Executed Queries</p>
+                <p className={styles.debugSummary}>{executedSearches.length} search{executedSearches.length === 1 ? "" : "es"} recorded</p>
+              </div>
+              <div className={styles.debugList}>
+                {executedSearches.map((search, index) => (
+                  <details key={`${search.kind}-${index}`} className={styles.debugCard}>
+                    <summary className={styles.debugCardSummary}>
+                      <span className={styles.debugKind}>{search.kind}</span>
+                      <span className={styles.debugMeta}>mode {search.searchMode || "n/a"} · {search.resultCount} result{search.resultCount === 1 ? "" : "s"}</span>
+                    </summary>
+                    <div className={styles.debugCardBody}>
+                      <dl className={styles.debugFacts}>
+                        <div className={styles.debugFactRow}>
+                          <dt>Query</dt>
+                          <dd>{String(search.query ?? "") || "n/a"}</dd>
+                        </div>
+                        <div className={styles.debugFactRow}>
+                          <dt>Mode</dt>
+                          <dd>{String(search.searchMode ?? "n/a")}</dd>
+                        </div>
+                        <div className={styles.debugFactRow}>
+                          <dt>Results</dt>
+                          <dd>{Number(search.resultCount ?? 0)}</dd>
+                        </div>
+                      </dl>
+                      <details className={styles.debugJsonToggle}>
+                        <summary className={styles.debugJsonSummary}>Show full payload</summary>
+                        <pre className={styles.debugJson}>{formatJson(search)}</pre>
+                      </details>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           {results.length === 0 && !isSearching && !searchError ? (
             <div className={styles.emptyState}>
