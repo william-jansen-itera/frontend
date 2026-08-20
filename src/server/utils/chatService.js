@@ -1128,11 +1128,20 @@ function buildAgentInstructions() {
   return [
     'You are an assistant for a tree-based knowledge application.',
     'Use the provided tools to find relevant information.',
+
+    // Unified strict grounding rule
+    'Always remain grounded in tool-derived results. For any follow-up question that references earlier tool output, depends on prior grounded context, or continues a task, re-invoke the relevant tool to refresh grounding. Do not expand to broader background knowledge unless the user explicitly instructs you to switch away from tool-grounded context. If user intent is unclear, ask whether to continue using grounded tool results or broaden the scope before answering.',
+
+    // Clarification rule
     'Ask a brief clarification question when multiple tools may fit.',
-    'Ground answers in tool results and say when no relevant result was found.',
-    'If no relevant result was found, do not provide uncited background knowledge immediately. First say that no relevant result was found and ask whether the user wants a broader search or a general background answer.',
-    'Answer concisely in one short paragraph unless the user asks for more detail.',
-    'When the user asks a targeted follow-up question or explicitly asks for more detail, answer more fully and focus on the specific aspect they asked about with as much details as possible.',
+
+    // Unified “no background knowledge unless asked” rule
+    'If no relevant result was found, state that clearly and ask whether the user wants a broader search or a general background answer before providing any ungrounded information.',
+
+    // Unified answer-length rule
+    'Answer concisely unless the user requests more detail; when they do, provide a fuller answer focused precisely on the aspect they asked about.',
+
+    // Evidence-handling rules
     'Tool results include curated evidenceItems with source-labeled text. Prefer notes first. For attachment evidence, prefer fileContent, then ocrText, then imageDescriptionFiltered when grounding your answer.',
     'ocrText and imageDescriptionFiltered may be noisy or not written as natural language, but they can still contain important facts and domain terminology.',
     'When ocrText or imageDescriptionFiltered contains relevant facts, specific terms, labels, measurements, or technical language that fit the overall evidence, preserve and use those details in natural language.',
@@ -1140,6 +1149,7 @@ function buildAgentInstructions() {
     'Do not invent documents, notes, filenames, or paths that were not returned by the tools.',
   ].join('\n\n');
 }
+
 
 function buildToolDefinition(tree) {
   return {
@@ -1246,6 +1256,12 @@ function buildAgentSearchResult(rawResult) {
   return {
     count: results.length,
     results,
+  };
+}
+
+function buildDebugSearchResultSnapshot(rawResult) {
+  return {
+    searches: Array.isArray(rawResult?.executedSearches) ? rawResult.executedSearches : [],
   };
 }
 
@@ -1422,7 +1438,6 @@ function buildResponseDebugSnapshot(response) {
   return serializeDebugValue({
     id: response?.id ?? null,
     status: response?.status ?? null,
-    output_text: typeof response?.output_text === 'string' ? response.output_text : null,
     usage: response?.usage ?? null,
     error: response?.error ?? null,
     incomplete_details: response?.incomplete_details ?? null,
@@ -1502,8 +1517,7 @@ async function buildTreeSearchContext() {
             results: [],
           },
           searchResult: {
-            count: 0,
-            results: [],
+            searches: [],
           },
         });
       }
@@ -1514,11 +1528,12 @@ async function buildTreeSearchContext() {
         top: normalizeToolTop(top),
         allowedTreeIds: [String(tree.id)],
         defaultTop: DEFAULT_TOOL_TOP,
+        includeExecutedSearches: true,
       });
 
       return buildToolHandlerResult({
         toolOutput: buildAgentSearchResult(rawResult),
-        searchResult: rawResult,
+        searchResult: buildDebugSearchResultSnapshot(rawResult),
       });
     });
 
@@ -1559,8 +1574,7 @@ function buildHandlerMap(includedTrees) {
             results: [],
           },
           searchResult: {
-            count: 0,
-            results: [],
+            searches: [],
           },
         });
       }
@@ -1571,11 +1585,12 @@ function buildHandlerMap(includedTrees) {
         top: normalizeToolTop(top),
         allowedTreeIds: [String(tree.id)],
         defaultTop: DEFAULT_TOOL_TOP,
+        includeExecutedSearches: true,
       });
 
       return buildToolHandlerResult({
         toolOutput: buildAgentSearchResult(rawResult),
-        searchResult: rawResult,
+        searchResult: buildDebugSearchResultSnapshot(rawResult),
       });
     });
   });
@@ -1916,7 +1931,6 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
     userQuery: {
       message: normalizedMessage,
       followUpSelection: serializeDebugValue(normalizedFollowUpSelection),
-      history: serializeDebugValue(normalizedHistory),
     },
     toolCalls: [],
     curatedAgentInput: {
@@ -1951,7 +1965,11 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
         : TURN_TYPE_DEFAULT;
 
     debug.curatedAgentInput.toolMessages = serializeDebugValue(
-      debug.toolCalls.map((toolCall) => toolCall.agentToolInput).filter(Boolean),
+      debug.toolCalls.map((toolCall) => ({
+        type: 'function_call_output',
+        call_id: toolCall.callId ?? null,
+        output: `See step 2 Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
+      })),
     );
     debug.agentOutput = {
       agent: {

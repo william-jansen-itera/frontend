@@ -10,13 +10,24 @@ const TURN_TYPE_BROADER_ANSWER = "broader_answer";
 function buildHistoryFromTurns(turns) {
   return turns.flatMap((turn) => {
     const messages = [];
+    const turnType = String(turn?.turnType ?? "default").trim();
 
-    if (turn.question) {
-      messages.push({ role: "user", content: turn.question });
+    if (turnType === TURN_TYPE_NO_RESULT_OFFER) {
+      return messages;
     }
 
-    if (turn.answer) {
-      messages.push({ role: "assistant", content: turn.answer });
+    const userHistoryText = turnType === TURN_TYPE_BROADER_ANSWER
+      ? String(turn?.originalQuestion ?? turn?.question ?? "").trim()
+      : String(turn?.question ?? "").trim();
+
+    const assistantHistoryText = String(turn?.answer ?? "").trim();
+
+    if (userHistoryText) {
+      messages.push({ role: "user", content: userHistoryText });
+    }
+
+    if (assistantHistoryText) {
+      messages.push({ role: "assistant", content: assistantHistoryText });
     }
 
     return messages;
@@ -132,7 +143,7 @@ function getTurnToolBadgeState(turn) {
       toolLabels: isBroaderAnswerTurn ? [] : invokedTools.map((toolName) => `TOOL: ${toolName}`),
       addTargets: shouldHighlightAddTarget ? invokedTools.map((toolName) => ({
         toolName,
-        label: `ADD TO TOOL: ${toolName}`,
+        label: `Add to: ${toolName}`,
       })) : [],
       statusLabel: hasToolResults || isBroaderAnswerTurn ? null : "NO TOOL RESULT",
     };
@@ -201,18 +212,13 @@ function TurnDebugPanel({ turn }) {
                 </details>
 
                 <details className={styles.debugDetail}>
-                  <summary>Raw search result</summary>
+                  <summary>Actual search results</summary>
                   <pre className={styles.jsonBlock}>{formatJson(toolCall.searchResult)}</pre>
                 </details>
 
                 <details className={styles.debugDetail}>
                   <summary>Tool output</summary>
                   <pre className={styles.jsonBlock}>{formatJson(toolCall.toolOutput)}</pre>
-                </details>
-
-                <details className={styles.debugDetail}>
-                  <summary>Agent tool input</summary>
-                  <pre className={styles.jsonBlock}>{formatJson(toolCall.agentToolInput)}</pre>
                 </details>
 
                 {toolCall.error ? (
@@ -282,6 +288,7 @@ export default function ChatPageClient({ includeDebug }) {
   const displayedTurns = [...turns].reverse();
   const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
   const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
+  const isInitialPendingState = turns.length === 1 && Boolean(turns[0]?.isPending) && !turns[0]?.error;
 
   async function submitTurn({ question, message, followUpSelection = null }) {
     const turnId = `${Date.now()}`;
@@ -552,172 +559,169 @@ export default function ChatPageClient({ includeDebug }) {
 
   return (
     <main className={styles.pageShell}>
-      <section className={styles.heroCard}>
-        <div className={styles.heroCopy}>
-          <p className={styles.description}>
-            Ask a question in natural language and inspect exactly how the agent searched, curated evidence, and produced the answer.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className={styles.composerForm}>
-          <label className={styles.composerField}>
-            <span className={styles.fieldLabel}>Prompt</span>
-            {isPromptInOptionMode ? (
-              <div className={styles.followUpComposerCard}>
-                <div className={styles.followUpActionRow}>
-                  {activeNoResultOfferTurn.followUpOptions.map((option) => (
-                    <button
-                      key={`${activeNoResultOfferTurn.id}-${option.optionId}`}
-                      type="button"
-                      className={styles.followUpPrimaryButton}
-                      onClick={() => handleFollowUpOptionClick(option)}
-                      disabled={isSubmitting}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className={styles.followUpSecondaryButton}
-                    onClick={() => setDismissedFollowUpTurnId(activeNoResultOfferTurn.id)}
-                    disabled={isSubmitting}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Ask about a tree, node, attachment, or topic"
-                className={styles.textArea}
-                rows={4}
-              />
-            )}
-          </label>
-          {isPromptInOptionMode ? null : (
-            <button type="submit" className={styles.submitButton} disabled={isSubmitting || !prompt.trim()}>
-              {isSubmitting ? "Thinking..." : "Send"}
-            </button>
-          )}
-        </form>
-      </section>
-
-      {requestError ? <p className={styles.errorMessage}>{requestError}</p> : null}
-
       <section className={`${styles.workspaceGrid} ${!includeDebug ? styles.workspaceGridSingle : ""}`}>
-        <div className={`appPanelShell ${styles.chatPanel}`}>
-          <div className={`appPanelTopBar ${styles.panelHeader}`}>
-            <div>
-              <p className={styles.panelEyebrow}>Conversation</p>
-              <h2 className={styles.panelTitle}>History</h2>
+        <div className={styles.chatColumnSurface}>
+          <section className={styles.heroCard}>
+            <div className={`appPanelTopBar ${styles.promptPanelHeader}`}>
+              <p className={styles.panelEyebrow}>Prompt</p>
+              {isPromptInOptionMode ? null : (
+                <button
+                  type="submit"
+                  form="chat-prompt-form"
+                  className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
+                  disabled={isSubmitting || !prompt.trim()}
+                >
+                  {isSubmitting ? "Thinking..." : "Send"}
+                </button>
+              )}
             </div>
-          </div>
-
-          <div ref={chatFeedRef} className={styles.chatFeed}>
-            {turns.length === 0 ? (
-              <div className={styles.emptyState}>
-                <h3>Start a turn</h3>
-                <p>
-                  {includeDebug
-                    ? "The left side will show the conversation. The right side will show the debug trace for the selected turn."
-                    : "The conversation history and grounded citations will appear here as you ask questions."}
-                </p>
-              </div>
-            ) : (
-              displayedTurns.map((turn) => {
-                const isSelected = turn.id === selectedTurn?.id;
-                const toolBadgeState = getTurnToolBadgeState(turn);
-
-                return (
-                  <article
-                    key={turn.id}
-                    className={`${styles.turnCard} ${isSelected ? styles.turnCardSelected : ""}`}
-                    onClick={() => setSelectedTurnId(turn.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedTurnId(turn.id);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <div className={styles.turnMetaRow}>
-                      <span className={styles.turnTimestamp}>{formatTimestamp(turn.createdAt)}</span>
-                      <span className={styles.turnStatus}>{turn.isPending ? "Pending" : turn.error ? "Error" : "Complete"}</span>
+            <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
+              <label className={styles.composerField}>
+                {isPromptInOptionMode ? (
+                  <div className={styles.followUpComposerCard}>
+                    <div className={styles.followUpActionRow}>
+                      {activeNoResultOfferTurn.followUpOptions.map((option) => (
+                        <button
+                          key={`${activeNoResultOfferTurn.id}-${option.optionId}`}
+                          type="button"
+                          className={styles.followUpPrimaryButton}
+                          onClick={() => handleFollowUpOptionClick(option)}
+                          disabled={isSubmitting}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className={styles.followUpSecondaryButton}
+                        onClick={() => setDismissedFollowUpTurnId(activeNoResultOfferTurn.id)}
+                        disabled={isSubmitting}
+                      >
+                        Cancel
+                      </button>
                     </div>
+                  </div>
+                ) : (
+                  <textarea
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
+                    placeholder="Ask about a tree, node, attachment, or topic"
+                    className={styles.textArea}
+                    rows={4}
+                  />
+                )}
+              </label>
+            </form>
+          </section>
 
-                    <div className={styles.messageBubbleAgent}>
-                      <p className={styles.messageLabel}>Agent</p>
-                      <p className={styles.messageText}>
-                        {turn.isPending ? "Waiting for response..." : turn.error ? turn.error : turn.answer || "No answer returned."}
-                      </p>
-                    </div>
+          {requestError ? <p className={`${styles.errorMessage} ${styles.errorMessageInline}`}>{requestError}</p> : null}
 
-                    <div className={styles.messageBubbleUser}>
-                      <p className={styles.messageLabel}>User</p>
-                      <p className={styles.messageText}>{turn.question}</p>
-                    </div>
+          <div className={`${styles.chatPanel} ${isInitialPendingState ? styles.chatPanelInitialPending : ""}`}>
+            <div ref={chatFeedRef} className={`${styles.chatFeed} ${isInitialPendingState ? styles.chatFeedInitialPending : ""}`}>
+              {turns.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <h3>Start a turn</h3>
+                  <p>
+                    {includeDebug
+                      ? "The left side will show the conversation. The right side will show the debug trace for the selected turn."
+                      : "The conversation history and grounded citations will appear here as you ask questions."}
+                  </p>
+                </div>
+              ) : (
+                displayedTurns.map((turn) => {
+                  const isSelected = turn.id === selectedTurn?.id;
+                  const toolBadgeState = getTurnToolBadgeState(turn);
 
-                    {!turn.isPending && !turn.error ? <CitationBreadcrumbs citations={turn.citations} /> : null}
-
-                    {!turn.isPending && !turn.error ? (
-                      <div className={styles.toolChipRow}>
-                        {toolBadgeState.toolLabels.map((label) => (
-                          <span key={`${turn.id}-${label}`} className={styles.toolChip}>{label}</span>
-                        ))}
-                        {toolBadgeState.addTargets.map((target) => (
-                          <button
-                            key={`${turn.id}-${target.toolName}`}
-                            type="button"
-                            className={styles.addToToolChipButton}
-                            onClick={(event) => handleAddToToolClick(event, turn, target.toolName)}
-                            disabled={addActionState?.status === "pending"}
-                          >
-                            {target.label}
-                          </button>
-                        ))}
-                        {toolBadgeState.statusLabel ? (
-                          <span className={styles.noToolChip}>{toolBadgeState.statusLabel}</span>
-                        ) : null}
+                  return (
+                    <article
+                      key={turn.id}
+                      className={`${styles.turnCard} ${turn.isPending ? styles.turnCardPending : ""} ${isSelected ? styles.turnCardSelected : ""}`}
+                      onClick={() => setSelectedTurnId(turn.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedTurnId(turn.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <div className={styles.turnMetaRow}>
+                        <span className={styles.turnTimestamp}>{formatTimestamp(turn.createdAt)}</span>
+                        <span className={styles.turnStatus}>{turn.isPending ? "Pending" : turn.error ? "Error" : "Complete"}</span>
                       </div>
-                    ) : null}
 
-                    {addActionState?.turnId === turn.id ? (
-                      <div className={styles.addActionPanel}>
-                        <p className={addActionState.status === "error" ? styles.addActionError : styles.addActionStatus}>
-                          {addActionState.message}
+                      {!turn.isPending && !turn.error ? (
+                        <div className={styles.toolChipRow}>
+                          {toolBadgeState.toolLabels.map((label) => (
+                            <span key={`${turn.id}-${label}`} className={styles.toolChip}>{label}</span>
+                          ))}
+                          {toolBadgeState.statusLabel ? (
+                            <span className={styles.noToolChip}>{toolBadgeState.statusLabel}</span>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      <div className={`${styles.messageBubbleAgent} ${turn.isPending ? styles.messageBubblePending : ""}`}>
+                        <div className={styles.messageHeaderRow}>
+                          <p className={styles.messageLabel}>Agent</p>
+                          {toolBadgeState.addTargets.map((target) => (
+                            <button
+                              key={`${turn.id}-${target.toolName}`}
+                              type="button"
+                              className={`appCompactActionButton appCompactActionButtonNeutral ${styles.addToToolChipButton}`}
+                              onClick={(event) => handleAddToToolClick(event, turn, target.toolName)}
+                              disabled={addActionState?.status === "pending"}
+                            >
+                              {target.label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className={`${styles.messageText} ${turn.isPending ? styles.messageTextPending : ""}`}>
+                          {turn.isPending ? "Waiting for response..." : turn.error ? turn.error : turn.answer || "No answer returned."}
                         </p>
-                        {addActionState.status === "confirm" ? (
-                          <div className={styles.addActionControls}>
-                            <button
-                              type="button"
-                              className={styles.addActionConfirmButton}
-                              onClick={(event) => handleConfirmAddToTool(event, turn)}
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              type="button"
-                              className={styles.addActionCancelButton}
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                setAddActionState(null);
-                              }}
-                            >
-                              Cancel
-                            </button>
+                        {addActionState?.turnId === turn.id ? (
+                          <div className={styles.addActionPanel}>
+                            <p className={addActionState.status === "error" ? styles.addActionError : styles.addActionStatus}>
+                              {addActionState.message}
+                            </p>
+                            {addActionState.status === "confirm" ? (
+                              <div className={styles.addActionControls}>
+                                <button
+                                  type="button"
+                                  className={styles.addActionConfirmButton}
+                                  onClick={(event) => handleConfirmAddToTool(event, turn)}
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.addActionCancelButton}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    setAddActionState(null);
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>
-                    ) : null}
-                  </article>
-                );
-              })
-            )}
+
+                      <div className={`${styles.messageBubbleUser} ${turn.isPending ? styles.messageBubblePending : ""}`}>
+                        <p className={styles.messageLabel}>User</p>
+                        <p className={`${styles.messageText} ${turn.isPending ? styles.messageTextPending : ""}`}>{turn.question}</p>
+                      </div>
+
+                      {!turn.isPending && !turn.error ? <CitationBreadcrumbs citations={turn.citations} /> : null}
+                    </article>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
 
@@ -730,6 +734,9 @@ export default function ChatPageClient({ includeDebug }) {
               </div>
             </div>
             <div className={styles.debugBody}>
+              <p className={styles.debugIntro}>
+                Inspect exactly how the agent searched, curated evidence, and produced the answer.
+              </p>
               <TurnDebugPanel turn={selectedTurn} />
             </div>
           </aside>

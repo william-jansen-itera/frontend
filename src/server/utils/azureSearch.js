@@ -250,6 +250,38 @@ function buildAttachmentHighlightInfo(document) {
   return { text: null, source: document.attachmentMatchSource || null };
 }
 
+function buildDebugSearchHitSnapshot(document) {
+  if (!document || typeof document !== 'object') {
+    return null;
+  }
+
+  const {
+    '@search.score': _rawSearchScore,
+    '@search.highlights': _rawSearchHighlights,
+    ...debugDocument
+  } = document;
+
+  return {
+    ...debugDocument,
+  };
+}
+
+function buildDebugSearchExecution({ kind, query, top, filter, searchFields, scoringProfile = null, queryType = null, results }) {
+  return {
+    kind,
+    query,
+    top,
+    filter,
+    searchFields,
+    scoringProfile,
+    queryType,
+    resultCount: Array.isArray(results) ? results.length : 0,
+    results: Array.isArray(results)
+      ? results.map((document) => buildDebugSearchHitSnapshot(document)).filter(Boolean)
+      : [],
+  };
+}
+
 async function executeSearchQuery({ endpoint, indexName, queryKey, searchText, filter, top, searchFields, scoringProfile = null, queryType = null }) {
   const response = await fetch(
     `${endpoint}/indexes/${encodeURIComponent(indexName)}/docs/search?api-version=${SEARCH_API_VERSION}`,
@@ -473,7 +505,14 @@ function finalizeGroupedResults(groups) {
   });
 }
 
-export async function searchTreeContent({ searchText, treeId, top, allowedTreeIds, defaultTop = DEFAULT_SEARCH_PAGE_TOP }) {
+export async function searchTreeContent({
+  searchText,
+  treeId,
+  top,
+  allowedTreeIds,
+  defaultTop = DEFAULT_SEARCH_PAGE_TOP,
+  includeExecutedSearches = false,
+}) {
   const trimmedSearchText = String(searchText ?? '').trim();
 
   if (!trimmedSearchText) {
@@ -548,9 +587,43 @@ export async function searchTreeContent({ searchText, treeId, top, allowedTreeId
   });
   const finalizedResults = finalizeGroupedResults(enrichedGroups).slice(0, normalizedTopValue);
 
+  const executedSearches = includeExecutedSearches
+    ? [
+      buildDebugSearchExecution({
+        kind: 'node_content',
+        query: trimmedSearchText,
+        top: normalizedTopValue,
+        filter: `${baseFilter} and sourceType eq 'node'`,
+        searchFields: NODE_SEARCH_FIELDS,
+        scoringProfile: NODE_SCORING_PROFILE,
+        results: nodeResults,
+      }),
+      buildDebugSearchExecution({
+        kind: 'attachment_content',
+        query: trimmedSearchText,
+        top: normalizedTopValue,
+        filter: `${baseFilter} and sourceType eq 'attachment'`,
+        searchFields: ATTACHMENT_SEARCH_FIELDS,
+        results: attachmentResults,
+      }),
+      ...(attachmentFileNameRegexQuery
+        ? [buildDebugSearchExecution({
+          kind: 'attachment_file_name',
+          query: attachmentFileNameRegexQuery,
+          top: normalizedTopValue,
+          filter: `${baseFilter} and sourceType eq 'attachment'`,
+          searchFields: ['attachmentFileName'],
+          queryType: 'full',
+          results: addAttachmentMatchSource(attachmentFileNameResults, 'fileName'),
+        })]
+        : []),
+    ].filter((search) => Number(search?.resultCount ?? 0) > 0)
+    : undefined;
+
   return {
     count: finalizedResults.length,
     results: finalizedResults,
+    ...(executedSearches ? { executedSearches } : {}),
   };
 }
 

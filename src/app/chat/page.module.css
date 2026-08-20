@@ -2,17 +2,33 @@
   padding: var(--page-shell-padding);
 }
 
-.heroCard {
-  max-width: 1320px;
-  margin: 0 auto 1.5rem;
-  padding: 2rem;
+.chatColumnSurface {
+  min-width: 0;
   border: var(--surface-border);
   border-radius: var(--surface-radius-hero);
   background: var(--surface-card-background);
   box-shadow: var(--surface-card-shadow-hero);
   backdrop-filter: blur(14px);
+  overflow: hidden;
   display: grid;
-  gap: var(--hero-gap);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.heroCard {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  display: grid;
+  gap: 0;
+}
+
+.promptPanelHeader {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .heroCopy {
@@ -27,6 +43,9 @@
   margin: 0;
   color: var(--ui-eyebrow-color);
   font-size: var(--ui-eyebrow-size);
+}
+
+.panelEyebrow {
   font-weight: var(--ui-eyebrow-weight);
   letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
@@ -35,10 +54,6 @@
 .sectionEyebrow {
   margin: 0;
   color: #64748b;
-  font-size: var(--ui-eyebrow-size);
-  font-weight: var(--ui-secondary-label-weight);
-  letter-spacing: var(--ui-eyebrow-spacing);
-  text-transform: uppercase;
 }
 
 .messageLabel {
@@ -68,9 +83,10 @@
 
 .composerForm {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: end;
+  padding: 1.35rem 1.35rem 0.8rem;
 }
 
 .composerField {
@@ -159,6 +175,12 @@
   min-width: 10rem;
 }
 
+.promptToolbarButton {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .submitButton:disabled {
   opacity: 0.65;
   cursor: not-allowed;
@@ -184,7 +206,12 @@
 
 .chatPanel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.chatPanelInitialPending {
+  min-height: 18rem;
 }
 
 .debugPanel {
@@ -207,7 +234,17 @@
 .panelTitle,
 .sectionTitle {
   margin: 0.2rem 0 0;
-  color: #0f172a;
+  color: var(--ui-title-color);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.panelTitle {
+  font-size: 1.35rem;
+}
+
+.sectionTitle {
+  font-size: 1.1rem;
 }
 
 .chatFeed,
@@ -216,13 +253,25 @@
   overflow: auto;
 }
 
+.chatFeed {
+  padding-top: 0.15rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.chatFeedInitialPending {
+  align-content: start;
+}
+
 .debugBody {
   min-height: 0;
 }
 
-.chatFeed {
-  display: grid;
-  gap: 1rem;
+.debugIntro {
+  margin: 0 0 1rem;
+  color: var(--ui-body-color);
+  font-size: var(--ui-body-size);
+  line-height: var(--ui-body-line-height);
 }
 
 .emptyState,
@@ -265,6 +314,11 @@
   transition: box-shadow 120ms ease, border-color 120ms ease;
 }
 
+.turnCardPending {
+  gap: 0.6rem;
+  padding: 0.9rem;
+}
+
 .turnCard:hover,
 .turnCard:focus-visible,
 .turnCardSelected {
@@ -300,6 +354,10 @@
   border-radius: calc(var(--ui-control-radius) + 2px);
 }
 
+.messageBubblePending {
+  padding: 0.7rem 0.85rem;
+}
+
 .messageBubbleUser {
   background: linear-gradient(135deg, rgba(204, 251, 241, 0.92), rgba(219, 234, 254, 0.9));
 }
@@ -308,11 +366,24 @@
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
 }
 
+.messageHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .messageText {
   margin: 0.45rem 0 0;
   color: #0f172a;
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.messageTextPending {
+  margin-top: 0.3rem;
+  line-height: 1.55;
 }
 
 .citationSection {
@@ -395,17 +466,20 @@
 }
 
 .toolChipRow {
-  justify-content: flex-start;
+  justify-content: flex-end;
+  margin-top: -0.5rem;
+  margin-bottom: -0.45rem;
 }
 
 .toolChip,
 .addToToolChip,
 .noToolChip,
 .toolErrorBadge {
-  padding: 0.35rem 0.7rem;
+  padding: 0.28rem 0.65rem;
   border-radius: 999px;
-  font-size: 0.76rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -421,43 +495,8 @@
 }
 
 .addToToolChipButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: auto;
-  padding: calc(0.35rem - 1px) calc(0.7rem - 1px);
-  border: 1px solid #4ade80;
-  cursor: pointer;
-  font: inherit;
-  border-radius: 999px;
-  font-size: 0.76rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
-  color: #166534;
-  outline: 2px solid rgba(22, 101, 52, 0.14);
-  outline-offset: 2px;
-  transition: background 120ms ease, border-color 120ms ease, outline-color 120ms ease;
-}
-
-.addToToolChipButton:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.addToToolChipButton:hover {
-  background: linear-gradient(135deg, #bbf7d0, #86efac);
-  border-color: #22c55e;
-  outline: 2px solid rgba(22, 101, 52, 0.14);
-  outline-offset: 2px;
-}
-
-.addToToolChipButton:focus-visible {
-  background: linear-gradient(135deg, #bbf7d0, #86efac);
-  border-color: #22c55e;
-  outline: 2px solid rgba(22, 101, 52, 0.14);
-  outline-offset: 2px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .addActionStatus,
@@ -470,6 +509,7 @@
 .addActionPanel {
   display: grid;
   gap: 0.6rem;
+  margin-top: 0.7rem;
 }
 
 .addActionControls {
@@ -581,6 +621,12 @@
   color: #991b1b;
 }
 
+.errorMessageInline {
+  max-width: none;
+  margin: 0 2rem 0.25rem;
+  border-radius: calc(var(--ui-control-radius) - 2px);
+}
+
 @media (max-width: 1080px) {
   .workspaceGrid {
     grid-template-columns: 1fr;
@@ -597,10 +643,13 @@
     padding: 1rem;
   }
 
-  .heroCard,
-  .chatPanel,
+  .chatColumnSurface,
   .debugPanel {
     border-radius: var(--surface-radius-empty);
+  }
+
+  .heroCard {
+    padding: 1.5rem 1rem 1.25rem;
   }
 
   .composerForm {
