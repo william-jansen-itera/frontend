@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import styles from "./page.module.css";
 
+const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer";
+const TURN_TYPE_BROADER_ANSWER = "broader_answer";
+
 function buildHistoryFromTurns(turns) {
   return turns.flatMap((turn) => {
     const messages = [];
@@ -104,6 +107,38 @@ function CitationBreadcrumbs({ citations }) {
       </div>
     </div>
   );
+}
+
+function getTurnToolBadgeState(turn) {
+  const toolInvocations = Array.isArray(turn?.toolInvocations) ? turn.toolInvocations : [];
+  const invokedTools = Array.from(new Set(
+    toolInvocations
+      .map((invocation) => String(invocation?.toolName ?? "").trim())
+      .filter(Boolean),
+  ));
+  const toolsWithResults = Array.from(new Set(
+    toolInvocations
+      .filter((invocation) => Number(invocation?.resultCount ?? 0) > 0)
+      .map((invocation) => String(invocation?.toolName ?? "").trim())
+      .filter(Boolean),
+  ));
+
+  if (invokedTools.length > 0) {
+    const hasToolResults = toolsWithResults.length > 0;
+    const shouldHighlightAddTarget = turn?.turnType === TURN_TYPE_BROADER_ANSWER && !hasToolResults;
+
+    return {
+      toolLabels: invokedTools.map((toolName) => `TOOL: ${toolName}`),
+      addTargetLabels: shouldHighlightAddTarget ? invokedTools.map((toolName) => `ADD TO TOOL: ${toolName}`) : [],
+      statusLabel: hasToolResults ? null : "NO TOOL RESULT",
+    };
+  }
+
+  return {
+    toolLabels: [],
+    addTargetLabels: [],
+    statusLabel: "NO TOOL FOUND",
+  };
 }
 
 function TurnDebugPanel({ turn }) {
@@ -207,39 +242,46 @@ function TurnDebugPanel({ turn }) {
   );
 }
 
+function getLatestNoResultOfferTurn(turns, dismissedTurnId) {
+  const latestTurn = turns.at(-1) ?? null;
+
+  if (!latestTurn || latestTurn.id === dismissedTurnId) {
+    return null;
+  }
+
+  if (latestTurn.isPending || latestTurn.error) {
+    return null;
+  }
+
+  if (latestTurn.turnType !== TURN_TYPE_NO_RESULT_OFFER) {
+    return null;
+  }
+
+  if (!Array.isArray(latestTurn.followUpOptions) || latestTurn.followUpOptions.length === 0) {
+    return null;
+  }
+
+  return latestTurn;
+}
+
 export default function ChatPageClient({ includeDebug }) {
   const [prompt, setPrompt] = useState("");
   const [turns, setTurns] = useState([]);
   const [selectedTurnId, setSelectedTurnId] = useState(null);
+  const [dismissedFollowUpTurnId, setDismissedFollowUpTurnId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
   const chatFeedRef = useRef(null);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
+  const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
+  const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
 
-  useEffect(() => {
-    if (!chatFeedRef.current) {
-      return;
-    }
-
-    chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
-  }, [turns, isSubmitting]);
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-
-    const message = prompt.trim();
-
-    if (!message || isSubmitting) {
-      return;
-    }
-
+  async function submitTurn({ question, message, followUpSelection = null }) {
     const turnId = `${Date.now()}`;
-    const question = message;
     const history = buildHistoryFromTurns(turns);
 
-    setPrompt("");
     setIsSubmitting(true);
     setRequestError(null);
     setSelectedTurnId(turnId);
@@ -253,6 +295,9 @@ export default function ChatPageClient({ includeDebug }) {
         error: null,
         citations: [],
         toolsUsed: [],
+        toolInvocations: [],
+        turnType: "default",
+        followUpOptions: [],
         createdAt: Date.now(),
         isPending: true,
       },
@@ -267,6 +312,7 @@ export default function ChatPageClient({ includeDebug }) {
         body: JSON.stringify({
           message,
           history,
+          followUpSelection,
         }),
       });
 
@@ -279,6 +325,7 @@ export default function ChatPageClient({ includeDebug }) {
         };
       }
 
+      setDismissedFollowUpTurnId(null);
       setTurns((currentTurns) => currentTurns.map((turn) => (
         turn.id === turnId
           ? {
@@ -287,6 +334,9 @@ export default function ChatPageClient({ includeDebug }) {
             debug: payload?.debug ?? null,
             citations: Array.isArray(payload?.citations) ? payload.citations : [],
             toolsUsed: Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [],
+            toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
+            turnType: String(payload?.turnType ?? "default").trim() || "default",
+            followUpOptions: Array.isArray(payload?.followUpOptions) ? payload.followUpOptions : [],
             error: null,
             isPending: false,
           }
@@ -303,6 +353,9 @@ export default function ChatPageClient({ includeDebug }) {
             answer: "",
             debug: error?.debug ?? null,
             error: messageText,
+            toolInvocations: [],
+            turnType: "default",
+            followUpOptions: [],
             isPending: false,
           }
           : turn
@@ -310,6 +363,59 @@ export default function ChatPageClient({ includeDebug }) {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  useEffect(() => {
+    if (!chatFeedRef.current) {
+      return;
+    }
+
+    chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
+  }, [turns, isSubmitting]);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    const message = prompt.trim();
+
+    if (!message || isSubmitting || isPromptInOptionMode) {
+      return;
+    }
+
+    setPrompt("");
+    await submitTurn({
+      question: message,
+      message,
+    });
+  }
+
+  async function handleFollowUpOptionClick(option) {
+    if (!activeNoResultOfferTurn || isSubmitting) {
+      return;
+    }
+
+    const optionId = String(option?.optionId ?? "").trim();
+    const label = String(option?.label ?? "").trim();
+
+    if (!optionId || !label) {
+      return;
+    }
+
+    await submitTurn({
+      question: label,
+      message: label,
+      followUpSelection: {
+        sourceTurnId: activeNoResultOfferTurn.id,
+        optionId,
+        sourceQuestion: activeNoResultOfferTurn.question,
+        sourceToolInvocations: Array.isArray(activeNoResultOfferTurn.toolInvocations)
+          ? activeNoResultOfferTurn.toolInvocations.map((invocation) => ({
+            toolName: invocation?.toolName,
+            resultCount: invocation?.resultCount,
+          }))
+          : [],
+      },
+    });
   }
 
   return (
@@ -324,17 +430,48 @@ export default function ChatPageClient({ includeDebug }) {
         <form onSubmit={handleSubmit} className={styles.composerForm}>
           <label className={styles.composerField}>
             <span className={styles.fieldLabel}>Prompt</span>
-            <textarea
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Ask about a tree, node, attachment, or topic"
-              className={styles.textArea}
-              rows={4}
-            />
+            {isPromptInOptionMode ? (
+              <div className={styles.followUpComposerCard}>
+                <p className={styles.followUpComposerText}>
+                  No relevant tool result was found. Choose how to continue.
+                </p>
+                <div className={styles.followUpActionRow}>
+                  {activeNoResultOfferTurn.followUpOptions.map((option) => (
+                    <button
+                      key={`${activeNoResultOfferTurn.id}-${option.optionId}`}
+                      type="button"
+                      className={styles.followUpPrimaryButton}
+                      onClick={() => handleFollowUpOptionClick(option)}
+                      disabled={isSubmitting}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={styles.followUpSecondaryButton}
+                    onClick={() => setDismissedFollowUpTurnId(activeNoResultOfferTurn.id)}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Ask about a tree, node, attachment, or topic"
+                className={styles.textArea}
+                rows={4}
+              />
+            )}
           </label>
-          <button type="submit" className={styles.submitButton} disabled={isSubmitting || !prompt.trim()}>
-            {isSubmitting ? "Thinking..." : "Send"}
-          </button>
+          {isPromptInOptionMode ? null : (
+            <button type="submit" className={styles.submitButton} disabled={isSubmitting || !prompt.trim()}>
+              {isSubmitting ? "Thinking..." : "Send"}
+            </button>
+          )}
         </form>
       </section>
 
@@ -345,7 +482,7 @@ export default function ChatPageClient({ includeDebug }) {
           <div className={`appPanelTopBar ${styles.panelHeader}`}>
             <div>
               <p className={styles.panelEyebrow}>Conversation</p>
-              <h2 className={styles.panelTitle}>Ask history</h2>
+              <h2 className={styles.panelTitle}>History</h2>
             </div>
           </div>
 
@@ -362,6 +499,7 @@ export default function ChatPageClient({ includeDebug }) {
             ) : (
               displayedTurns.map((turn) => {
                 const isSelected = turn.id === selectedTurn?.id;
+                const toolBadgeState = getTurnToolBadgeState(turn);
 
                 return (
                   <article
@@ -382,11 +520,6 @@ export default function ChatPageClient({ includeDebug }) {
                       <span className={styles.turnStatus}>{turn.isPending ? "Pending" : turn.error ? "Error" : "Complete"}</span>
                     </div>
 
-                    <div className={styles.messageBubbleUser}>
-                      <p className={styles.messageLabel}>User</p>
-                      <p className={styles.messageText}>{turn.question}</p>
-                    </div>
-
                     <div className={styles.messageBubbleAgent}>
                       <p className={styles.messageLabel}>Agent</p>
                       <p className={styles.messageText}>
@@ -394,13 +527,24 @@ export default function ChatPageClient({ includeDebug }) {
                       </p>
                     </div>
 
+                    <div className={styles.messageBubbleUser}>
+                      <p className={styles.messageLabel}>User</p>
+                      <p className={styles.messageText}>{turn.question}</p>
+                    </div>
+
                     {!turn.isPending && !turn.error ? <CitationBreadcrumbs citations={turn.citations} /> : null}
 
-                    {turn.toolsUsed.length > 0 ? (
+                    {!turn.isPending && !turn.error ? (
                       <div className={styles.toolChipRow}>
-                        {turn.toolsUsed.map((toolName) => (
-                          <span key={`${turn.id}-${toolName}`} className={styles.toolChip}>{`tool: ${toolName}`}</span>
+                        {toolBadgeState.toolLabels.map((label) => (
+                          <span key={`${turn.id}-${label}`} className={styles.toolChip}>{label}</span>
                         ))}
+                        {toolBadgeState.addTargetLabels.map((label) => (
+                          <span key={`${turn.id}-${label}`} className={styles.addToToolChip}>{label}</span>
+                        ))}
+                        {toolBadgeState.statusLabel ? (
+                          <span className={styles.noToolChip}>{toolBadgeState.statusLabel}</span>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>

@@ -78,6 +78,55 @@
   gap: 0.45rem;
 }
 
+.followUpComposerCard {
+  display: grid;
+  gap: 0.85rem;
+  min-height: 7rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: calc(var(--ui-control-radius) + 2px);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(240, 249, 255, 0.94));
+}
+
+.followUpComposerText {
+  margin: 0;
+  color: #0f172a;
+  line-height: 1.6;
+}
+
+.followUpActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.followUpPrimaryButton,
+.followUpSecondaryButton {
+  padding: 0.85rem 1.2rem;
+  border-radius: var(--ui-control-radius);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.followUpPrimaryButton {
+  border: 0;
+  background: linear-gradient(135deg, #0f766e, #0f766e 20%, #0369a1 100%);
+  color: #ffffff;
+}
+
+.followUpSecondaryButton {
+  border: 1px solid rgba(148, 163, 184, 0.8);
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+}
+
+.followUpPrimaryButton:disabled,
+.followUpSecondaryButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .textArea {
   width: 100%;
   box-sizing: border-box;
@@ -351,6 +400,8 @@
 }
 
 .toolChip,
+.addToToolChip,
+.noToolChip,
 .toolErrorBadge {
   padding: 0.35rem 0.7rem;
   border-radius: 999px;
@@ -363,6 +414,16 @@
 .toolChip {
   background: #dbeafe;
   color: #1d4ed8;
+}
+
+.addToToolChip {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.noToolChip {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .toolErrorBadge {

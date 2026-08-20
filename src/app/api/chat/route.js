@@ -32,6 +32,35 @@ function normalizeHistory(history) {
     .filter((entry) => entry.content);
 }
 
+function normalizeFollowUpSelection(selection) {
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) {
+    return null;
+  }
+
+  const optionId = String(selection?.optionId ?? '').trim();
+  const sourceTurnId = String(selection?.sourceTurnId ?? '').trim();
+  const sourceQuestion = String(selection?.sourceQuestion ?? '').trim();
+  const sourceToolInvocations = Array.isArray(selection?.sourceToolInvocations)
+    ? selection.sourceToolInvocations
+      .map((invocation) => ({
+        toolName: String(invocation?.toolName ?? '').trim(),
+        resultCount: Number(invocation?.resultCount ?? 0),
+      }))
+      .filter((invocation) => invocation.toolName)
+    : [];
+
+  if (!optionId || !sourceTurnId) {
+    return null;
+  }
+
+  return {
+    optionId,
+    sourceTurnId,
+    sourceQuestion,
+    sourceToolInvocations,
+  };
+}
+
 function parseBooleanSetting(value, fallbackValue) {
   if (typeof value === 'boolean') {
     return value;
@@ -62,8 +91,9 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     const message = String(payload?.message ?? '').trim();
+    const followUpSelection = normalizeFollowUpSelection(payload?.followUpSelection);
 
-    if (!message) {
+    if (!message && !followUpSelection) {
       return NextResponse.json(
         { error: 'A non-empty message is required.' },
         { status: 400 },
@@ -76,6 +106,7 @@ export async function POST(request) {
       message,
       history,
       principal,
+      followUpSelection,
     });
 
     await logTrace(

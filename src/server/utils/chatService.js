@@ -18,6 +18,10 @@ const MAX_GENERATED_CHILDREN_PER_NODE = 5;
 const MAX_GENERATED_LEAF_CHILDREN_PER_NODE = 10;
 const MAX_GENERATED_TITLE_LENGTH = 255;
 const MAX_GENERATED_NOTES_LENGTH = 4000;
+const TURN_TYPE_DEFAULT = 'default';
+const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer';
+const TURN_TYPE_BROADER_ANSWER = 'broader_answer';
+const FOLLOW_UP_OPTION_BROADER_ANSWER = 'broader_answer';
 
 let cachedProjectClient;
 
@@ -1131,6 +1135,109 @@ function extractAnswerText(response) {
   return contentText;
 }
 
+function normalizeFollowUpSelection(selection) {
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) {
+    return null;
+  }
+
+  const optionId = String(selection.optionId ?? '').trim();
+  const sourceTurnId = String(selection.sourceTurnId ?? '').trim();
+  const sourceQuestion = String(selection.sourceQuestion ?? '').trim();
+  const sourceToolInvocations = Array.isArray(selection.sourceToolInvocations)
+    ? selection.sourceToolInvocations
+      .map((invocation) => ({
+        toolName: String(invocation?.toolName ?? '').trim(),
+        resultCount: Number(invocation?.resultCount ?? 0),
+      }))
+      .filter((invocation) => invocation.toolName)
+    : [];
+
+  if (!optionId || !sourceTurnId) {
+    return null;
+  }
+
+  if (optionId !== FOLLOW_UP_OPTION_BROADER_ANSWER) {
+    return null;
+  }
+
+  return {
+    optionId,
+    sourceTurnId,
+    sourceQuestion,
+    sourceToolInvocations,
+  };
+}
+
+function getFollowUpOptionLabel(optionId) {
+  if (optionId === FOLLOW_UP_OPTION_BROADER_ANSWER) {
+    return 'Answer more broadly';
+  }
+
+  return '';
+}
+
+function buildFollowUpPrompt(selection) {
+  if (!selection) {
+    return '';
+  }
+
+  if (selection.optionId !== FOLLOW_UP_OPTION_BROADER_ANSWER) {
+    return getFollowUpOptionLabel(selection.optionId);
+  }
+
+  const originalQuestion = String(selection.sourceQuestion ?? '').trim();
+  const toolNames = Array.isArray(selection.sourceToolInvocations)
+    ? selection.sourceToolInvocations.map((invocation) => invocation.toolName).filter(Boolean)
+    : [];
+  const toolClause = toolNames.length > 0
+    ? ` Reuse the same search tool${toolNames.length === 1 ? '' : 's'} if relevant: ${toolNames.join(', ')}.`
+    : '';
+
+  if (!originalQuestion) {
+    return `${getFollowUpOptionLabel(selection.optionId)}.${toolClause}`.trim();
+  }
+
+  return `Provide a broader background answer for the user's original question: "${originalQuestion}".${toolClause}`.trim();
+}
+
+function buildResponseToolInvocations(toolInvocations, normalizedFollowUpSelection) {
+  const responseToolInvocations = toolInvocations.map((invocation) => ({
+    toolName: invocation.toolName,
+    arguments: invocation.arguments,
+    resultCount: invocation.output?.count ?? 0,
+  }));
+
+  if (responseToolInvocations.length > 0 || normalizedFollowUpSelection?.optionId !== FOLLOW_UP_OPTION_BROADER_ANSWER) {
+    return responseToolInvocations;
+  }
+
+  return Array.isArray(normalizedFollowUpSelection?.sourceToolInvocations)
+    ? normalizedFollowUpSelection.sourceToolInvocations.map((invocation) => ({
+      toolName: invocation.toolName,
+      arguments: '{}',
+      resultCount: Number(invocation?.resultCount ?? 0),
+    }))
+    : [];
+}
+
+function hasToolResults(toolInvocations) {
+  return Array.isArray(toolInvocations)
+    && toolInvocations.some((invocation) => Number(invocation?.output?.count ?? 0) > 0);
+}
+
+function buildFollowUpOptions(toolInvocations) {
+  if (!Array.isArray(toolInvocations) || toolInvocations.length === 0 || hasToolResults(toolInvocations)) {
+    return [];
+  }
+
+  return [
+    {
+      optionId: FOLLOW_UP_OPTION_BROADER_ANSWER,
+      label: getFollowUpOptionLabel(FOLLOW_UP_OPTION_BROADER_ANSWER),
+    },
+  ];
+}
+
 function serializeDebugValue(value) {
   if (value === undefined) {
     return null;
@@ -1618,8 +1725,11 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
   throw new Error('The agent exceeded the maximum number of tool rounds');
 }
 
-export async function invokeTreeSearchAgent({ message, history = [], principal = null }) {
-  const normalizedMessage = String(message ?? '').trim();
+export async function invokeTreeSearchAgent({ message, history = [], principal = null, followUpSelection = null }) {
+  const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
+  const normalizedMessage = normalizedFollowUpSelection
+    ? buildFollowUpPrompt(normalizedFollowUpSelection)
+    : String(message ?? '').trim();
 
   if (!normalizedMessage) {
     throw new Error('A message is required to invoke the agent');
@@ -1641,6 +1751,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
   const debug = {
     userQuery: {
       message: normalizedMessage,
+      followUpSelection: serializeDebugValue(normalizedFollowUpSelection),
       history: serializeDebugValue(normalizedHistory),
     },
     toolCalls: [],
@@ -1667,6 +1778,13 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       toolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
     );
     const answer = extractAnswerText(response);
+    const followUpOptions = buildFollowUpOptions(toolInvocations);
+    const responseToolInvocations = buildResponseToolInvocations(toolInvocations, normalizedFollowUpSelection);
+    const turnType = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
+      ? TURN_TYPE_BROADER_ANSWER
+      : followUpOptions.length > 0
+        ? TURN_TYPE_NO_RESULT_OFFER
+        : TURN_TYPE_DEFAULT;
 
     debug.curatedAgentInput.toolMessages = serializeDebugValue(
       debug.toolCalls.map((toolCall) => toolCall.agentToolInput).filter(Boolean),
@@ -1690,12 +1808,10 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
         name: agent.name,
         version: agent.version ?? null,
       },
-      toolsUsed: Array.from(new Set(toolInvocations.map((invocation) => invocation.toolName))),
-      toolInvocations: toolInvocations.map((invocation) => ({
-        toolName: invocation.toolName,
-        arguments: invocation.arguments,
-        resultCount: invocation.output?.count ?? 0,
-      })),
+      toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
+      toolInvocations: responseToolInvocations,
+      turnType,
+      followUpOptions,
       citations,
       principal: principal
         ? {
