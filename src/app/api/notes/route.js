@@ -1,7 +1,11 @@
 
 import { NextResponse } from 'next/server';
 import { deleteNodeAttachmentBlobIfExists, uploadNodeAttachment } from '@/server/utils/blobStorage';
-import { generateChildTitlesFromBreadcrumb, generateLeafNotesDraft } from '@/server/utils/chatService';
+import {
+  generateChildTitlesFromBreadcrumb,
+  generateLeafNotesDraft,
+  selectChatLeafParentCandidate,
+} from '@/server/utils/chatService';
 import { sql, withSqlConnection } from '@/server/utils/sql';
 import { getTreeList } from '@/server/utils/treeCatalog';
 
@@ -82,8 +86,8 @@ async function getTreeData(treeInstanceId) {
   });
 }
 
-async function queryTreeNode(treeInstanceId, nodeId) {
-  const result = await new sql.Request()
+async function queryTreeNode(treeInstanceId, nodeId, transaction = null) {
+  const result = await createSqlRequest(transaction)
     .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
     .input('id', sql.Int, parseInt(nodeId, 10))
     .query(`
@@ -98,8 +102,8 @@ async function queryTreeNode(treeInstanceId, nodeId) {
   return result.recordset[0] ?? null;
 }
 
-async function queryNodeDetails(treeInstanceId, nodeId) {
-  const node = await queryTreeNode(treeInstanceId, nodeId);
+async function queryNodeDetails(treeInstanceId, nodeId, transaction = null) {
+  const node = await queryTreeNode(treeInstanceId, nodeId, transaction);
   if (!node) {
     return null;
   }
@@ -114,7 +118,7 @@ async function queryNodeDetails(treeInstanceId, nodeId) {
     };
   }
 
-  const detailResult = await new sql.Request()
+  const detailResult = await createSqlRequest(transaction)
     .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
     .input('id', sql.Int, parseInt(nodeId, 10))
     .query(`
@@ -138,7 +142,7 @@ async function queryNodeDetails(treeInstanceId, nodeId) {
     };
   }
 
-  const attachmentResult = await new sql.Request()
+  const attachmentResult = await createSqlRequest(transaction)
     .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
     .input('id', sql.Int, parseInt(nodeId, 10))
     .query(`
@@ -186,6 +190,20 @@ async function getTreeSettings(treeInstanceId) {
 
     return result.recordset;
   });
+}
+
+async function queryTreeSummary(treeInstanceId, transaction = null) {
+  const result = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
+    .query(`
+      SELECT TOP 1 COALESCE(NULLIF(display_name, ''), CONCAT('Tree ', id)) AS treeName
+      FROM tree_instance
+      WHERE id = @tree_instance_id;
+    `);
+
+  return {
+    treeName: String(result.recordset[0]?.treeName ?? '').trim() || `Tree ${treeInstanceId}`,
+  };
 }
 
 async function getTreeMaxDepth(treeInstanceId) {
@@ -257,6 +275,112 @@ async function getTreeCreateContext(treeInstanceId, parentId, transaction = null
     .query(query);
 
   return result.recordset[0] ?? null;
+}
+
+function parseToolTreeId(toolName) {
+  const match = String(toolName ?? '').trim().match(/_(\d+)$/);
+  return match ? match[1] : '';
+}
+
+function buildBreadcrumbByNodeId(flatData) {
+  const nodeById = new Map(flatData.map((node) => [String(node.id), node]));
+  const breadcrumbByNodeId = new Map();
+
+  flatData.forEach((node) => {
+    const breadcrumbParts = [];
+    let currentNode = node;
+
+    while (currentNode) {
+      const currentName = String(currentNode.name ?? '').trim();
+      if (currentName) {
+        breadcrumbParts.unshift(currentName);
+      }
+
+      const parentId = currentNode.parent;
+      currentNode = parentId === null || parentId === undefined ? null : nodeById.get(String(parentId)) ?? null;
+    }
+
+    breadcrumbByNodeId.set(String(node.id), breadcrumbParts.join(' > '));
+  });
+
+  return breadcrumbByNodeId;
+}
+
+async function getLeafCreationCandidates(treeInstanceId) {
+  const [flatData, treeSummary] = await Promise.all([
+    queryTreeData(treeInstanceId),
+    queryTreeSummary(treeInstanceId),
+  ]);
+  const breadcrumbByNodeId = buildBreadcrumbByNodeId(flatData);
+  const candidateParents = flatData
+    .filter((node) => !node.isLeafNode)
+    .filter((node) => Number(node._depth) >= 0)
+    .filter((node) => {
+      const createContext = {
+        parentDepth: Number(node._depth),
+        maxDepth: Number.NaN,
+      };
+      return createContext.parentDepth >= 0;
+    });
+  const maxDepth = await getTreeMaxDepth(treeInstanceId);
+  const validCandidates = candidateParents
+    .filter((node) => Number.isFinite(maxDepth) && Number(node._depth) + 1 >= maxDepth)
+    .map((node) => ({
+      nodeId: String(node.id),
+      breadcrumb: breadcrumbByNodeId.get(String(node.id)) || String(node.name ?? '').trim(),
+      depth: Number(node._depth),
+    }));
+
+  return {
+    treeName: treeSummary.treeName,
+    candidates: validCandidates,
+  };
+}
+
+async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer }) {
+  const normalizedOriginalQuestion = String(originalQuestion ?? '').trim();
+  const normalizedBroaderAnswer = String(broaderAnswer ?? '').trim();
+
+  if (!normalizedOriginalQuestion || !normalizedBroaderAnswer) {
+    throw new Error('The chat add action requires the original question and broader answer content.');
+  }
+
+  const { treeName, candidates } = await getLeafCreationCandidates(treeInstanceId);
+
+  if (candidates.length === 0) {
+    const error = new Error(`No suitable location was found in ${treeName} for a new leaf note.`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const selection = await selectChatLeafParentCandidate({
+    treeName,
+    originalQuestion: normalizedOriginalQuestion,
+    broaderAnswer: normalizedBroaderAnswer,
+    candidates,
+  });
+
+  if (selection.matchDisposition !== 'accept') {
+    const error = new Error(`No suitable location was found in ${treeName} for a new leaf note.`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const selectedCandidate = candidates.find((candidate) => candidate.nodeId === selection.selectedParentNodeId);
+
+  if (!selectedCandidate) {
+    throw new Error('The selected parent path was not valid for the target tree.');
+  }
+
+  return {
+    treeId: String(treeInstanceId),
+    treeName,
+    selectedParentNodeId: selectedCandidate.nodeId,
+    selectedBreadcrumb: selection.selectedBreadcrumb || selectedCandidate.breadcrumb,
+    generatedLeafTitle: selection.generatedLeafTitle,
+    originalQuestion: normalizedOriginalQuestion,
+    broaderAnswer: normalizedBroaderAnswer,
+  };
 }
 
 async function createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeafDetails = false, transaction = null }) {
@@ -577,6 +701,123 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
   });
 }
 
+async function updateTreeNodeDetailsRecord({ treeInstanceId, nodeId, name, notes, transaction }) {
+  const trimmedName = String(name ?? '').trim();
+
+  if (!trimmedName) {
+    throw new Error('A non-empty leaf title is required.');
+  }
+
+  const treeNode = await queryTreeNode(treeInstanceId, nodeId, transaction);
+
+  if (!treeNode) {
+    throw new Error('Node was not found for the selected tree');
+  }
+
+  await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .input('id', sql.Int, nodeId)
+    .input('text', sql.NVarChar, trimmedName)
+    .query(`
+      UPDATE tree_nodes
+      SET text = @text
+      WHERE tree_instance_id = @tree_instance_id AND id = @id;
+    `);
+
+  if (!treeNode.isLeafNode) {
+    throw new Error('Only leaf nodes can be updated through the chat add action.');
+  }
+
+  await createSqlRequest(transaction)
+    .input('tree_node_id', sql.Int, nodeId)
+    .input('notes', sql.NVarChar(sql.MAX), notes ?? '')
+    .query(`
+      MERGE tree_node_details AS target
+      USING (SELECT @tree_node_id AS tree_node_id) AS source
+        ON target.tree_node_id = source.tree_node_id
+      WHEN MATCHED THEN
+        UPDATE SET
+          notes = @notes,
+          updated_at = SYSUTCDATETIME()
+      WHEN NOT MATCHED THEN
+        INSERT (tree_node_id, notes, created_at, updated_at)
+        VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME());
+    `);
+}
+
+async function CreateLeafNodeFromChat({
+  treeInstanceId,
+  toolName,
+  originalQuestion,
+  broaderAnswer,
+  selectedParentNodeId,
+  selectedBreadcrumb,
+  generatedLeafTitle,
+}) {
+  const resolvedPlacement = selectedParentNodeId && generatedLeafTitle
+    ? {
+      treeId: String(treeInstanceId),
+      treeName: (await queryTreeSummary(treeInstanceId)).treeName,
+      selectedParentNodeId: String(selectedParentNodeId),
+      selectedBreadcrumb: String(selectedBreadcrumb ?? '').trim(),
+      generatedLeafTitle: String(generatedLeafTitle ?? '').trim(),
+      originalQuestion: String(originalQuestion ?? '').trim(),
+      broaderAnswer: String(broaderAnswer ?? '').trim(),
+    }
+    : await resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer });
+
+  if (!resolvedPlacement.generatedLeafTitle) {
+    throw new Error('A generated leaf title is required for the chat add action.');
+  }
+
+  return withSqlConnection(async () => {
+    const transaction = new sql.Transaction();
+
+    try {
+      await transaction.begin();
+
+      const createdNode = await createTreeNodeRecord({
+        parentId: parseInt(resolvedPlacement.selectedParentNodeId, 10),
+        treeInstanceId,
+        name: resolvedPlacement.generatedLeafTitle,
+        ensureLeafDetails: true,
+        transaction,
+      });
+
+      if (!createdNode.isLeafNode) {
+        throw new Error('The chat add action must create a leaf node.');
+      }
+
+      await updateTreeNodeDetailsRecord({
+        treeInstanceId,
+        nodeId: parseInt(createdNode.createdNodeId, 10),
+        name: resolvedPlacement.generatedLeafTitle,
+        notes: resolvedPlacement.broaderAnswer,
+        transaction,
+      });
+
+      await transaction.commit();
+
+      return {
+        treeId: String(treeInstanceId),
+        toolName: String(toolName ?? '').trim(),
+        createdNodeId: createdNode.createdNodeId,
+        selectedParentNodeId: resolvedPlacement.selectedParentNodeId,
+        selectedBreadcrumb: resolvedPlacement.selectedBreadcrumb,
+        generatedLeafTitle: resolvedPlacement.generatedLeafTitle,
+        flatData: await queryTreeData(treeInstanceId),
+        details: await queryNodeDetails(treeInstanceId, createdNode.createdNodeId),
+      };
+    } catch (error) {
+      if (transaction._aborted !== true) {
+        await transaction.rollback();
+      }
+
+      throw error;
+    }
+  });
+}
+
 async function ensureTreeNodeDetailsRow(treeNodeId, transaction = null) {
   await createSqlRequest(transaction)
     .input('tree_node_id', sql.Int, treeNodeId)
@@ -798,7 +1039,51 @@ export async function POST(request) {
       }));
     }
 
-    const { action, parentId, treeId, name, nodeId } = await request.json();
+    const {
+      action,
+      parentId,
+      treeId,
+      name,
+      nodeId,
+      toolName,
+      originalQuestion,
+      broaderAnswer,
+      selectedParentNodeId,
+      selectedBreadcrumb,
+      generatedLeafTitle,
+    } = await request.json();
+
+    if (action === 'create-leaf-from-chat') {
+      const resolvedTreeId = treeId ? String(treeId) : parseToolTreeId(toolName);
+
+      if (!resolvedTreeId) {
+        return NextResponse.json({ error: 'A valid tree context is required for the chat add action.' }, { status: 400 });
+      }
+
+      return NextResponse.json(await CreateLeafNodeFromChat({
+        treeInstanceId: parseInt(resolvedTreeId, 10),
+        toolName,
+        originalQuestion,
+        broaderAnswer,
+        selectedParentNodeId,
+        selectedBreadcrumb,
+        generatedLeafTitle,
+      }));
+    }
+
+    if (action === 'preview-leaf-from-chat') {
+      const resolvedTreeId = treeId ? String(treeId) : parseToolTreeId(toolName);
+
+      if (!resolvedTreeId) {
+        return NextResponse.json({ error: 'A valid tree context is required for the chat add action.' }, { status: 400 });
+      }
+
+      return NextResponse.json(await resolveChatLeafPlacement({
+        treeInstanceId: parseInt(resolvedTreeId, 10),
+        originalQuestion,
+        broaderAnswer,
+      }));
+    }
 
     if (!treeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });

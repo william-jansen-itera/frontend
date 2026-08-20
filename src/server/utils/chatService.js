@@ -17,7 +17,29 @@ const MAX_GENERATED_ROOT_NODES = 5;
 const MAX_GENERATED_CHILDREN_PER_NODE = 5;
 const MAX_GENERATED_LEAF_CHILDREN_PER_NODE = 10;
 const MAX_GENERATED_TITLE_LENGTH = 255;
+const MAX_CHAT_LEAF_TITLE_WORDS = 8;
 const MAX_GENERATED_NOTES_LENGTH = 4000;
+const CHAT_LEAF_PARENT_SELECTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    matchDisposition: {
+      type: 'string',
+      enum: ['accept', 'reject'],
+    },
+    selectedParentNodeId: {
+      type: 'string',
+    },
+    selectedBreadcrumb: {
+      type: 'string',
+    },
+    generatedLeafTitle: {
+      type: 'string',
+      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    },
+  },
+  required: ['matchDisposition', 'selectedParentNodeId', 'selectedBreadcrumb', 'generatedLeafTitle'],
+  additionalProperties: false,
+};
 const TURN_TYPE_DEFAULT = 'default';
 const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer';
 const TURN_TYPE_BROADER_ANSWER = 'broader_answer';
@@ -351,6 +373,10 @@ function parseTreePopulationResponse(response) {
 
 function normalizeGeneratedNodeTitle(value) {
   return normalizeWhitespace(value).slice(0, MAX_GENERATED_TITLE_LENGTH);
+}
+
+function countTitleWords(value) {
+  return normalizeWhitespace(value).split(' ').filter(Boolean).length;
 }
 
 function normalizeGeneratedNodeNotes(value) {
@@ -744,6 +770,143 @@ export function validateGeneratedLeafNotesPayload(payload) {
   }
 
   return { notes };
+}
+
+function buildChatLeafParentSelectionPrompt({ treeName, originalQuestion, broaderAnswer, candidates }) {
+  const normalizedTreeName = normalizeWhitespace(treeName);
+  const normalizedOriginalQuestion = normalizeWhitespace(originalQuestion);
+  const normalizedBroaderAnswer = String(broaderAnswer ?? '').trim();
+  const candidateLines = candidates.map((candidate) => `${candidate.nodeId}: ${candidate.breadcrumb}`);
+
+  return [
+    'Choose the best existing non-leaf parent path for a new leaf node in a tree-based knowledge application.',
+    'You must only choose from the provided candidate parents. Never invent a new path and never select an existing leaf node.',
+    'The new leaf should be a good semantic home for the broader-answer content and the original user question.',
+    'Return valid JSON only, matching the provided schema.',
+    'If no candidate is a good fit, return matchDisposition as reject and leave the other string fields empty.',
+    'If you accept a candidate, return the selectedParentNodeId exactly as provided, the selectedBreadcrumb exactly as provided, and generate a concise specific leaf title for the new note.',
+    'The generated leaf title must be a short noun phrase, not a sentence or summary.',
+    'Use only a few words. Prefer about 3 to 6 words, and never exceed 8 words.',
+    'Drop extra explanation, examples, parenthetical clarifiers, and trailing detail unless they are essential to identify the topic.',
+    `Keep the generated leaf title within ${MAX_GENERATED_TITLE_LENGTH} characters.`,
+    '',
+    'Tree title:',
+    normalizedTreeName,
+    '',
+    'Original user question:',
+    normalizedOriginalQuestion,
+    '',
+    'Broader answer content:',
+    normalizedBroaderAnswer,
+    '',
+    'Candidate parents:',
+    ...candidateLines,
+  ].filter(Boolean).join('\n');
+}
+
+export function validateChatLeafParentSelectionPayload(payload, candidates) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Generated parent selection payload must be an object.');
+  }
+
+  const matchDisposition = String(payload.matchDisposition ?? '').trim().toLowerCase();
+
+  if (matchDisposition !== 'accept' && matchDisposition !== 'reject') {
+    throw new Error('Generated parent selection payload must include a valid matchDisposition.');
+  }
+
+  const selectedParentNodeId = String(payload.selectedParentNodeId ?? '').trim();
+  const selectedBreadcrumb = String(payload.selectedBreadcrumb ?? '').trim();
+  const generatedLeafTitle = normalizeGeneratedNodeTitle(payload.generatedLeafTitle ?? '');
+
+  if (matchDisposition === 'reject') {
+    return {
+      matchDisposition,
+      selectedParentNodeId: '',
+      selectedBreadcrumb: '',
+      generatedLeafTitle: '',
+    };
+  }
+
+  const selectedCandidate = Array.isArray(candidates)
+    ? candidates.find((candidate) => String(candidate.nodeId) === selectedParentNodeId)
+    : null;
+
+  if (!selectedCandidate) {
+    throw new Error('Generated parent selection chose an invalid candidate.');
+  }
+
+  if (!generatedLeafTitle) {
+    throw new Error('Generated parent selection must include a non-empty leaf title.');
+  }
+
+  if (countTitleWords(generatedLeafTitle) > MAX_CHAT_LEAF_TITLE_WORDS) {
+    throw new Error(`Generated parent selection leaf title must be ${MAX_CHAT_LEAF_TITLE_WORDS} words or fewer.`);
+  }
+
+  return {
+    matchDisposition,
+    selectedParentNodeId,
+    selectedBreadcrumb: selectedBreadcrumb || selectedCandidate.breadcrumb,
+    generatedLeafTitle,
+  };
+}
+
+async function requestChatLeafParentSelection({ treeName, originalQuestion, broaderAnswer, candidates }) {
+  const project = getProjectClient();
+  const openAIClient = project.getOpenAIClient();
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+
+  return openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: buildChatLeafParentSelectionPrompt({ treeName, originalQuestion, broaderAnswer, candidates }),
+      },
+    ],
+    text: {
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'chat_leaf_parent_selection',
+        strict: true,
+        schema: CHAT_LEAF_PARENT_SELECTION_SCHEMA,
+      },
+    },
+  });
+}
+
+export async function selectChatLeafParentCandidate({ treeName, originalQuestion, broaderAnswer, candidates }) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    throw new Error('At least one candidate parent is required for chat leaf placement.');
+  }
+
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await requestChatLeafParentSelection({
+      treeName,
+      originalQuestion,
+      broaderAnswer,
+      candidates,
+    });
+    const parsedResponse = parseTreePopulationResponse(response);
+
+    if (parsedResponse.error) {
+      lastError = new Error(parsedResponse.error);
+      continue;
+    }
+
+    try {
+      return validateChatLeafParentSelectionPayload(parsedResponse.parsed, candidates);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Generated parent selection payload was invalid.');
+    }
+  }
+
+  throw lastError ?? new Error('Generated parent selection payload was invalid.');
 }
 
 async function requestGeneratedLeafNotes({ treeName, breadcrumbTitles }) {
@@ -1189,15 +1352,16 @@ function buildFollowUpPrompt(selection) {
   const toolNames = Array.isArray(selection.sourceToolInvocations)
     ? selection.sourceToolInvocations.map((invocation) => invocation.toolName).filter(Boolean)
     : [];
-  const toolClause = toolNames.length > 0
-    ? ` Reuse the same search tool${toolNames.length === 1 ? '' : 's'} if relevant: ${toolNames.join(', ')}.`
+  const priorToolClause = toolNames.length > 0
+    ? ` The earlier targeted search used ${toolNames.join(', ')} and did not find a relevant result.`
     : '';
+  const answerInstruction = ' Do not call search tools again for this follow-up. Do not ask another no-result or broader-answer question. Answer directly using broader background knowledge.';
 
   if (!originalQuestion) {
-    return `${getFollowUpOptionLabel(selection.optionId)}.${toolClause}`.trim();
+    return `${getFollowUpOptionLabel(selection.optionId)}.${priorToolClause}${answerInstruction}`.trim();
   }
 
-  return `Provide a broader background answer for the user's original question: "${originalQuestion}".${toolClause}`.trim();
+  return `Provide a broader background answer for the user's original question: "${originalQuestion}".${priorToolClause}${answerInstruction}`.trim();
 }
 
 function buildResponseToolInvocations(toolInvocations, normalizedFollowUpSelection) {

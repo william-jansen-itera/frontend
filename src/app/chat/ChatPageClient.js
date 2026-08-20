@@ -122,21 +122,25 @@ function getTurnToolBadgeState(turn) {
       .map((invocation) => String(invocation?.toolName ?? "").trim())
       .filter(Boolean),
   ));
+  const isBroaderAnswerTurn = turn?.turnType === TURN_TYPE_BROADER_ANSWER;
 
   if (invokedTools.length > 0) {
     const hasToolResults = toolsWithResults.length > 0;
-    const shouldHighlightAddTarget = turn?.turnType === TURN_TYPE_BROADER_ANSWER && !hasToolResults;
+    const shouldHighlightAddTarget = isBroaderAnswerTurn && !hasToolResults;
 
     return {
-      toolLabels: invokedTools.map((toolName) => `TOOL: ${toolName}`),
-      addTargetLabels: shouldHighlightAddTarget ? invokedTools.map((toolName) => `ADD TO TOOL: ${toolName}`) : [],
-      statusLabel: hasToolResults ? null : "NO TOOL RESULT",
+      toolLabels: isBroaderAnswerTurn ? [] : invokedTools.map((toolName) => `TOOL: ${toolName}`),
+      addTargets: shouldHighlightAddTarget ? invokedTools.map((toolName) => ({
+        toolName,
+        label: `ADD TO TOOL: ${toolName}`,
+      })) : [],
+      statusLabel: hasToolResults || isBroaderAnswerTurn ? null : "NO TOOL RESULT",
     };
   }
 
   return {
     toolLabels: [],
-    addTargetLabels: [],
+    addTargets: [],
     statusLabel: "NO TOOL FOUND",
   };
 }
@@ -271,6 +275,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [dismissedFollowUpTurnId, setDismissedFollowUpTurnId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
+  const [addActionState, setAddActionState] = useState(null);
   const chatFeedRef = useRef(null);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
@@ -290,6 +295,7 @@ export default function ChatPageClient({ includeDebug }) {
       {
         id: turnId,
         question,
+        originalQuestion: followUpSelection?.sourceQuestion ?? question,
         answer: "",
         debug: null,
         error: null,
@@ -337,6 +343,7 @@ export default function ChatPageClient({ includeDebug }) {
             toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
             turnType: String(payload?.turnType ?? "default").trim() || "default",
             followUpOptions: Array.isArray(payload?.followUpOptions) ? payload.followUpOptions : [],
+            originalQuestion: turn.originalQuestion,
             error: null,
             isPending: false,
           }
@@ -418,6 +425,131 @@ export default function ChatPageClient({ includeDebug }) {
     });
   }
 
+  async function handleAddToToolClick(event, turn, toolName) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isSubmitting || addActionState?.status === "pending") {
+      return;
+    }
+
+    const normalizedToolName = String(toolName ?? "").trim();
+    const originalQuestion = String(turn?.originalQuestion ?? turn?.question ?? "").trim();
+    const broaderAnswer = String(turn?.answer ?? "").trim();
+
+    if (!normalizedToolName || !originalQuestion || !broaderAnswer) {
+      setAddActionState({
+        status: "error",
+        turnId: turn?.id ?? null,
+        toolName: normalizedToolName,
+        message: "This answer does not have enough context to create a new leaf note.",
+      });
+      return;
+    }
+
+    setAddActionState({
+      status: "pending",
+      turnId: turn.id,
+      toolName: normalizedToolName,
+      message: "Finding the best place in the tree...",
+    });
+
+    try {
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "preview-leaf-from-chat",
+          toolName: normalizedToolName,
+          originalQuestion,
+          broaderAnswer,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to add this answer to the tree.");
+      }
+
+      setAddActionState({
+        status: "confirm",
+        turnId: turn.id,
+        toolName: normalizedToolName,
+        message: `Create a new leaf note under ${payload.selectedBreadcrumb}?`,
+        preview: payload,
+      });
+    } catch (error) {
+      setAddActionState({
+        status: "error",
+        turnId: turn.id,
+        toolName: normalizedToolName,
+        message: error instanceof Error ? error.message : "Unable to add this answer to the tree.",
+      });
+    }
+  }
+
+  async function handleConfirmAddToTool(event, turn) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (addActionState?.status !== "confirm" || addActionState.turnId !== turn.id) {
+      return;
+    }
+
+    const preview = addActionState.preview;
+
+    setAddActionState({
+      ...addActionState,
+      status: "pending",
+      message: "Creating new leaf note...",
+    });
+
+    try {
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "create-leaf-from-chat",
+          treeId: preview.treeId,
+          toolName: addActionState.toolName,
+          originalQuestion: preview.originalQuestion,
+          broaderAnswer: preview.broaderAnswer,
+          selectedParentNodeId: preview.selectedParentNodeId,
+          selectedBreadcrumb: preview.selectedBreadcrumb,
+          generatedLeafTitle: preview.generatedLeafTitle,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to add this answer to the tree.");
+      }
+
+      setAddActionState({
+        status: "success",
+        turnId: turn.id,
+        toolName: addActionState.toolName,
+        message: `Creating \"${payload.generatedLeafTitle}\" under ${payload.selectedBreadcrumb}. Opening Notes...`,
+      });
+
+      const notesHref = `/notes?treeId=${encodeURIComponent(payload.treeId)}&nodeId=${encodeURIComponent(payload.createdNodeId)}`;
+      window.open(notesHref, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setAddActionState({
+        status: "error",
+        turnId: turn.id,
+        toolName: addActionState.toolName,
+        message: error instanceof Error ? error.message : "Unable to add this answer to the tree.",
+      });
+    }
+  }
+
   return (
     <main className={styles.pageShell}>
       <section className={styles.heroCard}>
@@ -432,9 +564,6 @@ export default function ChatPageClient({ includeDebug }) {
             <span className={styles.fieldLabel}>Prompt</span>
             {isPromptInOptionMode ? (
               <div className={styles.followUpComposerCard}>
-                <p className={styles.followUpComposerText}>
-                  No relevant tool result was found. Choose how to continue.
-                </p>
                 <div className={styles.followUpActionRow}>
                   {activeNoResultOfferTurn.followUpOptions.map((option) => (
                     <button
@@ -539,11 +668,49 @@ export default function ChatPageClient({ includeDebug }) {
                         {toolBadgeState.toolLabels.map((label) => (
                           <span key={`${turn.id}-${label}`} className={styles.toolChip}>{label}</span>
                         ))}
-                        {toolBadgeState.addTargetLabels.map((label) => (
-                          <span key={`${turn.id}-${label}`} className={styles.addToToolChip}>{label}</span>
+                        {toolBadgeState.addTargets.map((target) => (
+                          <button
+                            key={`${turn.id}-${target.toolName}`}
+                            type="button"
+                            className={styles.addToToolChipButton}
+                            onClick={(event) => handleAddToToolClick(event, turn, target.toolName)}
+                            disabled={addActionState?.status === "pending"}
+                          >
+                            {target.label}
+                          </button>
                         ))}
                         {toolBadgeState.statusLabel ? (
                           <span className={styles.noToolChip}>{toolBadgeState.statusLabel}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {addActionState?.turnId === turn.id ? (
+                      <div className={styles.addActionPanel}>
+                        <p className={addActionState.status === "error" ? styles.addActionError : styles.addActionStatus}>
+                          {addActionState.message}
+                        </p>
+                        {addActionState.status === "confirm" ? (
+                          <div className={styles.addActionControls}>
+                            <button
+                              type="button"
+                              className={styles.addActionConfirmButton}
+                              onClick={(event) => handleConfirmAddToTool(event, turn)}
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.addActionCancelButton}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setAddActionState(null);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
