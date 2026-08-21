@@ -7,15 +7,76 @@ import styles from "./page.module.css";
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
 
+function buildFollowUpSubmissionMessage(optionId, fallbackLabel) {
+  if (optionId === TURN_TYPE_BROADER_ANSWER) {
+    return "Use broader knowledge";
+  }
+
+  return fallbackLabel;
+}
+
+function getLatestBroaderAnswerClarificationTurn(turns) {
+  const latestTurn = turns.at(-1) ?? null;
+
+  if (!latestTurn || latestTurn.isPending || latestTurn.error) {
+    return null;
+  }
+
+  if (latestTurn.turnType !== TURN_TYPE_BROADER_ANSWER) {
+    return null;
+  }
+
+  const priorToolInvocations = Array.isArray(latestTurn.priorToolInvocations) ? latestTurn.priorToolInvocations : [];
+  const toolInvocations = Array.isArray(latestTurn.toolInvocations) ? latestTurn.toolInvocations : [];
+
+  if (toolInvocations.length > 0) {
+    return null;
+  }
+
+  if (priorToolInvocations.length === 0) {
+    return null;
+  }
+
+  return latestTurn;
+}
+
+function buildImplicitBroaderFollowUpSelection(turn, message) {
+  if (!turn) {
+    return null;
+  }
+
+  const normalizedMessage = String(message ?? "").trim();
+
+  if (!normalizedMessage) {
+    return null;
+  }
+
+  const sourceToolInvocations = (
+    Array.isArray(turn.priorToolInvocations) && turn.priorToolInvocations.length > 0
+      ? turn.priorToolInvocations
+      : Array.isArray(turn.toolInvocations)
+        ? turn.toolInvocations
+        : []
+  ).map((invocation) => ({
+    toolName: invocation?.toolName,
+    resultCount: invocation?.resultCount,
+  }));
+
+  if (sourceToolInvocations.length === 0) {
+    return null;
+  }
+
+  return {
+    sourceTurnId: turn.id,
+    optionId: TURN_TYPE_BROADER_ANSWER,
+    sourceQuestion: String(turn.originalQuestion ?? turn.question ?? "").trim(),
+    sourceToolInvocations,
+  };
+}
+
 function buildHistoryFromTurns(turns) {
   return turns.flatMap((turn) => {
     const messages = [];
-    const turnType = String(turn?.turnType ?? "default").trim();
-
-    if (turnType === TURN_TYPE_NO_RESULT_OFFER || turnType === TURN_TYPE_BROADER_ANSWER) {
-      return messages;
-    }
-
     const userHistoryText = String(turn?.question ?? "").trim();
 
     const assistantHistoryText = String(turn?.answer ?? "").trim();
@@ -118,13 +179,49 @@ function CitationBreadcrumbs({ citations }) {
   );
 }
 
-function ToolSearchExecutionSummary({ searches }) {
-  if (!Array.isArray(searches) || searches.length === 0) {
+function formatCoveragePercent(value) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return "n/a";
+  }
+
+  return `${Math.round(numericValue * 100)}%`;
+}
+
+function ToolTokenCoverageSummary({ tokenCoverageFilter }) {
+  if (!tokenCoverageFilter || typeof tokenCoverageFilter !== "object") {
+    return null;
+  }
+
+  const queryTokens = Array.isArray(tokenCoverageFilter.queryTokens) ? tokenCoverageFilter.queryTokens : [];
+
+  return (
+    <div className={styles.searchExecutionCard}>
+      <div className={styles.searchExecutionHeader}>
+        <span className={styles.searchExecutionKind}>token coverage filter</span>
+        <span className={styles.searchExecutionMeta}>
+          {tokenCoverageFilter.enabled ? "enabled" : "disabled"} · threshold {formatCoveragePercent(tokenCoverageFilter.threshold)}
+        </span>
+      </div>
+      <p className={styles.searchExecutionQuery}>
+        kept {Number(tokenCoverageFilter.resultCountAfter ?? 0)} of {Number(tokenCoverageFilter.resultCountBefore ?? 0)} grouped result{Number(tokenCoverageFilter.resultCountBefore ?? 0) === 1 ? "" : "s"}
+        {queryTokens.length > 0 ? ` · ${queryTokens.length} query token${queryTokens.length === 1 ? "" : "s"}` : ""}
+      </p>
+    </div>
+  );
+}
+
+function ToolSearchExecutionSummary({ searches, tokenCoverageFilter }) {
+  const hasSearches = Array.isArray(searches) && searches.length > 0;
+
+  if (!hasSearches && !tokenCoverageFilter) {
     return null;
   }
 
   return (
     <div className={styles.searchExecutionList}>
+      <ToolTokenCoverageSummary tokenCoverageFilter={tokenCoverageFilter} />
       {searches.map((search, index) => (
         <div key={`${search.kind || "search"}-${index}`} className={styles.searchExecutionCard}>
           <div className={styles.searchExecutionHeader}>
@@ -142,6 +239,7 @@ function ToolSearchExecutionSummary({ searches }) {
 
 function getTurnToolBadgeState(turn) {
   const toolInvocations = Array.isArray(turn?.toolInvocations) ? turn.toolInvocations : [];
+  const priorToolInvocations = Array.isArray(turn?.priorToolInvocations) ? turn.priorToolInvocations : [];
   const invokedTools = Array.from(new Set(
     toolInvocations
       .map((invocation) => String(invocation?.toolName ?? "").trim())
@@ -154,18 +252,34 @@ function getTurnToolBadgeState(turn) {
       .filter(Boolean),
   ));
   const isBroaderAnswerTurn = turn?.turnType === TURN_TYPE_BROADER_ANSWER;
+  const priorTools = Array.from(new Set(
+    priorToolInvocations
+      .map((invocation) => String(invocation?.toolName ?? "").trim())
+      .filter(Boolean),
+  ));
 
   if (invokedTools.length > 0) {
     const hasToolResults = toolsWithResults.length > 0;
     const shouldHighlightAddTarget = isBroaderAnswerTurn && !hasToolResults;
 
     return {
-      toolLabels: isBroaderAnswerTurn ? [] : invokedTools.map((toolName) => `TOOL: ${toolName}`),
+      toolLabels: invokedTools.map((toolName) => `TOOL: ${toolName}`),
       addTargets: shouldHighlightAddTarget ? invokedTools.map((toolName) => ({
         toolName,
         label: `Add to: ${toolName}`,
       })) : [],
-      statusLabel: hasToolResults || isBroaderAnswerTurn ? null : "NO TOOL RESULT",
+      statusLabel: hasToolResults ? null : "NO TOOL RESULT",
+    };
+  }
+
+  if (isBroaderAnswerTurn && priorTools.length > 0) {
+    return {
+      toolLabels: [],
+      addTargets: priorTools.map((toolName) => ({
+        toolName,
+        label: `Add to: ${toolName}`,
+      })),
+      statusLabel: "NO TOOL FOUND",
     };
   }
 
@@ -209,6 +323,8 @@ function TurnDebugPanel({ turn }) {
     turnType: String(turn?.turnType ?? "default").trim() || "default",
     ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
   };
+  const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
+  const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
 
   return (
     <div className={styles.debugSections}>
@@ -244,12 +360,16 @@ function TurnDebugPanel({ turn }) {
                   <pre className={styles.jsonBlock}>{formatJson(toolCall.parsedArguments)}</pre>
                 </details>
 
-                {Array.isArray(toolCall.searchResult?.searches) && toolCall.searchResult.searches.length > 0 ? (
-					<details className={styles.debugDetail} open>
-						<summary>Search execution</summary>
-						<ToolSearchExecutionSummary searches={toolCall.searchResult.searches} />
-					</details>
-				) : null}
+                {(Array.isArray(toolCall.searchResult?.searches) && toolCall.searchResult.searches.length > 0)
+                  || toolCall.searchResult?.tokenCoverageFilter ? (
+                    <details className={styles.debugDetail} open>
+                      <summary>Search execution</summary>
+                      <ToolSearchExecutionSummary
+                        searches={toolCall.searchResult.searches}
+                        tokenCoverageFilter={toolCall.searchResult.tokenCoverageFilter}
+                      />
+                    </details>
+                  ) : null}
 
                 <details className={styles.debugDetail}>
                   <summary>Actual search results</summary>
@@ -286,6 +406,12 @@ function TurnDebugPanel({ turn }) {
           <p className={styles.sectionEyebrow}>4. Agent Output</p>
           <h2 className={styles.sectionTitle}>Model response and answer</h2>
         </div>
+        {permissionToBroadenSource ? (
+          <details className={styles.debugDetail} open>
+            <summary>Permission to broaden detection</summary>
+            <pre className={styles.jsonBlock}>{formatJson(permissionToBroadenDetection)}</pre>
+          </details>
+        ) : null}
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.agentOutput)}</pre>
       </section>
     </div>
@@ -327,6 +453,7 @@ export default function ChatPageClient({ includeDebug }) {
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
   const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
+  const activeBroaderAnswerClarificationTurn = getLatestBroaderAnswerClarificationTurn(turns);
   const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
   const isSingleTurnLayout = turns.length === 1;
   const isInitialTransientState = turns.length === 1 && (Boolean(turns[0]?.isPending) || Boolean(turns[0]?.error));
@@ -354,6 +481,7 @@ export default function ChatPageClient({ includeDebug }) {
         citations: [],
         toolsUsed: [],
         toolInvocations: [],
+        priorToolInvocations: [],
         turnType: "default",
         followUpOptions: [],
         createdAt: Date.now(),
@@ -393,6 +521,7 @@ export default function ChatPageClient({ includeDebug }) {
             citations: Array.isArray(payload?.citations) ? payload.citations : [],
             toolsUsed: Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [],
             toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
+            priorToolInvocations: Array.isArray(payload?.priorToolInvocations) ? payload.priorToolInvocations : [],
             turnType: String(payload?.turnType ?? "default").trim() || "default",
             followUpOptions: Array.isArray(payload?.followUpOptions) ? payload.followUpOptions : [],
             originalQuestion: turn.originalQuestion,
@@ -413,6 +542,7 @@ export default function ChatPageClient({ includeDebug }) {
             debug: error?.debug ?? null,
             error: messageText,
             toolInvocations: [],
+            priorToolInvocations: [],
             turnType: "default",
             followUpOptions: [],
             isPending: false,
@@ -436,6 +566,10 @@ export default function ChatPageClient({ includeDebug }) {
     event.preventDefault();
 
     const message = prompt.trim();
+    const implicitFollowUpSelection = buildImplicitBroaderFollowUpSelection(
+      activeBroaderAnswerClarificationTurn,
+      message,
+    );
 
     if (!message || isSubmitting || isPromptInOptionMode) {
       return;
@@ -445,6 +579,7 @@ export default function ChatPageClient({ includeDebug }) {
     await submitTurn({
       question: message,
       message,
+      followUpSelection: implicitFollowUpSelection,
     });
   }
 
@@ -455,18 +590,20 @@ export default function ChatPageClient({ includeDebug }) {
 
     const optionId = String(option?.optionId ?? "").trim();
     const label = String(option?.label ?? "").trim();
+    const sourceQuestion = String(activeNoResultOfferTurn.question ?? "").trim();
+    const submissionMessage = buildFollowUpSubmissionMessage(optionId, label);
 
     if (!optionId || !label) {
       return;
     }
 
     await submitTurn({
-      question: label,
-      message: label,
+      question: submissionMessage,
+      message: submissionMessage,
       followUpSelection: {
         sourceTurnId: activeNoResultOfferTurn.id,
         optionId,
-        sourceQuestion: activeNoResultOfferTurn.question,
+        sourceQuestion,
         sourceToolInvocations: Array.isArray(activeNoResultOfferTurn.toolInvocations)
           ? activeNoResultOfferTurn.toolInvocations.map((invocation) => ({
             toolName: invocation?.toolName,
@@ -530,7 +667,9 @@ export default function ChatPageClient({ includeDebug }) {
         status: "confirm",
         turnId: turn.id,
         toolName: normalizedToolName,
-        message: `Create a new leaf note under ${payload.selectedBreadcrumb}?`,
+        message: payload.generatedPathTitles?.length
+          ? `Create "${payload.generatedLeafTitle}" under ${payload.plannedLeafParentBreadcrumb}?`
+          : `Create a new leaf note under ${payload.plannedLeafParentBreadcrumb}?`,
         preview: payload,
       });
     } catch (error) {
@@ -556,7 +695,7 @@ export default function ChatPageClient({ includeDebug }) {
     setAddActionState({
       ...addActionState,
       status: "pending",
-      message: "Creating new leaf note...",
+      message: preview.generatedPathTitles?.length ? "Creating new path and leaf note..." : "Creating new leaf note...",
     });
 
     try {
@@ -571,8 +710,11 @@ export default function ChatPageClient({ includeDebug }) {
           toolName: addActionState.toolName,
           originalQuestion: preview.originalQuestion,
           broaderAnswer: preview.broaderAnswer,
-          selectedParentNodeId: preview.selectedParentNodeId,
-          selectedBreadcrumb: preview.selectedBreadcrumb,
+          placementMode: preview.placementMode,
+          selectedAnchorNodeId: preview.selectedAnchorNodeId,
+          selectedAnchorBreadcrumb: preview.selectedAnchorBreadcrumb,
+          generatedPathTitles: preview.generatedPathTitles,
+          plannedLeafParentBreadcrumb: preview.plannedLeafParentBreadcrumb,
           generatedLeafTitle: preview.generatedLeafTitle,
         }),
       });
@@ -587,7 +729,9 @@ export default function ChatPageClient({ includeDebug }) {
         status: "success",
         turnId: turn.id,
         toolName: addActionState.toolName,
-        message: `Created \"${payload.generatedLeafTitle}\" under ${payload.selectedBreadcrumb}.`,
+        message: payload.createdIntermediateNodes?.length
+          ? `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb} with ${payload.createdIntermediateNodes.length} new path node${payload.createdIntermediateNodes.length === 1 ? "" : "s"}.`
+          : `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb}.`,
       });
 
       const notesHref = `/notes?treeId=${encodeURIComponent(payload.treeId)}&nodeId=${encodeURIComponent(payload.createdNodeId)}`;

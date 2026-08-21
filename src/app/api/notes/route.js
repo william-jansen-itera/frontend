@@ -2,9 +2,11 @@
 import { NextResponse } from 'next/server';
 import { deleteNodeAttachmentBlobIfExists, uploadNodeAttachment } from '@/server/utils/blobStorage';
 import {
+  generateChatLeafPathPlan,
   generateChildTitlesFromBreadcrumb,
+  generateLeafNotesFromChatAnswer,
   generateLeafNotesDraft,
-  selectChatLeafParentCandidate,
+  selectChatLeafAnchorCandidate,
 } from '@/server/utils/chatService';
 import { sql, withSqlConnection } from '@/server/utils/sql';
 import { getTreeList } from '@/server/utils/treeCatalog';
@@ -306,34 +308,73 @@ function buildBreadcrumbByNodeId(flatData) {
   return breadcrumbByNodeId;
 }
 
-async function getLeafCreationCandidates(treeInstanceId) {
-  const [flatData, treeSummary] = await Promise.all([
+function buildBreadcrumbTitlesByNodeId(flatData) {
+  const nodeById = new Map(flatData.map((node) => [String(node.id), node]));
+  const breadcrumbTitlesByNodeId = new Map();
+
+  flatData.forEach((node) => {
+    const breadcrumbTitles = [];
+    let currentNode = node;
+
+    while (currentNode) {
+      const currentName = String(currentNode.name ?? '').trim();
+
+      if (currentName) {
+        breadcrumbTitles.unshift(currentName);
+      }
+
+      const parentId = currentNode.parent;
+      currentNode = parentId === null || parentId === undefined ? null : nodeById.get(String(parentId)) ?? null;
+    }
+
+    breadcrumbTitlesByNodeId.set(String(node.id), breadcrumbTitles);
+  });
+
+  return breadcrumbTitlesByNodeId;
+}
+
+function buildResolvedBreadcrumb(anchorBreadcrumbTitles, generatedPathTitles) {
+  return [...anchorBreadcrumbTitles, ...generatedPathTitles].filter(Boolean).join(' > ');
+}
+
+async function getChatLeafPlacementContext(treeInstanceId) {
+  const [flatData, treeSummary, maxDepth] = await Promise.all([
     queryTreeData(treeInstanceId),
     queryTreeSummary(treeInstanceId),
+    getTreeMaxDepth(treeInstanceId),
   ]);
   const breadcrumbByNodeId = buildBreadcrumbByNodeId(flatData);
-  const candidateParents = flatData
+  const breadcrumbTitlesByNodeId = buildBreadcrumbTitlesByNodeId(flatData);
+  const candidates = flatData
     .filter((node) => !node.isLeafNode)
-    .filter((node) => Number(node._depth) >= 0)
-    .filter((node) => {
-      const createContext = {
-        parentDepth: Number(node._depth),
-        maxDepth: Number.NaN,
+    .map((node) => {
+      const depth = Number(node._depth);
+      const remainingDepthBudget = Number.isFinite(maxDepth) ? maxDepth - depth : Number.NaN;
+
+      return {
+        nodeId: String(node.id),
+        breadcrumb: breadcrumbByNodeId.get(String(node.id)) || String(node.name ?? '').trim(),
+        breadcrumbTitles: breadcrumbTitlesByNodeId.get(String(node.id)) ?? [],
+        depth,
+        remainingDepthBudget,
+        directLeafPossible: remainingDepthBudget === 1,
       };
-      return createContext.parentDepth >= 0;
-    });
-  const maxDepth = await getTreeMaxDepth(treeInstanceId);
-  const validCandidates = candidateParents
-    .filter((node) => Number.isFinite(maxDepth) && Number(node._depth) + 1 >= maxDepth)
+    })
+    .filter((candidate) => candidate.depth >= 0)
+    .filter((candidate) => Number.isFinite(candidate.remainingDepthBudget) && candidate.remainingDepthBudget >= 1)
     .map((node) => ({
-      nodeId: String(node.id),
-      breadcrumb: breadcrumbByNodeId.get(String(node.id)) || String(node.name ?? '').trim(),
-      depth: Number(node._depth),
+      nodeId: node.nodeId,
+      breadcrumb: node.breadcrumb,
+      breadcrumbTitles: node.breadcrumbTitles,
+      depth: node.depth,
+      remainingDepthBudget: node.remainingDepthBudget,
+      directLeafPossible: node.directLeafPossible,
     }));
 
   return {
     treeName: treeSummary.treeName,
-    candidates: validCandidates,
+    maxDepth,
+    candidates,
   };
 }
 
@@ -345,41 +386,120 @@ async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broa
     throw new Error('The chat add action requires the original question and broader answer content.');
   }
 
-  const { treeName, candidates } = await getLeafCreationCandidates(treeInstanceId);
+  const { treeName, maxDepth, candidates } = await getChatLeafPlacementContext(treeInstanceId);
 
-  if (candidates.length === 0) {
-    const error = new Error(`No suitable location was found in ${treeName} for a new leaf note.`);
-    error.statusCode = 409;
-    throw error;
+  let selectedCandidate = null;
+
+  if (candidates.length > 0) {
+    const selection = await selectChatLeafAnchorCandidate({
+      treeName,
+      originalQuestion: normalizedOriginalQuestion,
+      broaderAnswer: normalizedBroaderAnswer,
+      candidates,
+    });
+
+    if (selection.selectionDisposition === 'selected_anchor') {
+      selectedCandidate = candidates.find((candidate) => candidate.nodeId === selection.selectedAnchorNodeId) ?? null;
+
+      if (!selectedCandidate) {
+        throw new Error('The selected anchor path was not valid for the target tree.');
+      }
+
+      if (selectedCandidate.directLeafPossible) {
+        return {
+          treeId: String(treeInstanceId),
+          treeName,
+          placementMode: 'direct_leaf_from_anchor',
+          selectedAnchorNodeId: selectedCandidate.nodeId,
+          selectedAnchorBreadcrumb: selection.selectedBreadcrumb || selectedCandidate.breadcrumb,
+          generatedPathTitles: [],
+          plannedLeafParentBreadcrumb: selection.selectedBreadcrumb || selectedCandidate.breadcrumb,
+          generatedLeafTitle: selection.generatedLeafTitle,
+          originalQuestion: normalizedOriginalQuestion,
+          broaderAnswer: normalizedBroaderAnswer,
+        };
+      }
+    }
   }
 
-  const selection = await selectChatLeafParentCandidate({
+  if (!Number.isFinite(maxDepth) || maxDepth < 0) {
+    throw new Error(`Tree depth is not configured for ${treeName}.`);
+  }
+
+  const requiredPathTitleCount = selectedCandidate
+    ? selectedCandidate.remainingDepthBudget - 1
+    : maxDepth;
+  const pathPlan = await generateChatLeafPathPlan({
     treeName,
     originalQuestion: normalizedOriginalQuestion,
     broaderAnswer: normalizedBroaderAnswer,
-    candidates,
+    anchorBreadcrumbTitles: selectedCandidate?.breadcrumbTitles ?? [],
+    requiredPathTitleCount,
   });
 
-  if (selection.matchDisposition !== 'accept') {
-    const error = new Error(`No suitable location was found in ${treeName} for a new leaf note.`);
-    error.statusCode = 409;
-    throw error;
-  }
-
-  const selectedCandidate = candidates.find((candidate) => candidate.nodeId === selection.selectedParentNodeId);
-
-  if (!selectedCandidate) {
-    throw new Error('The selected parent path was not valid for the target tree.');
-  }
+  const anchorBreadcrumbTitles = selectedCandidate?.breadcrumbTitles ?? [];
+  const plannedLeafParentBreadcrumb = buildResolvedBreadcrumb(anchorBreadcrumbTitles, pathPlan.pathTitles);
 
   return {
     treeId: String(treeInstanceId),
     treeName,
-    selectedParentNodeId: selectedCandidate.nodeId,
-    selectedBreadcrumb: selection.selectedBreadcrumb || selectedCandidate.breadcrumb,
-    generatedLeafTitle: selection.generatedLeafTitle,
+    placementMode: selectedCandidate ? 'anchor_with_intermediates' : 'full_path_from_root',
+    selectedAnchorNodeId: selectedCandidate?.nodeId ?? '',
+    selectedAnchorBreadcrumb: selectedCandidate?.breadcrumb ?? '',
+    generatedPathTitles: pathPlan.pathTitles,
+    plannedLeafParentBreadcrumb,
+    generatedLeafTitle: pathPlan.generatedLeafTitle,
     originalQuestion: normalizedOriginalQuestion,
     broaderAnswer: normalizedBroaderAnswer,
+  };
+}
+
+async function createChatLeafPlacementRecords({
+  treeInstanceId,
+  selectedAnchorNodeId,
+  generatedPathTitles,
+  generatedLeafTitle,
+  transaction,
+}) {
+  let currentParentId = selectedAnchorNodeId ? parseInt(selectedAnchorNodeId, 10) : null;
+  const createdIntermediateNodes = [];
+
+  for (const title of generatedPathTitles) {
+    const createdNode = await createTreeNodeRecord({
+      parentId: currentParentId,
+      treeInstanceId,
+      name: title,
+      ensureLeafDetails: false,
+      transaction,
+    });
+
+    if (createdNode.isLeafNode) {
+      throw new Error('The chat add action generated too many intermediate path levels for the target tree.');
+    }
+
+    createdIntermediateNodes.push({
+      createdNodeId: createdNode.createdNodeId,
+      title,
+    });
+    currentParentId = parseInt(createdNode.createdNodeId, 10);
+  }
+
+  const createdLeafNode = await createTreeNodeRecord({
+    parentId: currentParentId,
+    treeInstanceId,
+    name: generatedLeafTitle,
+    ensureLeafDetails: true,
+    transaction,
+  });
+
+  if (!createdLeafNode.isLeafNode) {
+    throw new Error('The chat add action must create a leaf node.');
+  }
+
+  return {
+    createdIntermediateNodes,
+    createdLeafNode,
+    finalParentNodeId: currentParentId === null ? null : String(currentParentId),
   };
 }
 
@@ -750,16 +870,24 @@ async function CreateLeafNodeFromChat({
   toolName,
   originalQuestion,
   broaderAnswer,
-  selectedParentNodeId,
-  selectedBreadcrumb,
+  placementMode,
+  selectedAnchorNodeId,
+  selectedAnchorBreadcrumb,
+  generatedPathTitles,
+  plannedLeafParentBreadcrumb,
   generatedLeafTitle,
 }) {
-  const resolvedPlacement = selectedParentNodeId && generatedLeafTitle
+  const resolvedPlacement = placementMode && generatedLeafTitle
     ? {
       treeId: String(treeInstanceId),
       treeName: (await queryTreeSummary(treeInstanceId)).treeName,
-      selectedParentNodeId: String(selectedParentNodeId),
-      selectedBreadcrumb: String(selectedBreadcrumb ?? '').trim(),
+      placementMode: String(placementMode ?? '').trim(),
+      selectedAnchorNodeId: String(selectedAnchorNodeId ?? '').trim(),
+      selectedAnchorBreadcrumb: String(selectedAnchorBreadcrumb ?? '').trim(),
+      generatedPathTitles: Array.isArray(generatedPathTitles)
+        ? generatedPathTitles.map((title) => String(title ?? '').trim()).filter(Boolean)
+        : [],
+      plannedLeafParentBreadcrumb: String(plannedLeafParentBreadcrumb ?? '').trim(),
       generatedLeafTitle: String(generatedLeafTitle ?? '').trim(),
       originalQuestion: String(originalQuestion ?? '').trim(),
       broaderAnswer: String(broaderAnswer ?? '').trim(),
@@ -770,29 +898,35 @@ async function CreateLeafNodeFromChat({
     throw new Error('A generated leaf title is required for the chat add action.');
   }
 
+  const generatedNotes = await generateLeafNotesFromChatAnswer({
+    treeName: resolvedPlacement.treeName,
+    breadcrumbTitles: [
+      ...String(resolvedPlacement.plannedLeafParentBreadcrumb ?? '').split('>').map((title) => title.trim()).filter(Boolean),
+      resolvedPlacement.generatedLeafTitle,
+    ],
+    originalQuestion: resolvedPlacement.originalQuestion,
+    broaderAnswer: resolvedPlacement.broaderAnswer,
+  });
+
   return withSqlConnection(async () => {
     const transaction = new sql.Transaction();
 
     try {
       await transaction.begin();
 
-      const createdNode = await createTreeNodeRecord({
-        parentId: parseInt(resolvedPlacement.selectedParentNodeId, 10),
+      const placementResult = await createChatLeafPlacementRecords({
         treeInstanceId,
-        name: resolvedPlacement.generatedLeafTitle,
-        ensureLeafDetails: true,
+        selectedAnchorNodeId: resolvedPlacement.selectedAnchorNodeId,
+        generatedPathTitles: resolvedPlacement.generatedPathTitles,
+        generatedLeafTitle: resolvedPlacement.generatedLeafTitle,
         transaction,
       });
 
-      if (!createdNode.isLeafNode) {
-        throw new Error('The chat add action must create a leaf node.');
-      }
-
       await updateTreeNodeDetailsRecord({
         treeInstanceId,
-        nodeId: parseInt(createdNode.createdNodeId, 10),
+        nodeId: parseInt(placementResult.createdLeafNode.createdNodeId, 10),
         name: resolvedPlacement.generatedLeafTitle,
-        notes: resolvedPlacement.broaderAnswer,
+        notes: generatedNotes.notes,
         transaction,
       });
 
@@ -801,12 +935,15 @@ async function CreateLeafNodeFromChat({
       return {
         treeId: String(treeInstanceId),
         toolName: String(toolName ?? '').trim(),
-        createdNodeId: createdNode.createdNodeId,
-        selectedParentNodeId: resolvedPlacement.selectedParentNodeId,
-        selectedBreadcrumb: resolvedPlacement.selectedBreadcrumb,
+        placementMode: resolvedPlacement.placementMode,
+        createdNodeId: placementResult.createdLeafNode.createdNodeId,
+        selectedAnchorNodeId: resolvedPlacement.selectedAnchorNodeId,
+        selectedAnchorBreadcrumb: resolvedPlacement.selectedAnchorBreadcrumb,
+        plannedLeafParentBreadcrumb: resolvedPlacement.plannedLeafParentBreadcrumb,
+        createdIntermediateNodes: placementResult.createdIntermediateNodes,
         generatedLeafTitle: resolvedPlacement.generatedLeafTitle,
         flatData: await queryTreeData(treeInstanceId),
-        details: await queryNodeDetails(treeInstanceId, createdNode.createdNodeId),
+        details: await queryNodeDetails(treeInstanceId, placementResult.createdLeafNode.createdNodeId),
       };
     } catch (error) {
       if (transaction._aborted !== true) {
@@ -1048,8 +1185,11 @@ export async function POST(request) {
       toolName,
       originalQuestion,
       broaderAnswer,
-      selectedParentNodeId,
-      selectedBreadcrumb,
+      placementMode,
+      selectedAnchorNodeId,
+      selectedAnchorBreadcrumb,
+      generatedPathTitles,
+      plannedLeafParentBreadcrumb,
       generatedLeafTitle,
     } = await request.json();
 
@@ -1065,8 +1205,11 @@ export async function POST(request) {
         toolName,
         originalQuestion,
         broaderAnswer,
-        selectedParentNodeId,
-        selectedBreadcrumb,
+        placementMode,
+        selectedAnchorNodeId,
+        selectedAnchorBreadcrumb,
+        generatedPathTitles,
+        plannedLeafParentBreadcrumb,
         generatedLeafTitle,
       }));
     }

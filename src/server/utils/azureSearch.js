@@ -6,9 +6,21 @@ const SEARCH_API_VERSION = '2024-07-01';
 const DEFAULT_SEARCH_PAGE_TOP = 25;
 const DEFAULT_TOOL_TOP = 5;
 const MAX_TOP = 25;
+const ENABLE_SEARCH_TOKEN_COVERAGE_FILTER = true;
+const SEARCH_TOKEN_COVERAGE_THRESHOLD = 0.5;
 const NODE_SCORING_PROFILE = 'node-content-priority';
 const NODE_SEARCH_FIELDS = ['content', 'title', 'breadcrumb'];
 const ATTACHMENT_SEARCH_FIELDS = ['content', 'ocrText', 'imageDescriptionFiltered', 'attachmentFileName'];
+const TOKEN_COVERAGE_FIELDS = [
+  'title',
+  'nodeText',
+  'notes',
+  'breadcrumb',
+  'content',
+  'ocrText',
+  'imageDescriptionFiltered',
+  'attachmentFileName',
+];
 const HIGHLIGHT_PRE_TAG = '[[H]]';
 const HIGHLIGHT_POST_TAG = '[[/H]]';
 const SEARCH_SELECT_FIELDS = [
@@ -171,6 +183,148 @@ function getSearchTokens(value) {
     .split(/[^a-zA-Z0-9]+/)
     .map((token) => token.trim())
     .filter(Boolean);
+}
+
+function getDistinctSearchTokens(value) {
+  return Array.from(new Set(getSearchTokens(value).map((token) => token.toLowerCase())));
+}
+
+function addDocumentFieldTokens(tokenSet, fieldValue) {
+  if (Array.isArray(fieldValue)) {
+    fieldValue.forEach((value) => addDocumentFieldTokens(tokenSet, value));
+    return;
+  }
+
+  getSearchTokens(fieldValue).forEach((token) => {
+    tokenSet.add(token.toLowerCase());
+  });
+}
+
+function buildGroupDocumentTokenSet(group) {
+  const tokenSet = new Set();
+  const seenDocuments = new Set();
+  const documents = [
+    group?.nodeDocument,
+    group?.primaryDocument,
+    ...(Array.isArray(group?.documents) ? group.documents : []),
+    ...(Array.isArray(group?.attachmentDocuments) ? group.attachmentDocuments : []),
+  ].filter(Boolean);
+
+  documents.forEach((document) => {
+    if (seenDocuments.has(document)) {
+      return;
+    }
+
+    seenDocuments.add(document);
+
+    TOKEN_COVERAGE_FIELDS.forEach((fieldName) => {
+      addDocumentFieldTokens(tokenSet, document?.[fieldName]);
+    });
+  });
+
+  return tokenSet;
+}
+
+function getMinimumMatchedTokenCount(queryTokenCount) {
+  if (queryTokenCount <= 1) {
+    return 1;
+  }
+
+  if (queryTokenCount === 2) {
+    return 2;
+  }
+
+  return Math.min(3, Math.max(1, Math.ceil(queryTokenCount * SEARCH_TOKEN_COVERAGE_THRESHOLD)));
+}
+
+function buildResultTokenCoverage(result, queryTokens) {
+  const documentTokens = buildGroupDocumentTokenSet(result);
+  const matchedTokens = queryTokens.filter((token) => documentTokens.has(token));
+  const minimumMatchedTokenCount = getMinimumMatchedTokenCount(queryTokens.length);
+
+  return {
+    matchedTokens,
+    matchedTokenCount: matchedTokens.length,
+    totalTokenCount: queryTokens.length,
+    minimumMatchedTokenCount,
+    ratio: queryTokens.length > 0 ? matchedTokens.length / queryTokens.length : 1,
+    passes: matchedTokens.length >= minimumMatchedTokenCount,
+  };
+}
+
+function getBestTokenCoverageResult(results) {
+  if (!Array.isArray(results) || results.length === 0) {
+    return null;
+  }
+
+  return results.reduce((bestResult, currentResult) => {
+    if (!bestResult) {
+      return currentResult;
+    }
+
+    const bestCoverage = bestResult?.queryTokenCoverage;
+    const currentCoverage = currentResult?.queryTokenCoverage;
+    const bestMatchedTokenCount = Number(bestCoverage?.matchedTokenCount ?? -1);
+    const currentMatchedTokenCount = Number(currentCoverage?.matchedTokenCount ?? -1);
+
+    if (currentMatchedTokenCount !== bestMatchedTokenCount) {
+      return currentMatchedTokenCount > bestMatchedTokenCount ? currentResult : bestResult;
+    }
+
+    const bestRatio = Number(bestCoverage?.ratio ?? -1);
+    const currentRatio = Number(currentCoverage?.ratio ?? -1);
+
+    if (currentRatio !== bestRatio) {
+      return currentRatio > bestRatio ? currentResult : bestResult;
+    }
+
+    const bestScore = Number(bestResult?.score ?? -Infinity);
+    const currentScore = Number(currentResult?.score ?? -Infinity);
+
+    return currentScore > bestScore ? currentResult : bestResult;
+  }, null);
+}
+
+function applyTokenCoverageFilter(results, searchText) {
+  const queryTokens = getDistinctSearchTokens(searchText);
+
+  if (!ENABLE_SEARCH_TOKEN_COVERAGE_FILTER || queryTokens.length === 0) {
+    return {
+      results,
+      tokenCoverageFilter: {
+        enabled: ENABLE_SEARCH_TOKEN_COVERAGE_FILTER,
+        threshold: SEARCH_TOKEN_COVERAGE_THRESHOLD,
+        policy: '1-of-1, 2-of-2, otherwise min(3, ceil(50% of query tokens))',
+        queryTokens,
+        tokenCoverage: null,
+        resultCountBefore: Array.isArray(results) ? results.length : 0,
+        resultCountAfter: Array.isArray(results) ? results.length : 0,
+      },
+    };
+  }
+
+  const evaluatedResults = results.map((result) => {
+    return {
+      ...result,
+      queryTokenCoverage: buildResultTokenCoverage(result, queryTokens),
+    };
+  });
+  const bestTokenCoverageResult = getBestTokenCoverageResult(evaluatedResults);
+  const filteredResults = evaluatedResults.filter((result) => result.queryTokenCoverage?.passes);
+
+  return {
+    results: filteredResults,
+    tokenCoverageFilter: {
+      enabled: true,
+      threshold: SEARCH_TOKEN_COVERAGE_THRESHOLD,
+      policy: '1-of-1, 2-of-2, otherwise min(3, ceil(50% of query tokens))',
+      queryTokens,
+      tokenCoverage: bestTokenCoverageResult?.queryTokenCoverage ?? null,
+      minimumMatchedTokenCount: getMinimumMatchedTokenCount(queryTokens.length),
+      resultCountBefore: evaluatedResults.length,
+      resultCountAfter: filteredResults.length,
+    },
+  };
 }
 
 function escapeLuceneRegexValue(value) {
@@ -610,7 +764,12 @@ export async function searchTreeContent({
       nodeDocument,
     };
   });
-  const finalizedResults = finalizeGroupedResults(enrichedGroups).slice(0, normalizedTopValue);
+  const finalizedGroups = finalizeGroupedResults(enrichedGroups);
+  const {
+    results: tokenCoverageFilteredResults,
+    tokenCoverageFilter,
+  } = applyTokenCoverageFilter(finalizedGroups, trimmedSearchText);
+  const finalizedResults = tokenCoverageFilteredResults.slice(0, normalizedTopValue);
 
   const executedSearches = includeExecutedSearches
     ? [
@@ -651,6 +810,7 @@ export async function searchTreeContent({
   return {
     count: finalizedResults.length,
     results: finalizedResults,
+    tokenCoverageFilter,
     ...(executedSearches ? { executedSearches } : {}),
   };
 }

@@ -13,9 +13,9 @@ Optional chat settings:
 
 - `AZURE_AI_AGENT_NAME` defaults to `tree-search-agent`
 - `AZURE_AI_AGENT_SYNC_TOKEN` enables manual `/api/chat/sync` protection
-- `AZURE_AI_CHAT_INCLUDE_DEBUG` controls whether `/api/chat` includes the `debug` object
+- `APPLICATION_DEBUG` controls whether debug data is included in chat and search responses
 
-`AZURE_AI_CHAT_INCLUDE_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `true`.
+`APPLICATION_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `false`.
 
 For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.
 
@@ -44,6 +44,21 @@ The agent runtime then decides:
 - when to stop and return a final answer
 
 In other words, tool-choice behavior is not hardcoded in the application, but it is strongly shaped by the tool definitions, instructions, and history that the application sends to the agent.
+
+### Chat History vs. `priorToolInvocations`
+
+The application uses two different continuity mechanisms for follow-up behavior, and they serve different purposes.
+
+Chat history is for the agent. It contains the user and assistant messages that should be replayed as conversational context on later turns. This is the material that gets sent back to the model as prior dialogue.
+
+`priorToolInvocations` are for the server-side broader-answer workflow and related UI affordances. They do not represent general conversation history, and they are not replayed to the model as structured history. Instead, they preserve the immediately preceding grounded-search context when the user chooses the broader-answer option.
+
+The conversation history now keeps all user and assistant turns, including `no_result_offer` and `broader_answer` turns, so the agent can see the full nuance of the exchange. Follow-up submissions are sent to the model with the user's message verbatim rather than being rewritten by the server. In practice:
+
+- chat history preserves the full conversational record for the agent, including no-result and broader-answer turns
+- the current user message is sent to the model as written
+- `priorToolInvocations` preserve prior search context for server-side follow-up handling and UI actions
+- UI actions such as `Add to: [tool]` on broader-answer turns can still know which earlier tool context the answer came from even though those tool references are not part of structured model history
 
 ## Getting Started
 

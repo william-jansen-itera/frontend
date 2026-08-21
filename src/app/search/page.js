@@ -142,6 +142,16 @@ function formatJson(value) {
   }
 }
 
+function formatCoveragePercent(value) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return "n/a";
+  }
+
+  return `${Math.round(numericValue * 100)}%`;
+}
+
 function SearchPageContent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -155,6 +165,7 @@ function SearchPageContent() {
   const [results, setResults] = useState([]);
   const [resultCount, setResultCount] = useState(0);
   const [executedSearches, setExecutedSearches] = useState([]);
+  const [tokenCoverageFilter, setTokenCoverageFilter] = useState(null);
   const [treeError, setTreeError] = useState(null);
   const [searchError, setSearchError] = useState(null);
 
@@ -224,6 +235,7 @@ function SearchPageContent() {
         setResults(Array.isArray(data.results) ? data.results : []);
         setResultCount(Number(data.count ?? 0));
         setExecutedSearches(Array.isArray(data.executedSearches) ? data.executedSearches : []);
+        setTokenCoverageFilter(data.tokenCoverageFilter && typeof data.tokenCoverageFilter === "object" ? data.tokenCoverageFilter : null);
         setSearchError(null);
       })
       .catch((searchError) => {
@@ -235,6 +247,7 @@ function SearchPageContent() {
         setResults([]);
         setResultCount(0);
         setExecutedSearches([]);
+        setTokenCoverageFilter(null);
         setSearchError(searchError.message);
       })
       .finally(() => {
@@ -352,12 +365,42 @@ function SearchPageContent() {
             </div>
           </div>
 
-          {executedSearches.length > 0 ? (
+          {executedSearches.length > 0 || tokenCoverageFilter ? (
             <section className={styles.debugSection}>
               <div className={styles.debugHeader}>
                 <p className={styles.resultsEyebrow}>Executed Queries</p>
                 <p className={styles.debugSummary}>{executedSearches.length} search{executedSearches.length === 1 ? "" : "es"} recorded</p>
               </div>
+              {tokenCoverageFilter ? (
+                <details className={styles.debugCard} open>
+                  <summary className={styles.debugCardSummary}>
+                    <span className={styles.debugKind}>token coverage filter</span>
+                    <span className={styles.debugMeta}>
+                      {tokenCoverageFilter.enabled ? "enabled" : "disabled"} · threshold {formatCoveragePercent(tokenCoverageFilter.threshold)}
+                    </span>
+                  </summary>
+                  <div className={styles.debugCardBody}>
+                    <dl className={styles.debugFacts}>
+                      <div className={styles.debugFactRow}>
+                        <dt>Results kept</dt>
+                        <dd>{Number(tokenCoverageFilter.resultCountAfter ?? 0)} of {Number(tokenCoverageFilter.resultCountBefore ?? 0)}</dd>
+                      </div>
+                      <div className={styles.debugFactRow}>
+                        <dt>Minimum token count</dt>
+                        <dd>{Number(tokenCoverageFilter.minimumMatchedTokenCount ?? 0)}</dd>
+                      </div>
+                      <div className={styles.debugFactRow}>
+                        <dt>Query tokens</dt>
+                        <dd>{Array.isArray(tokenCoverageFilter.queryTokens) && tokenCoverageFilter.queryTokens.length > 0 ? tokenCoverageFilter.queryTokens.join(", ") : "n/a"}</dd>
+                      </div>
+                    </dl>
+                    <details className={styles.debugJsonToggle}>
+                      <summary className={styles.debugJsonSummary}>Show full payload</summary>
+                      <pre className={styles.debugJson}>{formatJson(tokenCoverageFilter)}</pre>
+                    </details>
+                  </div>
+                </details>
+              ) : null}
               <div className={styles.debugList}>
                 {executedSearches.map((search, index) => (
                   <details key={`${search.kind}-${index}`} className={styles.debugCard}>

@@ -21,7 +21,7 @@ function parseBooleanSetting(value, fallbackValue = false) {
 }
 
 export default function ChatPage() {
-  const includeDebug = parseBooleanSetting(process.env.AZURE_AI_CHAT_INCLUDE_DEBUG, false);
+  const includeDebug = parseBooleanSetting(process.env.APPLICATION_DEBUG, false);
 
   return <ChatPageClient includeDebug={includeDebug} />;
 }

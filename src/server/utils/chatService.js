@@ -19,14 +19,14 @@ const MAX_GENERATED_LEAF_CHILDREN_PER_NODE = 10;
 const MAX_GENERATED_TITLE_LENGTH = 255;
 const MAX_CHAT_LEAF_TITLE_WORDS = 8;
 const MAX_GENERATED_NOTES_LENGTH = 4000;
-const CHAT_LEAF_PARENT_SELECTION_SCHEMA = {
+const CHAT_LEAF_ANCHOR_SELECTION_SCHEMA = {
   type: 'object',
   properties: {
-    matchDisposition: {
+    selectionDisposition: {
       type: 'string',
-      enum: ['accept', 'reject'],
+      enum: ['selected_anchor', 'no_anchor'],
     },
-    selectedParentNodeId: {
+    selectedAnchorNodeId: {
       type: 'string',
     },
     selectedBreadcrumb: {
@@ -37,14 +37,14 @@ const CHAT_LEAF_PARENT_SELECTION_SCHEMA = {
       maxLength: MAX_GENERATED_TITLE_LENGTH,
     },
   },
-  required: ['matchDisposition', 'selectedParentNodeId', 'selectedBreadcrumb', 'generatedLeafTitle'],
+  required: ['selectionDisposition', 'selectedAnchorNodeId', 'selectedBreadcrumb', 'generatedLeafTitle'],
   additionalProperties: false,
 };
 const TURN_TYPE_DEFAULT = 'default';
 const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer';
 const TURN_TYPE_BROADER_ANSWER = 'broader_answer';
 const FOLLOW_UP_OPTION_BROADER_ANSWER = 'broader_answer';
-const ENABLE_NO_TOOL_RESPONSE_REVIEW = false;
+const ENABLE_PERMISSION_TO_BROADER_MODEL_REVIEW = true;
 const ENABLE_PERMISSION_TO_BROADER_DETECTION = true;
 
 let cachedProjectClient;
@@ -334,6 +334,19 @@ function buildGeneratedChildrenSchema(maxChildren) {
   };
 }
 
+function buildGeneratedTitleArraySchema(exactTitleCount) {
+  return {
+    type: 'array',
+    minItems: exactTitleCount,
+    maxItems: exactTitleCount,
+    items: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    },
+  };
+}
+
 const GENERATED_NOTES_SCHEMA = {
   type: 'object',
   properties: {
@@ -347,19 +360,14 @@ const GENERATED_NOTES_SCHEMA = {
   additionalProperties: false,
 };
 
-const NO_TOOL_RESPONSE_REVIEW_SCHEMA = {
+const GROUNDED_RESPONSE_REVIEW_SCHEMA = {
   type: 'object',
   properties: {
-    classification: {
-      type: 'string',
-      enum: ['clarification', 'request_permission', 'broad_knowledge'],
-    },
-    answer: {
-      type: 'string',
-      minLength: 1,
+    isRequestPermission: {
+      type: 'boolean',
     },
   },
-  required: ['classification', 'answer'],
+  required: ['isRequestPermission'],
   additionalProperties: false,
 };
 
@@ -389,7 +397,7 @@ function parseTreePopulationResponse(response) {
   }
 }
 
-async function reviewNoToolResponse({ openAIClient, userMessage, assistantAnswer }) {
+async function reviewGroundedResponse({ openAIClient, userMessage, assistantAnswer }) {
   const { modelDeploymentName } = getRequiredFoundryConfig();
   const response = await openAIClient.responses.create({
     model: modelDeploymentName,
@@ -399,16 +407,10 @@ async function reviewNoToolResponse({ openAIClient, userMessage, assistantAnswer
         role: 'system',
         content: [
           'You are reviewing an assistant response from a grounded tree-search workflow.',
-          'No tool was called for the turn being reviewed.',
-          'Classify the assistant response into exactly one of three categories.',
-          'Use classification "clarification" only when the assistant is asking a brief question needed to determine the correct grounded tool or resolve missing scope.',
-          'Use classification "request_permission" when the assistant is asking whether to broaden the search or provide a general background explanation without answering from background knowledge.',
-          'Use classification "broad_knowledge" when the assistant answered from general knowledge, included ungrounded explanatory content, or otherwise failed to stay within clarification or permission-asking behavior.',
-          'Always rewrite the answer to comply with the classification.',
-          'For "clarification", return one brief clarification question only.',
-          'For "request_permission", return one brief compliant message that does not answer from background knowledge, states that no grounded tool path was established, and asks whether the user wants a broader search or a general background explanation.',
-          'For "broad_knowledge", return a short diagnostic sentence describing that the response answered from background knowledge instead of using a tool or asking permission.',
-          'Do not include apologies, self-critique, process explanations, or extra commentary.',
+          'Determine whether the assistant response is a request-permission message.',
+          'Return isRequestPermission=true only when the assistant is asking whether to broaden the search or provide a general background explanation without already answering from background knowledge.',
+          'This includes cases where no grounded tool path was established and cases where grounded results were returned but did not meaningfully answer the question.',
+          'Return isRequestPermission=false for clarification questions, grounded answers, or background-knowledge answers.',
           'Return JSON only.',
         ].join(' '),
       },
@@ -422,12 +424,12 @@ async function reviewNoToolResponse({ openAIClient, userMessage, assistantAnswer
       },
     ],
     text: {
-      verbosity: 'low',
+      verbosity: 'medium',
       format: {
         type: 'json_schema',
-        name: 'no_tool_response_review',
+        name: 'grounded_response_review',
         strict: true,
-        schema: NO_TOOL_RESPONSE_REVIEW_SCHEMA,
+        schema: GROUNDED_RESPONSE_REVIEW_SCHEMA,
       },
     },
   });
@@ -438,29 +440,16 @@ async function reviewNoToolResponse({ openAIClient, userMessage, assistantAnswer
     throw new Error(parsedResponse.error);
   }
 
-  const classification = String(parsedResponse.parsed?.classification ?? '').trim();
-  const answer = String(parsedResponse.parsed?.answer ?? '').trim();
+  const isRequestPermission = parsedResponse.parsed?.isRequestPermission;
 
-  if ((classification !== 'clarification' && classification !== 'request_permission' && classification !== 'broad_knowledge') || !answer) {
-    throw new Error('No-tool response review returned an invalid payload.');
+  if (typeof isRequestPermission !== 'boolean') {
+    throw new Error('Grounded response review returned an invalid payload.');
   }
 
   return {
-    classification,
-    answer,
+    isRequestPermission,
     raw: parsedResponse.parsed,
   };
-}
-
-function buildNoToolCorrectionMessage({ userMessage, assistantAnswer }) {
-  return [
-    'Your previous response did not follow the grounded workflow because you answered without calling a tool.',
-    'Re-handle the original user request now.',
-    'You must either call the appropriate grounded tool, or, if no grounded tool applies, briefly ask whether the user wants a broader search or a general background explanation.',
-    'Do not answer from general background knowledge in this retry.',
-    `Original user request: "${userMessage}"`,
-    `Previous non-compliant response: "${assistantAnswer}"`,
-  ].join(' ');
 }
 
 function buildBroaderAnswerOption() {
@@ -859,6 +848,37 @@ function buildLeafNoteGenerationPrompt({ treeName, breadcrumbTitles }) {
   ].filter(Boolean).join('\n');
 }
 
+function buildChatAnswerLeafNoteGenerationPrompt({ treeName, breadcrumbTitles, originalQuestion, broaderAnswer }) {
+  const normalizedTreeName = normalizeWhitespace(treeName);
+  const breadcrumbPath = breadcrumbTitles.map((title) => normalizeWhitespace(title)).filter(Boolean).join(' > ');
+  const normalizedOriginalQuestion = normalizeWhitespace(originalQuestion);
+  const normalizedBroaderAnswer = String(broaderAnswer ?? '').trim();
+
+  return [
+    'Rewrite a conversational chat answer into leaf-node notes for a tree-based knowledge application.',
+    'Return valid JSON only, matching the provided schema.',
+    'Preserve the useful factual content, practical details, caveats, and examples from the chat answer when relevant to the leaf topic.',
+    'Remove conversational framing, assistant self-reference, offers to help further, requests for clarification, hedging about available tools, and other dialogue-only text.',
+    'Do not mention the user, the assistant, tools, search behavior, missing evidence, or what to ask next.',
+    'Write concise but substantive reference notes that can stand alone without the original conversation.',
+    'Prefer clear factual statements, compact paragraphs, and short lists when they improve readability.',
+    'Keep only information that belongs in enduring notes for this leaf topic.',
+    `Keep the notes within ${MAX_GENERATED_NOTES_LENGTH} characters.`,
+    '',
+    'Tree title:',
+    normalizedTreeName,
+    '',
+    'Breadcrumb path:',
+    breadcrumbPath,
+    '',
+    'Original user question:',
+    normalizedOriginalQuestion,
+    '',
+    'Chat answer to convert into notes:',
+    normalizedBroaderAnswer,
+  ].filter(Boolean).join('\n');
+}
+
 export function validateGeneratedLeafNotesPayload(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('Generated notes payload must be an object.');
@@ -873,23 +893,29 @@ export function validateGeneratedLeafNotesPayload(payload) {
   return { notes };
 }
 
-function buildChatLeafParentSelectionPrompt({ treeName, originalQuestion, broaderAnswer, candidates }) {
+function buildChatLeafAnchorSelectionPrompt({ treeName, originalQuestion, broaderAnswer, candidates }) {
   const normalizedTreeName = normalizeWhitespace(treeName);
   const normalizedOriginalQuestion = normalizeWhitespace(originalQuestion);
   const normalizedBroaderAnswer = String(broaderAnswer ?? '').trim();
-  const candidateLines = candidates.map((candidate) => `${candidate.nodeId}: ${candidate.breadcrumb}`);
+  const candidateLines = candidates.map((candidate) => [
+    `nodeId=${candidate.nodeId}`,
+    `breadcrumb=${candidate.breadcrumb}`,
+    `remainingDepthBudget=${candidate.remainingDepthBudget}`,
+    `directLeafPossible=${candidate.directLeafPossible ? 'yes' : 'no'}`,
+  ].join(' | '));
 
   return [
-    'Choose the best existing non-leaf parent path for a new leaf node in a tree-based knowledge application.',
-    'You must only choose from the provided candidate parents. Never invent a new path and never select an existing leaf node.',
-    'The new leaf should be a good semantic home for the broader-answer content and the original user question.',
+    'Choose the best existing non-leaf anchor path for adding a new leaf note in a tree-based knowledge application.',
+    'You must only choose from the provided candidate anchors. Never invent a new path and never select an existing leaf node.',
+    'The chosen anchor should be the best semantic starting point for the broader-answer content and the original user question.',
     'Return valid JSON only, matching the provided schema.',
-    'If no candidate is a good fit, return matchDisposition as reject and leave the other string fields empty.',
-    'If you accept a candidate, return the selectedParentNodeId exactly as provided, the selectedBreadcrumb exactly as provided, and generate a concise specific leaf title for the new note.',
-    'The generated leaf title must be a short noun phrase, not a sentence or summary.',
+    'If no anchor is a good fit, return selectionDisposition as no_anchor and leave the other string fields empty.',
+    'If you select an anchor, return the selectedAnchorNodeId exactly as provided and the selectedBreadcrumb exactly as provided.',
+    'Only generate generatedLeafTitle when the chosen anchor is already at the direct parent-of-leaf depth. Otherwise leave generatedLeafTitle empty.',
+    'When you generate generatedLeafTitle, it must be a short noun phrase, not a sentence or summary.',
     'Use only a few words. Prefer about 3 to 6 words, and never exceed 8 words.',
     'Drop extra explanation, examples, parenthetical clarifiers, and trailing detail unless they are essential to identify the topic.',
-    `Keep the generated leaf title within ${MAX_GENERATED_TITLE_LENGTH} characters.`,
+    `Keep any generated leaf title within ${MAX_GENERATED_TITLE_LENGTH} characters.`,
     '',
     'Tree title:',
     normalizedTreeName,
@@ -900,60 +926,180 @@ function buildChatLeafParentSelectionPrompt({ treeName, originalQuestion, broade
     'Broader answer content:',
     normalizedBroaderAnswer,
     '',
-    'Candidate parents:',
+    'Candidate anchors:',
     ...candidateLines,
   ].filter(Boolean).join('\n');
 }
 
-export function validateChatLeafParentSelectionPayload(payload, candidates) {
+export function validateChatLeafAnchorSelectionPayload(payload, candidates) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error('Generated parent selection payload must be an object.');
+    throw new Error('Generated anchor selection payload must be an object.');
   }
 
-  const matchDisposition = String(payload.matchDisposition ?? '').trim().toLowerCase();
+  const selectionDisposition = String(payload.selectionDisposition ?? '').trim().toLowerCase();
 
-  if (matchDisposition !== 'accept' && matchDisposition !== 'reject') {
-    throw new Error('Generated parent selection payload must include a valid matchDisposition.');
+  if (selectionDisposition !== 'selected_anchor' && selectionDisposition !== 'no_anchor') {
+    throw new Error('Generated anchor selection payload must include a valid selectionDisposition.');
   }
 
-  const selectedParentNodeId = String(payload.selectedParentNodeId ?? '').trim();
+  const selectedAnchorNodeId = String(payload.selectedAnchorNodeId ?? '').trim();
   const selectedBreadcrumb = String(payload.selectedBreadcrumb ?? '').trim();
   const generatedLeafTitle = normalizeGeneratedNodeTitle(payload.generatedLeafTitle ?? '');
 
-  if (matchDisposition === 'reject') {
+  if (selectionDisposition === 'no_anchor') {
     return {
-      matchDisposition,
-      selectedParentNodeId: '',
+      selectionDisposition,
+      selectedAnchorNodeId: '',
       selectedBreadcrumb: '',
       generatedLeafTitle: '',
     };
   }
 
   const selectedCandidate = Array.isArray(candidates)
-    ? candidates.find((candidate) => String(candidate.nodeId) === selectedParentNodeId)
+    ? candidates.find((candidate) => String(candidate.nodeId) === selectedAnchorNodeId)
     : null;
 
   if (!selectedCandidate) {
-    throw new Error('Generated parent selection chose an invalid candidate.');
+    throw new Error('Generated anchor selection chose an invalid candidate.');
   }
 
-  if (!generatedLeafTitle) {
-    throw new Error('Generated parent selection must include a non-empty leaf title.');
-  }
+  if (selectedCandidate.directLeafPossible) {
+    if (!generatedLeafTitle) {
+      throw new Error('Generated anchor selection must include a non-empty leaf title when direct leaf creation is possible.');
+    }
 
-  if (countTitleWords(generatedLeafTitle) > MAX_CHAT_LEAF_TITLE_WORDS) {
-    throw new Error(`Generated parent selection leaf title must be ${MAX_CHAT_LEAF_TITLE_WORDS} words or fewer.`);
+    if (countTitleWords(generatedLeafTitle) > MAX_CHAT_LEAF_TITLE_WORDS) {
+      throw new Error(`Generated anchor selection leaf title must be ${MAX_CHAT_LEAF_TITLE_WORDS} words or fewer.`);
+    }
+  } else if (generatedLeafTitle) {
+    throw new Error('Generated anchor selection must not include a leaf title when intermediate nodes are still required.');
   }
 
   return {
-    matchDisposition,
-    selectedParentNodeId,
+    selectionDisposition,
+    selectedAnchorNodeId,
     selectedBreadcrumb: selectedBreadcrumb || selectedCandidate.breadcrumb,
     generatedLeafTitle,
   };
 }
 
-async function requestChatLeafParentSelection({ treeName, originalQuestion, broaderAnswer, candidates }) {
+function buildChatLeafPathPlanPrompt({
+  treeName,
+  originalQuestion,
+  broaderAnswer,
+  anchorBreadcrumbTitles = [],
+  requiredPathTitleCount,
+}) {
+  const normalizedTreeName = normalizeWhitespace(treeName);
+  const normalizedOriginalQuestion = normalizeWhitespace(originalQuestion);
+  const normalizedBroaderAnswer = String(broaderAnswer ?? '').trim();
+  const normalizedAnchorBreadcrumb = anchorBreadcrumbTitles
+    .map((title) => normalizeWhitespace(title))
+    .filter(Boolean)
+    .join(' > ');
+  const isRootPlan = anchorBreadcrumbTitles.length === 0;
+
+  return [
+    'Generate the missing path titles needed before creating a new leaf note in a tree-based knowledge application.',
+    'Return valid JSON only, matching the provided schema.',
+    isRootPlan
+      ? 'No existing anchor path was selected. Generate the full structural path from the root to the future leaf parent.'
+      : 'An existing anchor path was already selected. Do not change that anchor. Generate only the missing structural titles beneath it before the future leaf parent.',
+    `Generate exactly ${requiredPathTitleCount} structural path title${requiredPathTitleCount === 1 ? '' : 's'} before the final leaf title.`,
+    isRootPlan ? 'Do not repeat the tree title as the first generated root node. The first root node must be narrower in scope than the tree title. Treat the tree title as the container, not as a structural path title to recreate.' : null,
+    'Every generated node must remain semantically consistent with the full ancestor chain.',
+    'Do not introduce concepts not implied by the ancestor chain or the user request or the tree title.',
+    'Use concise titles.',
+    'Avoid duplicate titles within the generated path.',
+    'Do not generate notes, explanations, numbering, or extra properties.',
+    'The generated leaf title must be a short noun phrase, not a sentence or summary.',
+    'Use only a few words. Prefer about 3 to 6 words, and never exceed 8 words.',
+    `Keep every generated title within ${MAX_GENERATED_TITLE_LENGTH} characters.`,
+    '',
+    'Tree title:',
+    normalizedTreeName,
+    '',
+    'Original user question:',
+    normalizedOriginalQuestion,
+    '',
+    'Broader answer content:',
+    normalizedBroaderAnswer,
+    '',
+    isRootPlan ? null : 'Fixed anchor breadcrumb:',
+    isRootPlan ? null : normalizedAnchorBreadcrumb,
+  ].filter(Boolean).join('\n');
+}
+
+function buildChatLeafPathPlanSchema(requiredPathTitleCount) {
+  return {
+    type: 'object',
+    properties: {
+      pathTitles: buildGeneratedTitleArraySchema(requiredPathTitleCount),
+      generatedLeafTitle: {
+        type: 'string',
+        minLength: 1,
+        maxLength: MAX_GENERATED_TITLE_LENGTH,
+      },
+    },
+    required: ['pathTitles', 'generatedLeafTitle'],
+    additionalProperties: false,
+  };
+}
+
+export function validateChatLeafPathPlanPayload(payload, requiredPathTitleCount, options = {}) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Generated path plan payload must be an object.');
+  }
+
+  const normalizedTreeName = normalizeWhitespace(options.treeName ?? '');
+  const anchorBreadcrumbTitles = Array.isArray(options.anchorBreadcrumbTitles)
+    ? options.anchorBreadcrumbTitles.map((title) => normalizeWhitespace(title)).filter(Boolean)
+    : [];
+  const isRootPlan = anchorBreadcrumbTitles.length === 0;
+
+  const pathTitles = Array.isArray(payload.pathTitles) ? payload.pathTitles : null;
+
+  if (!pathTitles || pathTitles.length !== requiredPathTitleCount) {
+    throw new Error(`Generated path plan must include exactly ${requiredPathTitleCount} structural titles.`);
+  }
+
+  const normalizedPathTitles = pathTitles.map((title, index) => {
+    const normalizedTitle = normalizeGeneratedNodeTitle(title);
+
+    if (!normalizedTitle) {
+      throw new Error(`Generated path plan title at index ${index} must be non-empty.`);
+    }
+
+    return normalizedTitle;
+  });
+
+  const normalizedUniqueTitles = new Set(normalizedPathTitles.map((title) => title.toLowerCase()));
+
+  if (normalizedUniqueTitles.size !== normalizedPathTitles.length) {
+    throw new Error('Generated path plan must not contain duplicate structural titles.');
+  }
+
+  if (isRootPlan && normalizedTreeName && normalizedPathTitles[0]?.toLowerCase() === normalizedTreeName.toLowerCase()) {
+    throw new Error('Generated path plan must not repeat the tree title as the first structural title when creating a full path from the root.');
+  }
+
+  const generatedLeafTitle = normalizeGeneratedNodeTitle(payload.generatedLeafTitle ?? '');
+
+  if (!generatedLeafTitle) {
+    throw new Error('Generated path plan must include a non-empty leaf title.');
+  }
+
+  if (countTitleWords(generatedLeafTitle) > MAX_CHAT_LEAF_TITLE_WORDS) {
+    throw new Error(`Generated path plan leaf title must be ${MAX_CHAT_LEAF_TITLE_WORDS} words or fewer.`);
+  }
+
+  return {
+    pathTitles: normalizedPathTitles,
+    generatedLeafTitle,
+  };
+}
+
+async function requestChatLeafAnchorSelection({ treeName, originalQuestion, broaderAnswer, candidates }) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const { modelDeploymentName } = getRequiredFoundryConfig();
@@ -964,30 +1110,30 @@ async function requestChatLeafParentSelection({ treeName, originalQuestion, broa
       {
         type: 'message',
         role: 'system',
-        content: buildChatLeafParentSelectionPrompt({ treeName, originalQuestion, broaderAnswer, candidates }),
+        content: buildChatLeafAnchorSelectionPrompt({ treeName, originalQuestion, broaderAnswer, candidates }),
       },
     ],
     text: {
       verbosity: 'medium',
       format: {
         type: 'json_schema',
-        name: 'chat_leaf_parent_selection',
+        name: 'chat_leaf_anchor_selection',
         strict: true,
-        schema: CHAT_LEAF_PARENT_SELECTION_SCHEMA,
+        schema: CHAT_LEAF_ANCHOR_SELECTION_SCHEMA,
       },
     },
   });
 }
 
-export async function selectChatLeafParentCandidate({ treeName, originalQuestion, broaderAnswer, candidates }) {
+export async function selectChatLeafAnchorCandidate({ treeName, originalQuestion, broaderAnswer, candidates }) {
   if (!Array.isArray(candidates) || candidates.length === 0) {
-    throw new Error('At least one candidate parent is required for chat leaf placement.');
+    throw new Error('At least one candidate anchor is required for chat leaf placement.');
   }
 
   let lastError = null;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await requestChatLeafParentSelection({
+    const response = await requestChatLeafAnchorSelection({
       treeName,
       originalQuestion,
       broaderAnswer,
@@ -1001,13 +1147,88 @@ export async function selectChatLeafParentCandidate({ treeName, originalQuestion
     }
 
     try {
-      return validateChatLeafParentSelectionPayload(parsedResponse.parsed, candidates);
+      return validateChatLeafAnchorSelectionPayload(parsedResponse.parsed, candidates);
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Generated parent selection payload was invalid.');
+      lastError = error instanceof Error ? error : new Error('Generated anchor selection payload was invalid.');
     }
   }
 
-  throw lastError ?? new Error('Generated parent selection payload was invalid.');
+  throw lastError ?? new Error('Generated anchor selection payload was invalid.');
+}
+
+async function requestChatLeafPathPlan({
+  treeName,
+  originalQuestion,
+  broaderAnswer,
+  anchorBreadcrumbTitles = [],
+  requiredPathTitleCount,
+}) {
+  const project = getProjectClient();
+  const openAIClient = project.getOpenAIClient();
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+
+  return openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: buildChatLeafPathPlanPrompt({
+          treeName,
+          originalQuestion,
+          broaderAnswer,
+          anchorBreadcrumbTitles,
+          requiredPathTitleCount,
+        }),
+      },
+    ],
+    text: {
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'chat_leaf_path_plan',
+        strict: true,
+        schema: buildChatLeafPathPlanSchema(requiredPathTitleCount),
+      },
+    },
+  });
+}
+
+export async function generateChatLeafPathPlan({
+  treeName,
+  originalQuestion,
+  broaderAnswer,
+  anchorBreadcrumbTitles = [],
+  requiredPathTitleCount,
+}) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await requestChatLeafPathPlan({
+      treeName,
+      originalQuestion,
+      broaderAnswer,
+      anchorBreadcrumbTitles,
+      requiredPathTitleCount,
+    });
+    const parsedResponse = parseTreePopulationResponse(response);
+
+    if (parsedResponse.error) {
+      lastError = new Error(parsedResponse.error);
+      continue;
+    }
+
+    try {
+      return validateChatLeafPathPlanPayload(parsedResponse.parsed, requiredPathTitleCount, {
+        treeName,
+        anchorBreadcrumbTitles,
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Generated path plan payload was invalid.');
+    }
+  }
+
+  throw lastError ?? new Error('Generated path plan payload was invalid.');
 }
 
 async function requestGeneratedLeafNotes({ treeName, breadcrumbTitles }) {
@@ -1036,11 +1257,69 @@ async function requestGeneratedLeafNotes({ treeName, breadcrumbTitles }) {
   });
 }
 
+async function requestGeneratedLeafNotesFromChatAnswer({ treeName, breadcrumbTitles, originalQuestion, broaderAnswer }) {
+  const project = getProjectClient();
+  const openAIClient = project.getOpenAIClient();
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+
+  return openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: buildChatAnswerLeafNoteGenerationPrompt({
+          treeName,
+          breadcrumbTitles,
+          originalQuestion,
+          broaderAnswer,
+        }),
+      },
+    ],
+    text: {
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'generated_leaf_notes_from_chat_answer',
+        strict: true,
+        schema: GENERATED_NOTES_SCHEMA,
+      },
+    },
+  });
+}
+
 export async function generateLeafNotesDraft({ treeName, breadcrumbTitles }) {
   let lastError = null;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const response = await requestGeneratedLeafNotes({ treeName, breadcrumbTitles });
+    const parsedResponse = parseTreePopulationResponse(response);
+
+    if (parsedResponse.error) {
+      lastError = new Error(parsedResponse.error);
+      continue;
+    }
+
+    try {
+      return validateGeneratedLeafNotesPayload(parsedResponse.parsed);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Generated notes payload was invalid.');
+    }
+  }
+
+  throw lastError ?? new Error('Generated notes payload was invalid.');
+}
+
+export async function generateLeafNotesFromChatAnswer({ treeName, breadcrumbTitles, originalQuestion, broaderAnswer }) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await requestGeneratedLeafNotesFromChatAnswer({
+      treeName,
+      breadcrumbTitles,
+      originalQuestion,
+      broaderAnswer,
+    });
     const parsedResponse = parseTreePopulationResponse(response);
 
     if (parsedResponse.error) {
@@ -1381,6 +1660,7 @@ function buildAgentSearchResult(rawResult) {
 function buildDebugSearchResultSnapshot(rawResult) {
   return {
     searches: Array.isArray(rawResult?.executedSearches) ? rawResult.executedSearches : [],
+    tokenCoverageFilter: rawResult?.tokenCoverageFilter ?? null,
   };
 }
 
@@ -1474,42 +1754,15 @@ function getFollowUpOptionLabel(optionId) {
   return '';
 }
 
-function buildFollowUpPrompt(selection) {
-  if (!selection) {
-    return '';
-  }
-
-  if (selection.optionId !== FOLLOW_UP_OPTION_BROADER_ANSWER) {
-    return getFollowUpOptionLabel(selection.optionId);
-  }
-
-  const originalQuestion = String(selection.sourceQuestion ?? '').trim();
-  const toolNames = Array.isArray(selection.sourceToolInvocations)
-    ? selection.sourceToolInvocations.map((invocation) => invocation.toolName).filter(Boolean)
-    : [];
-  const priorToolClause = toolNames.length > 0
-    ? ` The earlier targeted search used ${toolNames.join(', ')} and did not find a relevant result.`
-    : '';
-  const answerInstruction = ' Do not call search tools again for this follow-up. Do not ask another no-result or broader-answer question. Answer directly using broader background knowledge.';
-
-  if (!originalQuestion) {
-    return `${getFollowUpOptionLabel(selection.optionId)}.${priorToolClause}${answerInstruction}`.trim();
-  }
-
-  return `Provide a broader background answer for the user's original question: "${originalQuestion}".${priorToolClause}${answerInstruction}`.trim();
-}
-
-function buildResponseToolInvocations(toolInvocations, normalizedFollowUpSelection) {
-  const responseToolInvocations = toolInvocations.map((invocation) => ({
+function buildResponseToolInvocations(toolInvocations) {
+  return toolInvocations.map((invocation) => ({
     toolName: invocation.toolName,
     arguments: invocation.arguments,
     resultCount: invocation.output?.count ?? 0,
   }));
+}
 
-  if (responseToolInvocations.length > 0 || normalizedFollowUpSelection?.optionId !== FOLLOW_UP_OPTION_BROADER_ANSWER) {
-    return responseToolInvocations;
-  }
-
+function buildPriorToolInvocations(normalizedFollowUpSelection) {
   return Array.isArray(normalizedFollowUpSelection?.sourceToolInvocations)
     ? normalizedFollowUpSelection.sourceToolInvocations.map((invocation) => ({
       toolName: invocation.toolName,
@@ -1524,7 +1777,27 @@ function hasToolResults(toolInvocations) {
     && toolInvocations.some((invocation) => Number(invocation?.output?.count ?? 0) > 0);
 }
 
-function isPermissionToBroadenAnswer(answer) {
+function hasPermissionToBroadenQualifier(answer) {
+  const normalizedAnswer = normalizeWhitespace(answer).toLowerCase();
+
+  if (!normalizedAnswer) {
+    return false;
+  }
+
+  if (normalizedAnswer.includes('?')) {
+    return true;
+  }
+
+  return [
+    /if you want/,
+    /if you'd like/,
+    /wish to broaden/,
+    /let me know if/,
+    /let me know whether/,
+  ].some((pattern) => pattern.test(normalizedAnswer));
+}
+
+function matchesPermissionToBroadenAnswerRegex(answer) {
   if (!ENABLE_PERMISSION_TO_BROADER_DETECTION) {
     return false;
   }
@@ -1570,6 +1843,19 @@ function isPermissionToBroadenAnswer(answer) {
     /no grounded tool(?: path)?(?: is| was)? available/,
     /no grounded tool(?: path)?(?: is| was)? established/,
     /no relevant result(?: was found)?/,
+    /no evidence(?: about| of| on| for)?/,
+    /no evidence in the available resources/,
+    /no specific mention(?: of)?/,
+    /no mention(?: of)?/,
+    /does not mention/,
+    /is not mentioned/,
+    /not covered(?: here| in the available)?/,
+    /no information(?: about| on| for)?/,
+    /no details?(?: about| on| for)?/,
+    /no direct information(?: about| on| for)?/,
+    /nothing relevant(?: was found)?/,
+    /not enough information(?: was found)?/,
+    /available .* material/,
     /could not find/,
     /couldn't find/,
     /did not find/,
@@ -1579,29 +1865,56 @@ function isPermissionToBroadenAnswer(answer) {
   return asksPermission && mentionsBroadening && mentionsNoGroundedMatch;
 }
 
-function shouldOfferBroaderAnswerOption(toolInvocations, normalizedFollowUpSelection, answer) {
-  if (normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER) {
-    return false;
+async function isPermissionToBroadenAnswer({
+  toolInvocations,
+  normalizedFollowUpSelection,
+  answer,
+  openAIClient,
+  userMessage,
+  groundedResponseReviewSteps,
+}) {
+  if (!hasPermissionToBroadenQualifier(answer)) {
+    return {
+      matches: false,
+      source: null,
+    };
   }
 
-  if (Array.isArray(toolInvocations) && toolInvocations.length > 0) {
-    return !hasToolResults(toolInvocations);
+  if (Array.isArray(toolInvocations) && toolInvocations.length > 0 && !hasToolResults(toolInvocations)) {
+    return {
+      matches: true,
+      source: 'result_count',
+    };
   }
 
-  return isPermissionToBroadenAnswer(answer);
-}
-
-function buildFollowUpOptions(toolInvocations, normalizedFollowUpSelection, answer) {
-  if (!shouldOfferBroaderAnswerOption(toolInvocations, normalizedFollowUpSelection, answer)) {
-    return [];
+  if (matchesPermissionToBroadenAnswerRegex(answer)) {
+    return {
+      matches: true,
+      source: 'regex',
+    };
   }
 
-  return [
-    {
-      optionId: FOLLOW_UP_OPTION_BROADER_ANSWER,
-      label: getFollowUpOptionLabel(FOLLOW_UP_OPTION_BROADER_ANSWER),
-    },
-  ];
+  if (!ENABLE_PERMISSION_TO_BROADER_MODEL_REVIEW || !answer) {
+    return {
+      matches: false,
+      source: null,
+    };
+  }
+
+  const groundedResponseReview = await reviewGroundedResponse({
+    openAIClient,
+    userMessage,
+    assistantAnswer: answer,
+  });
+
+  if (Array.isArray(groundedResponseReviewSteps)) {
+    groundedResponseReviewSteps.push(groundedResponseReview.raw);
+  }
+
+  return {
+    matches: Boolean(groundedResponseReview.isRequestPermission),
+    source: groundedResponseReview.isRequestPermission ? 'model_review' : null,
+  };
 }
 
 function serializeDebugValue(value) {
@@ -2094,9 +2407,7 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
 
 export async function invokeTreeSearchAgent({ message, history = [], principal = null, followUpSelection = null }) {
   const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
-  const normalizedMessage = normalizedFollowUpSelection
-    ? buildFollowUpPrompt(normalizedFollowUpSelection)
-    : String(message ?? '').trim();
+  const normalizedMessage = String(message ?? '').trim();
 
   if (!normalizedMessage) {
     throw new Error('A message is required to invoke the agent');
@@ -2142,81 +2453,29 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
     });
     let finalResponse = response;
     let finalToolInvocations = [...toolInvocations];
-    let answer = extractAnswerText(finalResponse);
-    const noToolReviewSteps = [];
-
-    if (ENABLE_NO_TOOL_RESPONSE_REVIEW && !normalizedFollowUpSelection && finalToolInvocations.length === 0 && answer) {
-      const initialNoToolReview = await reviewNoToolResponse({
-        openAIClient,
-        userMessage: normalizedMessage,
-        assistantAnswer: answer,
-      });
-      noToolReviewSteps.push(initialNoToolReview.raw);
-
-      if (initialNoToolReview.classification === 'broad_knowledge') {
-        const correctionMessage = buildNoToolCorrectionMessage({
-          userMessage: normalizedMessage,
-          assistantAnswer: answer,
-        });
-
-        debug.curatedAgentInput.noToolCorrectionMessage = serializeDebugValue({
-          type: 'message',
-          role: 'user',
-          content: correctionMessage,
-        });
-
-        const correctedResponse = await createAgentResponse(openAIClient, agent.name, {
-          input: [
-            {
-              type: 'message',
-              role: 'user',
-              content: correctionMessage,
-            },
-          ],
-          previous_response_id: finalResponse.id,
-        });
-
-        const correctedRun = await runToolLoop({
-          response: correctedResponse,
-          openAIClient,
-          agentName: agent.name,
-          handlerMap,
-          debugRounds: debug.toolCalls,
-        });
-
-        finalResponse = correctedRun.response;
-        finalToolInvocations = correctedRun.toolInvocations;
-        answer = extractAnswerText(finalResponse);
-
-        if (finalToolInvocations.length === 0 && answer) {
-          const correctedNoToolReview = await reviewNoToolResponse({
-            openAIClient,
-            userMessage: normalizedMessage,
-            assistantAnswer: answer,
-          });
-          noToolReviewSteps.push(correctedNoToolReview.raw);
-
-          if (correctedNoToolReview.classification !== 'broad_knowledge') {
-            answer = correctedNoToolReview.answer;
-          }
-        }
-      } else {
-        answer = initialNoToolReview.answer;
-      }
-    }
+    const answer = extractAnswerText(finalResponse);
+    const groundedResponseReviewSteps = [];
+    const permissionToBroadenDetection = await isPermissionToBroadenAnswer({
+      toolInvocations: finalToolInvocations,
+      normalizedFollowUpSelection,
+      answer,
+      openAIClient,
+      userMessage: normalizedMessage,
+      groundedResponseReviewSteps,
+    });
 
     const citations = dedupeCitations(
       finalToolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
     );
-    const latestNoToolReview = noToolReviewSteps.length > 0 ? noToolReviewSteps.at(-1) : null;
-    const followUpOptions = latestNoToolReview?.classification === 'request_permission'
+    const followUpOptions = permissionToBroadenDetection.matches
       ? buildBroaderAnswerOption()
-      : buildFollowUpOptions(finalToolInvocations, normalizedFollowUpSelection, answer);
-    const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations, normalizedFollowUpSelection);
-    const turnType = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
+      : [];
+    const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations);
+    const priorToolInvocations = buildPriorToolInvocations(normalizedFollowUpSelection);
+    const staysInBroaderLane = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
+      && responseToolInvocations.length === 0;
+    const turnType = staysInBroaderLane
       ? TURN_TYPE_BROADER_ANSWER
-      : latestNoToolReview?.classification === 'clarification'
-        ? TURN_TYPE_DEFAULT
       : followUpOptions.length > 0
         ? TURN_TYPE_NO_RESULT_OFFER
         : TURN_TYPE_DEFAULT;
@@ -2237,7 +2496,8 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       response: buildResponseDebugSnapshot(finalResponse),
       answer,
       citations: serializeDebugValue(citations),
-      noToolReview: serializeDebugValue(noToolReviewSteps),
+      permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
+      groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
       error: finalResponse?.error ?? null,
     };
 
@@ -2250,6 +2510,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       },
       toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
       toolInvocations: responseToolInvocations,
+      priorToolInvocations,
       turnType,
       followUpOptions,
       citations,
