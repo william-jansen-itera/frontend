@@ -1,7 +1,19 @@
 {
   "routes": [
     {
-        "route": "/about",
+      "route": "/notes*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/trees*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/search*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/chat*",
         "allowedRoles": ["mdsusers"]
     }
   ],
