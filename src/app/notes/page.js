@@ -590,9 +590,16 @@ function NotesPage() {
         throw new Error(result.error || "Failed to upload attachments");
       }
 
-      setNodeEditorState(buildNodeEditorState(result));
-      setSavedNodeEditorState(buildNodeEditorState(result));
-      setIsEditingNotes(false);
+      const uploadedDetails = buildNodeEditorState(result);
+
+      setNodeEditorState((currentState) => ({
+        ...currentState,
+        attachments: uploadedDetails.attachments,
+      }));
+      setSavedNodeEditorState((currentState) => ({
+        ...currentState,
+        attachments: uploadedDetails.attachments,
+      }));
       setPendingFiles([]);
 
       if (attachmentInputRef.current) {
@@ -636,10 +643,16 @@ function NotesPage() {
         throw new Error(result.error || "Failed to delete attachment");
       }
 
-      const nextEditorState = buildNodeEditorState(result);
-      setNodeEditorState(nextEditorState);
-      setSavedNodeEditorState(nextEditorState);
-      setIsEditingNotes(false);
+      const refreshedDetails = buildNodeEditorState(result);
+
+      setNodeEditorState((currentState) => ({
+        ...currentState,
+        attachments: refreshedDetails.attachments,
+      }));
+      setSavedNodeEditorState((currentState) => ({
+        ...currentState,
+        attachments: refreshedDetails.attachments,
+      }));
     } catch (err) {
       console.error("Failed to delete attachment:", err);
       setNodeDetailsError(err.message);
@@ -918,7 +931,7 @@ function NotesPage() {
               }}
             >
               {({ node, style, dragHandle }) => {
-                const isSelected = String(node.data.id) === String(selectedNodeId) || node.isSelected;
+                const isSelected = String(node.data.id) === String(selectedNodeId);
 
                 return (
                   <div

@@ -46,6 +46,12 @@ export default function About() {
         </article>
 
         <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Knowledge growth</p>
+          <h2 className={styles.cardTitle}>Grounded locally, broadened deliberately</h2>
+          <p className={styles.cardText}>The Ask workflow distinguishes between answers grounded in local tree tools and answers produced from broader model knowledge. When a turn stays outside tool use, the application can keep that broader lane explicit; when a tool is invoked, the turn shifts back to grounded mode. That distinction is not only used for debugging. It also helps users turn broader answers into structured knowledge by adding refined leaf notes back into the correct tree, so external model knowledge can be reviewed, narrowed, and absorbed into a local domain over time.</p>
+        </article>
+
+        <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Extensibility</p>
           <h2 className={styles.cardTitle}>Add tools with their own domain knowledge</h2>
           <p className={styles.cardText}>The application is not limited to a fixed built-in prompt. As users introduce more domains of knowledge, the system adds the corresponding tools automatically. That lets the GPT model expand its grounded toolset over time and act less like a standalone generator and more like an orchestrator over explicit knowledge-bearing tools.</p>
