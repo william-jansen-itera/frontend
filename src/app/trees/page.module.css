@@ -1,6 +1,6 @@
 .pageShell {
   width: 100%;
-  padding: var(--page-shell-padding);
+  padding: 0 var(--page-shell-padding) var(--page-shell-padding);
   box-sizing: border-box;
 }
 

@@ -1777,26 +1777,6 @@ function hasToolResults(toolInvocations) {
     && toolInvocations.some((invocation) => Number(invocation?.output?.count ?? 0) > 0);
 }
 
-function hasPermissionToBroadenQualifier(answer) {
-  const normalizedAnswer = normalizeWhitespace(answer).toLowerCase();
-
-  if (!normalizedAnswer) {
-    return false;
-  }
-
-  if (normalizedAnswer.includes('?')) {
-    return true;
-  }
-
-  return [
-    /if you want/,
-    /if you'd like/,
-    /wish to broaden/,
-    /let me know if/,
-    /let me know whether/,
-  ].some((pattern) => pattern.test(normalizedAnswer));
-}
-
 function matchesPermissionToBroadenAnswerRegex(answer) {
   if (!ENABLE_PERMISSION_TO_BROADER_DETECTION) {
     return false;
@@ -1815,9 +1795,12 @@ function matchesPermissionToBroadenAnswerRegex(answer) {
     /should i/,
     /shall i/,
     /if you want/,
+    /if you need more detail/,
+    /if you would like/,
     /let me know if you'd like/,
     /let me know whether you'd like/,
     /let me know if you want/,
+    /please let me know/,
   ].some((pattern) => pattern.test(normalizedAnswer));
   const mentionsBroadening = [
     /broader search/,
@@ -1828,8 +1811,14 @@ function matchesPermissionToBroadenAnswerRegex(answer) {
     /broaden(?: the)? search/,
     /broaden(?: your)? search scope/,
     /broaden(?: the)? scope/,
+    /broaden the search to sources outside/,
     /search more broadly/,
     /answer more broadly/,
+    /expand(?: the)? search/,
+    /expand(?: the)? scope/,
+    /sources outside/,
+    /outside (?:the|this) .* domain/,
+    /outside .* domain/,
     /switch to background knowledge/,
     /switch to a general background explanation/,
     /provide a general background explanation/,
@@ -1862,7 +1851,7 @@ function matchesPermissionToBroadenAnswerRegex(answer) {
     /no tool found/,
   ].some((pattern) => pattern.test(normalizedAnswer));
 
-  return asksPermission && mentionsBroadening && mentionsNoGroundedMatch;
+  return asksPermission && mentionsBroadening && (mentionsNoGroundedMatch || mentionsBroadening);
 }
 
 async function isPermissionToBroadenAnswer({
@@ -1873,13 +1862,6 @@ async function isPermissionToBroadenAnswer({
   userMessage,
   groundedResponseReviewSteps,
 }) {
-  if (!hasPermissionToBroadenQualifier(answer)) {
-    return {
-      matches: false,
-      source: null,
-    };
-  }
-
   if (Array.isArray(toolInvocations) && toolInvocations.length > 0 && !hasToolResults(toolInvocations)) {
     return {
       matches: true,

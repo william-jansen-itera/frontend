@@ -43,7 +43,7 @@ export default function Home() {
   }, []);
 
   return (
-    <main className={styles.pageShell}>
+    <main className={`${styles.pageShell} appPageShell`}>
       <section className={styles.heroCard}>
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>Knowledge App</p>

@@ -747,7 +747,7 @@ export default function ChatPageClient({ includeDebug }) {
   }
 
   return (
-    <main className={styles.pageShell}>
+    <main className={`${styles.pageShell} appPageShell`}>
       <section className={`${styles.workspaceGrid} ${!includeDebug ? styles.workspaceGridSingle : ""}`}>
         <div className={styles.chatColumnSurface}>
           <section className={styles.heroCard}>
@@ -852,7 +852,7 @@ export default function ChatPageClient({ includeDebug }) {
                         </div>
                       ) : null}
 
-                      <div className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
+                      <div className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""} ${turn.isPending ? styles.messageBubbleAgentThinking : ""}`}>
                         <div className={styles.messageHeaderRow}>
                           <p className={styles.messageLabel}>Agent</p>
                           {toolBadgeState.addTargets.map((target) => (
@@ -867,7 +867,7 @@ export default function ChatPageClient({ includeDebug }) {
                             </button>
                           ))}
                         </div>
-                        <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>
+                        <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""} ${turn.isPending ? styles.messageTextThinking : ""}`}>
                           {turn.isPending ? "Waiting for response..." : turn.error ? turn.error : turn.answer || "No answer returned."}
                         </p>
                         {addActionState?.turnId === turn.id ? (

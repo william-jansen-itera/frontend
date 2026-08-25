@@ -1,7 +1,3 @@
-.pageShell {
-  padding: var(--page-shell-padding);
-}
-
 .heroCard {
   max-width: var(--page-content-width);
   margin: 0 auto 1.5rem;
@@ -125,8 +121,3 @@
   }
 }
 
-@media (max-width: 720px) {
-  .pageShell {
-    padding: 1rem;
-  }
-}

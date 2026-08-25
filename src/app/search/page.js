@@ -304,7 +304,7 @@ function SearchPageContent() {
   };
 
   return (
-    <main className={styles.pageShell}>
+    <main className={`${styles.pageShell} appPageShell`}>
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className={styles.heroCopy}>
           <p className={styles.description}>

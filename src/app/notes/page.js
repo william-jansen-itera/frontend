@@ -783,7 +783,7 @@ function NotesPage() {
     <div
       ref={pageContainerRef}
       style={pageContainerStyle}
-      className={styles.pageShell}
+      className={`${styles.pageShell} appPageShell`}
     >
       <div
         className={styles.panelGrid}

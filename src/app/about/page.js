@@ -3,7 +3,7 @@ import styles from "./page.module.css";
 
 export default function About() {
   return (
-    <main className={styles.pageShell}>
+    <main className="appPageShell">
       <section className={styles.heroCard}>
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>About</p>
