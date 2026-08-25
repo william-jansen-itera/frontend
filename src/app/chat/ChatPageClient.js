@@ -330,7 +330,7 @@ function TurnDebugPanel({ turn }) {
     <div className={styles.debugSections}>
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className={styles.sectionEyebrow}>1. User Query</p>
+          <p className="appSectionEyebrow">1. User Query</p>
           <h2 className={styles.sectionTitle}>Conversation input</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(debugUserQuery)}</pre>
@@ -338,7 +338,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className={styles.sectionEyebrow}>2. Tool Calls</p>
+          <p className="appSectionEyebrow">2. Tool Calls</p>
           <h2 className={styles.sectionTitle}>{toolCalls.length} invocation{toolCalls.length === 1 ? "" : "s"}</h2>
         </div>
         {toolCalls.length === 0 ? (
@@ -395,7 +395,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className={styles.sectionEyebrow}>3. Curated Agent Input</p>
+          <p className="appSectionEyebrow">3. Curated Agent Input</p>
           <h2 className={styles.sectionTitle}>Messages passed back to the model</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.curatedAgentInput)}</pre>
@@ -403,7 +403,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className={styles.sectionEyebrow}>4. Agent Output</p>
+          <p className="appSectionEyebrow">4. Agent Output</p>
           <h2 className={styles.sectionTitle}>Model response and answer</h2>
         </div>
         {permissionToBroadenSource ? (
@@ -752,7 +752,7 @@ export default function ChatPageClient({ includeDebug }) {
         <div className={styles.chatColumnSurface}>
           <section className={styles.heroCard}>
             <div className={`appPanelTopBar ${styles.promptPanelHeader}`}>
-              <p className={styles.panelEyebrow}>Prompt</p>
+              <p className="appEyebrow">Prompt</p>
               {isPromptInOptionMode ? null : (
                 <button
                   type="submit"
@@ -919,7 +919,7 @@ export default function ChatPageClient({ includeDebug }) {
           <aside className={`appPanelShell ${styles.debugPanel} ${isDebugCompactState ? styles.debugPanelEmpty : ""}`}>
             <div className={`appPanelTopBar ${styles.panelHeader}`}>
               <div>
-                <p className={styles.panelEyebrow}>Turn inspector</p>
+                <p className="appEyebrow">Turn inspector</p>
               </div>
             </div>
             <div className={`${styles.debugBody} ${isDebugCompactState ? styles.debugBodyEmpty : ""}`}>

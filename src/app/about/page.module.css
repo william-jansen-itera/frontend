@@ -10,12 +10,6 @@
   backdrop-filter: blur(14px);
 }
 
-.heroCopy {
-  display: grid;
-  gap: var(--hero-copy-gap);
-}
-
-.eyebrow,
 .cardEyebrow {
   margin: 0;
   color: var(--ui-eyebrow-color);
@@ -25,7 +19,6 @@
   text-transform: uppercase;
 }
 
-.title,
 .cardTitle {
   margin: 0;
   color: var(--ui-title-color);
@@ -33,12 +26,9 @@
 }
 
 .title {
-  font-size: var(--ui-title-size);
-  line-height: var(--ui-title-line-height);
   max-width: 980px;
 }
 
-.description,
 .cardText {
   margin: 0;
   color: var(--ui-body-color);

@@ -45,10 +45,10 @@ export default function Home() {
   return (
     <main className={`${styles.pageShell} appPageShell`}>
       <section className={styles.heroCard}>
-        <div className={styles.heroCopy}>
-          <p className={styles.eyebrow}>Knowledge App</p>
-          <h1 className={styles.title}>Work with trees, notes, search, and grounded answers in one place.</h1>
-          <p className={styles.description}>
+        <div className="appHeroCopy">
+          <p className="appEyebrow">Knowledge App</p>
+          <h1 className={`${styles.title} appPageTitle`}>Work with trees, notes, search, and grounded answers in one place.</h1>
+          <p className="appPageDescription">
             Use Notes to curate the tree structure, Search to inspect indexed content, and Agent to see how the agent grounds an answer in the underlying material.
           </p>
         </div>

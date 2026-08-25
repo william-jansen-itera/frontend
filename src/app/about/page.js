@@ -5,10 +5,10 @@ export default function About() {
   return (
     <main className="appPageShell">
       <section className={styles.heroCard}>
-        <div className={styles.heroCopy}>
-          <p className={styles.eyebrow}>About</p>
-          <h1 className={styles.title}>A technical workspace for tree-scoped retrieval, routing, and grounded answers.</h1>
-          <p className={styles.description}>
+        <div className="appHeroCopy">
+          <p className="appEyebrow">About</p>
+          <h1 className={`${styles.title} appPageTitle`}>A technical workspace for tree-scoped retrieval, routing, and grounded answers.</h1>
+          <p className="appPageDescription">
             The solution combines a tree-based authoring surface with Azure Search, Foundry-hosted model calls, and traceable chat orchestration so content can move from structured source material to inspectable answers without leaving the same application boundary.
           </p>
         </div>

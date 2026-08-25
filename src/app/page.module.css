@@ -11,12 +11,6 @@
   gap: var(--hero-gap);
 }
 
-.heroCopy {
-  display: grid;
-  gap: var(--hero-copy-gap);
-}
-
-.eyebrow,
 .cardEyebrow,
 .statusLabel {
   margin: 0;
@@ -28,15 +22,9 @@
 }
 
 .title {
-  margin: 0;
-  color: var(--ui-title-color);
-  font-size: var(--ui-title-size);
-  line-height: var(--ui-title-line-height);
-  font-weight: var(--ui-title-weight);
   max-width: 980px;
 }
 
-.description,
 .cardDescription,
 .statusValue {
   margin: 0;

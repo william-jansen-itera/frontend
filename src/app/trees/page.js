@@ -497,15 +497,15 @@ export default function TreesPage() {
   return (
     <main className={`${styles.pageShell} appPageShell`}>
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
-        <div className={styles.heroCopy}>
-          <p className={styles.description}>
+        <div className="appHeroCopy">
+          <p className={`${styles.description} appPageDescription`}>
             Create new trees, rename existing titles, and remove trees that should no longer be part of this application instance.
           </p>
         </div>
 
         <form onSubmit={handleCreateTree} className={styles.createForm}>
           <label className={styles.createField}>
-            <span className={`${styles.heroFieldLabel} appFieldLabel`}>New tree name</span>
+            <span className="appFieldLabel">New tree name</span>
             <input
               type="text"
               value={newTreeName}
@@ -527,7 +527,7 @@ export default function TreesPage() {
       <section className={`appTopLevelPanel ${styles.listPanel}`}>
         <div className={`appPanelTopBar ${styles.listToolbar}`}>
           <div>
-            <p className={styles.sectionEyebrow}>Current trees</p>
+            <p className="appSectionEyebrow">Current trees</p>
             <h2 className={styles.sectionTitle}>{trees.length} tree{trees.length === 1 ? "" : "s"}</h2>
             <p className={styles.syncHint}>
               Trees without a saved description are not published to the agent.

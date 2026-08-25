@@ -27,33 +27,12 @@
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
-.heroCopy {
-  display: grid;
-  gap: var(--hero-copy-gap);
-}
-
 .eyebrow,
-.panelEyebrow,
 .fieldLabel,
 .toolLabel {
   margin: 0;
   color: var(--ui-eyebrow-color);
   font-size: var(--ui-eyebrow-size);
-}
-
-.panelEyebrow {
-  font-weight: var(--ui-eyebrow-weight);
-  letter-spacing: var(--ui-eyebrow-spacing);
-  text-transform: uppercase;
-}
-
-.sectionEyebrow {
-  margin: 0;
-  color: #64748b;
-  font-size: var(--ui-eyebrow-size);
-  font-weight: var(--ui-eyebrow-weight);
-  letter-spacing: var(--ui-eyebrow-spacing);
-  text-transform: uppercase;
 }
 
 .messageLabel {

@@ -106,7 +106,7 @@ body {
 
 .appNav {
   max-width: var(--page-content-width);
-  margin: 0 auto 1.5rem;
+  margin: 0 auto 1.4rem;
   padding: 1rem 1.25rem;
   border: var(--surface-border);
   border-radius: var(--surface-radius-panel);
@@ -147,6 +147,44 @@ body {
   font-weight: var(--ui-secondary-label-weight);
   letter-spacing: var(--ui-eyebrow-spacing);
   text-transform: uppercase;
+}
+
+.appHeroCopy {
+  display: grid;
+  gap: var(--hero-copy-gap);
+}
+
+.appEyebrow {
+  margin: 0;
+  color: var(--ui-eyebrow-color);
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
+}
+
+.appSectionEyebrow {
+  margin: 0;
+  color: #64748b;
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
+}
+
+.appPageTitle {
+  margin: 0;
+  color: var(--ui-title-color);
+  font-size: var(--ui-title-size);
+  line-height: var(--ui-title-line-height);
+  font-weight: var(--ui-title-weight);
+}
+
+.appPageDescription {
+  margin: 0;
+  color: var(--ui-body-color);
+  font-size: var(--ui-body-size);
+  line-height: var(--ui-body-line-height);
 }
 
 .appTextControl,
@@ -330,6 +368,7 @@ body {
 
 @media (max-width: 900px) {
   .appNav {
+    margin-bottom: 1.5rem;
     align-items: flex-start;
     flex-direction: column;
   }
@@ -341,8 +380,12 @@ body {
 }
 
 @media (max-width: 720px) {
+  .appNav {
+    margin-bottom: 1.28rem;
+  }
+
   .appPageShell {
-    padding: 1rem;
+    padding: 0.15rem 1rem 1rem;
   }
 
   .appChrome {

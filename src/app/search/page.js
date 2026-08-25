@@ -306,15 +306,15 @@ function SearchPageContent() {
   return (
     <main className={`${styles.pageShell} appPageShell`}>
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
-        <div className={styles.heroCopy}>
-          <p className={styles.description}>
+        <div className="appHeroCopy">
+          <p className={`${styles.description} appPageDescription`}>
             Search notes and attachments across your accessible trees, then jump directly to the matching node path.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.searchForm}>
           <label className={styles.searchField}>
-            <span className={`${styles.heroFieldLabel} appFieldLabel`}>Search</span>
+            <span className="appFieldLabel">Search</span>
             <input
               key={queryParam}
               ref={queryInputRef}
@@ -326,7 +326,7 @@ function SearchPageContent() {
           </label>
 
           <label className={styles.filterField}>
-            <span className={`${styles.heroFieldLabel} appFieldLabel`}>Tree</span>
+            <span className="appFieldLabel">Tree</span>
             <select
               value={treeIdParam}
               onChange={handleTreeChange}
