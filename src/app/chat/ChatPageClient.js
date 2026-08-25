@@ -747,7 +747,7 @@ export default function ChatPageClient({ includeDebug }) {
   }
 
   return (
-    <main className={`${styles.pageShell} appPageShell`}>
+    <main className="appPageShell">
       <section className={`${styles.workspaceGrid} ${!includeDebug ? styles.workspaceGridSingle : ""}`}>
         <div className={styles.chatColumnSurface}>
           <section className={styles.heroCard}>

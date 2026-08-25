@@ -98,7 +98,7 @@ body {
 }
 
 .appChrome {
-  padding: 1rem var(--page-shell-padding) 0;
+  padding: 0 var(--page-shell-padding) 0;
 }
 .appPageShell {
   padding: 0 var(--page-shell-padding) var(--page-shell-padding);
@@ -109,7 +109,7 @@ body {
   margin: 0 auto 1.4rem;
   padding: 1rem 1.25rem;
   border: var(--surface-border);
-  border-radius: var(--surface-radius-panel);
+  border-radius: 0 0 var(--surface-radius-panel) var(--surface-radius-panel);
   background: rgba(255, 255, 255, 0.82);
   box-shadow: var(--surface-card-shadow-panel);
   backdrop-filter: blur(14px);
@@ -389,6 +389,6 @@ body {
   }
 
   .appChrome {
-    padding: 1rem 1rem 0;
+    padding: 0 1rem 0;
   }
 }

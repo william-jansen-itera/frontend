@@ -1,6 +1,5 @@
-.pageShell {
+.notesPageShell {
   width: 100%;
-  padding: 0 var(--page-shell-padding) var(--page-shell-padding);
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -19,8 +18,6 @@
   flex-direction: column;
   box-sizing: border-box;
 }
-
-.panelHeader {}
 
 .panelHeading {
   color: var(--ui-eyebrow-color);
@@ -263,10 +260,6 @@
 @media (max-width: 960px) {
   .panelGrid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .pageShell {
-    padding: 1rem;
   }
 
   .attachmentItem {

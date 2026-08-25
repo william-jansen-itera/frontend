@@ -735,10 +735,6 @@
 }
 
 @media (max-width: 720px) {
-  .pageShell {
-    padding: 1rem;
-  }
-
   .chatColumnSurface,
   .debugPanel {
     border-radius: var(--surface-radius-empty);
