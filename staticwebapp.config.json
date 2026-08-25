@@ -1,22 +1,22 @@
 {
-  // "routes": [
-  //   {
-  //     "route": "/notes*",
-  //     "allowedRoles": ["mdsusers"]
-  //   },
-  //   {
-  //     "route": "/trees*",
-  //     "allowedRoles": ["mdsusers"]
-  //   },
-  //   {
-  //     "route": "/search*",
-  //     "allowedRoles": ["mdsusers"]
-  //   },
-  //   {
-  //     "route": "/chat*",
-  //       "allowedRoles": ["mdsusers"]
-  //   }
-  // ],
+  "routes": [
+    {
+      "route": "/notes*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/trees*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/search*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/chat*",
+        "allowedRoles": ["mdsusers"]
+    }
+  ],
   "responseOverrides": {
     "401": {
       "statusCode": 302,
