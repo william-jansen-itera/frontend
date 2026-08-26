@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { generateTreeNodesFromDescription } from '@/server/utils/chatService';
-import { appendGeneratedNodesToTree, getTreeForPopulation, getTreeList } from '@/server/utils/treeCatalog';
+import { parseClientPrincipal } from '@/server/utils/auth';
+import { appendGeneratedNodesToTree, assertTreeAccess, getTreeForPopulation, getTreeList } from '@/server/utils/treeCatalog';
 
 function parseTreeId(value) {
   const parsedValue = Number.parseInt(String(value ?? ''), 10);
@@ -16,12 +17,25 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     const parsedTreeId = parseTreeId(payload?.treeId);
+    const principal = parseClientPrincipal(request);
+    const visibility = String(payload?.visibility ?? '').trim() || 'public';
 
     if (!parsedTreeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
     }
 
-    const tree = await getTreeForPopulation(parsedTreeId);
+    await assertTreeAccess(parsedTreeId, {
+      principal,
+      visibility,
+      requireWriteAccess: true,
+    });
+
+    const tree = await getTreeForPopulation(parsedTreeId, {
+      principal,
+      visibility,
+      enforceAccess: true,
+      requireWriteAccess: true,
+    });
 
     if (!tree.description.trim()) {
       return NextResponse.json({ error: 'A saved description is required before populating a tree' }, { status: 400 });
@@ -32,7 +46,7 @@ export async function POST(request) {
       treeId: parsedTreeId,
       generatedNodes: generated.nodes,
     });
-    const trees = await getTreeList();
+    const trees = await getTreeList({ principal, visibility, enforceAccess: true });
     const updatedTree = trees.find((entry) => String(entry.id) === String(parsedTreeId)) ?? tree;
 
     return NextResponse.json({

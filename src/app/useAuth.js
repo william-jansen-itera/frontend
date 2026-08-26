@@ -1,21 +1,40 @@
 "use client";
 import { useEffect, useState } from "react";
-import { normalizeClientPrincipal } from "@/shared/clientPrincipal";
+import {
+  createLocalDevelopmentPrincipal,
+  isLocalDevelopmentHost,
+  normalizeClientPrincipal,
+} from "@/shared/clientPrincipal";
 
 export function useAuth() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    if (isLocal) {
-      return;
-    }
+    let isCancelled = false;
+
     async function getUser() {
+      const isLocal = typeof window !== 'undefined' && isLocalDevelopmentHost(window.location.hostname);
+
+      if (isLocal) {
+        if (!isCancelled) {
+          setUser(normalizeClientPrincipal(createLocalDevelopmentPrincipal()));
+        }
+        return;
+      }
+
       const res = await fetch("/.auth/me");
       const data = await res.json();
-      setUser(normalizeClientPrincipal(data.clientPrincipal));
+
+      if (!isCancelled) {
+        setUser(normalizeClientPrincipal(data.clientPrincipal));
+      }
     }
+
     getUser();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   function signIn() {

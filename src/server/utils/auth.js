@@ -1,4 +1,8 @@
-import { normalizeClientPrincipal } from '@/shared/clientPrincipal';
+import {
+  createLocalDevelopmentPrincipal,
+  isLocalDevelopmentHost,
+  normalizeClientPrincipal,
+} from '@/shared/clientPrincipal';
 
 function decodeBase64Json(value) {
   if (!value) {
@@ -14,7 +18,19 @@ function decodeBase64Json(value) {
 
 export function parseClientPrincipal(request) {
   const encodedPrincipal = request.headers.get('x-ms-client-principal');
-  return decodeBase64Json(encodedPrincipal);
+  const decodedPrincipal = decodeBase64Json(encodedPrincipal);
+
+  if (decodedPrincipal) {
+    return decodedPrincipal;
+  }
+
+  const requestUrl = request?.url ? new URL(request.url) : null;
+
+  if (isLocalDevelopmentHost(requestUrl?.hostname)) {
+    return createLocalDevelopmentPrincipal();
+  }
+
+  return null;
 }
 
 export function getRelevantPrincipalDetails(principal) {

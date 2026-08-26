@@ -1450,8 +1450,8 @@ function applyGeneratedDescriptionToTree(tree, parsedResponse, aiInput) {
   return generatedDescription;
 }
 
-export async function generateTreeDescriptionDraft(treeId) {
-  const tree = await getTreeRoutingProfile(treeId);
+export async function generateTreeDescriptionDraft(treeId, options = {}) {
+  const tree = await getTreeRoutingProfile(treeId, options);
   applyDescriptionDraftDefaults(tree);
 
   try {
@@ -1541,6 +1541,21 @@ function buildAgentInstructions() {
     'Do not force every ocrText or imageDescriptionFiltered fragment into the answer, and do not add unsupported facts when rewriting noisy text.',
     'Do not invent documents, notes, filenames, or paths that were not returned by the tools.',
   ].join('\n\n');
+}
+
+function buildAllowedToolInstruction(includedTrees) {
+  const allowedToolNames = includedTrees
+    .map((tree) => buildToolName(tree))
+    .filter(Boolean);
+
+  if (allowedToolNames.length === 0) {
+    return null;
+  }
+
+  return [
+    'For this request, you may only use the following tools if they clearly apply:',
+    allowedToolNames.map((toolName) => `- ${toolName}`).join('\n'),
+  ].join('\n');
 }
 
 
@@ -1967,10 +1982,15 @@ function isNotFoundError(error) {
   return statusCode === 404 || String(error?.message || '').includes('404');
 }
 
-async function buildTreeSearchContext() {
+async function buildTreeSearchContext(options = {}) {
+  const accessOptions = {
+    principal: options.principal ?? null,
+    visibility: options.visibility ?? 'both',
+    enforceAccess: Boolean(options.enforceAccess),
+  };
   const [treeList, allowedTreeIds] = await Promise.all([
-    getTreeRoutingProfiles(),
-    getAllowedTreeIds(),
+    getTreeRoutingProfiles(accessOptions),
+    getAllowedTreeIds(accessOptions),
   ]);
   const allowedSet = new Set(allowedTreeIds.map((treeId) => String(treeId)));
   const availableTrees = treeList
@@ -2387,7 +2407,7 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
   throw new Error('The agent exceeded the maximum number of tool rounds');
 }
 
-export async function invokeTreeSearchAgent({ message, history = [], principal = null, followUpSelection = null }) {
+export async function invokeTreeSearchAgent({ message, history = [], principal = null, visibility = 'public', followUpSelection = null }) {
   const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
   const normalizedMessage = String(message ?? '').trim();
 
@@ -2398,9 +2418,21 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const agent = await getHostedAgent();
-  const { handlerMap } = await buildTreeSearchContext();
+  const { handlerMap, includedTrees } = await buildTreeSearchContext({
+    principal,
+    visibility,
+    enforceAccess: true,
+  });
   const normalizedHistory = normalizeHistory(history);
+  const allowedToolInstruction = buildAllowedToolInstruction(includedTrees);
   const initialInput = [
+    ...(allowedToolInstruction
+      ? [{
+        type: 'message',
+        role: 'system',
+        content: allowedToolInstruction,
+      }]
+      : []),
     ...normalizedHistory,
     {
       type: 'message',

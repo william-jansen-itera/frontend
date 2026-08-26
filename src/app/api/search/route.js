@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { DEFAULT_SEARCH_PAGE_TOP, searchTreeContent } from '@/server/utils/azureSearch';
+import { parseClientPrincipal } from '@/server/utils/auth';
 import { getAllowedTreeIds } from '@/server/utils/treeCatalog';
 
 function parseBooleanSetting(value, fallbackValue) {
@@ -31,6 +32,7 @@ export async function GET(request) {
   const query = searchParams.get('q') ?? '';
   const treeId = searchParams.get('treeId') ?? '';
   const top = searchParams.get('top') ?? undefined;
+  const visibility = searchParams.get('visibility') ?? 'both';
   const includeDebug = getDefaultIncludeDebug();
 
   if (!query.trim()) {
@@ -41,7 +43,11 @@ export async function GET(request) {
   }
 
   try {
-    const allowedTreeIds = await getAllowedTreeIds();
+    const allowedTreeIds = await getAllowedTreeIds({
+      principal: parseClientPrincipal(request),
+      visibility,
+      enforceAccess: true,
+    });
 
     if (allowedTreeIds.length === 0) {
       return NextResponse.json({

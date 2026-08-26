@@ -87,7 +87,9 @@ function NotesPage() {
   const searchParams = useSearchParams();
   const treeIdParam = searchParams.get("treeId");
   const nodeIdParam = searchParams.get("nodeId");
+  const visibilityParam = searchParams.get("visibility") ?? "public";
   const [availableTrees, setAvailableTrees] = useState([]);
+  const [loadedVisibility, setLoadedVisibility] = useState(null);
   const [treeData, setTreeData] = useState([]);
   const [expandedState, setExpandedState] = useState({});
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -114,6 +116,11 @@ function NotesPage() {
   const canEditLeafDetails = Boolean(selectedNode?.isLeafNode);
   const canGenerateNotes = Boolean(selectedNode?.isLeafNode);
   const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null;
+  const isLoadingTrees = loadedVisibility !== visibilityParam;
+
+  const visibilityQueryParam = visibilityParam === "public"
+    ? ""
+    : `&visibility=${encodeURIComponent(visibilityParam)}`;
 
   const applyTreeResponse = (flatData, targetSelectedNodeId = null) => {
     if (!Array.isArray(flatData)) {
@@ -162,9 +169,15 @@ function NotesPage() {
   };
   // Fetch the list of available trees on mount
   useEffect(() => {
-    fetch("/api/notes")
+    let isCancelled = false;
+
+    fetch(`/api/notes?visibility=${encodeURIComponent(visibilityParam)}`)
       .then((res) => res.json())
       .then((trees) => {
+        if (isCancelled) {
+          return;
+        }
+
         if (Array.isArray(trees)) {
           setAvailableTrees(trees);
           setError(null);
@@ -189,8 +202,14 @@ function NotesPage() {
           setIsEditingNotes(false);
           setError(trees.error || "Unknown error, data is not array");
         }
+
+        setLoadedVisibility(visibilityParam);
       })
       .catch((err) => {
+        if (isCancelled) {
+          return;
+        }
+
         console.error("Tree list error:", err);
         setAvailableTrees([]);
         setTreeData([]);
@@ -201,12 +220,25 @@ function NotesPage() {
         setSavedNodeEditorState(nextEditorState);
         setIsEditingNotes(false);
         setError(err.message);
+        setLoadedVisibility(visibilityParam);
       });
-  }, []);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [visibilityParam]);
 
   // Ensure the selected treeId is valid and update the URL if not to the first available treeId
   useEffect(() => {
+    if (isLoadingTrees) {
+      return;
+    }
+
     if (availableTrees.length === 0) {
+      if (treeIdParam) {
+        router.replace(getTreeSelectionHref(pathname, searchParams.toString(), null, visibilityParam), { scroll: false });
+      }
+
       return;
     }
 
@@ -216,17 +248,22 @@ function NotesPage() {
     const nextTreeId = requestedTreeExists ? String(treeIdParam) : String(availableTrees[0].id);
 
     if (String(treeIdParam) !== nextTreeId) {
-      router.replace(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId), { scroll: false });
+      router.replace(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam), { scroll: false });
     }
-  }, [availableTrees, treeIdParam, pathname, router, searchParams]);
+  }, [availableTrees, isLoadingTrees, treeIdParam, pathname, router, searchParams, visibilityParam]);
 
   // Fetch the tree data when the selected treeId changes
   useEffect(() => {
-    if (!treeIdParam) {
+    if (!treeIdParam || isLoadingTrees) {
       return;
     }
 
-    fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}`)
+    const requestedTreeExists = availableTrees.some((tree) => String(tree.id) === String(treeIdParam));
+    if (!requestedTreeExists) {
+      return;
+    }
+
+    fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&visibility=${encodeURIComponent(visibilityParam)}`)
       .then((res) => res.json())
       .then((flatData) => {
         if (Array.isArray(flatData)) {
@@ -275,7 +312,7 @@ function NotesPage() {
         setIsEditingNotes(false);
         setError(err.message);
       });
-  }, [treeIdParam, nodeIdParam]);
+  }, [availableTrees, isLoadingTrees, treeIdParam, nodeIdParam, visibilityParam]);
 
   // Fetch the details of the selected node when selectedNodeId changes
   useEffect(() => {
@@ -289,7 +326,7 @@ function NotesPage() {
 
     let isCancelled = false;
 
-    fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&include=details&id=${encodeURIComponent(selectedNodeId)}`)
+    fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&include=details&id=${encodeURIComponent(selectedNodeId)}&visibility=${encodeURIComponent(visibilityParam)}`)
       .then((res) => res.json().then((result) => ({ ok: res.ok, result })))
       .then(({ ok, result }) => {
         if (isCancelled) {
@@ -319,7 +356,7 @@ function NotesPage() {
     return () => {
       isCancelled = true;
     };
-  }, [treeIdParam, selectedNodeId, selectedNode]);
+  }, [treeIdParam, selectedNodeId, selectedNode, visibilityParam]);
 
   // Apply the expanded state to the tree when treeData or expandedState changes
   useEffect(() => {
@@ -497,7 +534,7 @@ function NotesPage() {
     }
 
     try {
-      const response = await fetch(`/api/notes?id=${selectedNode.id}&treeId=${treeIdParam}`, {
+      const response = await fetch(`/api/notes?id=${selectedNode.id}&treeId=${treeIdParam}${visibilityQueryParam}`, {
         method: "DELETE",
       });
       const flatData = await response.json();
@@ -632,7 +669,7 @@ function NotesPage() {
       setNodeDetailsError(null);
 
       const response = await fetch(
-        `/api/notes?treeId=${encodeURIComponent(treeIdParam)}&attachmentId=${encodeURIComponent(attachmentId)}`,
+        `/api/notes?treeId=${encodeURIComponent(treeIdParam)}&attachmentId=${encodeURIComponent(attachmentId)}&visibility=${encodeURIComponent(visibilityParam)}`,
         {
           method: "DELETE",
         },
@@ -762,7 +799,7 @@ function NotesPage() {
     setIsEditingNotes(false);
   };
 
-  if (error) {
+  if (error && !isLoadingTrees) {
     return <div className={styles.errorMessage}>Error: {error}</div>;
   }
 
@@ -802,7 +839,7 @@ function NotesPage() {
                   onChange={(event) => {
                     resetTreeSelectionState();
                     router.replace(
-                      getTreeSelectionHref(pathname, searchParams.toString(), event.target.value || null),
+                      getTreeSelectionHref(pathname, searchParams.toString(), event.target.value || null, visibilityParam),
                       { scroll: false },
                     );
                   }}
@@ -817,6 +854,22 @@ function NotesPage() {
                       </option>
                     ))
                   )}
+                </select>
+              </label>
+              <label className={styles.toolbarLabel}>
+                <select
+                  value={visibilityParam}
+                  onChange={(event) => {
+                    setError(null);
+                    resetTreeSelectionState();
+                    router.replace(
+                      getTreeSelectionHref(pathname, searchParams.toString(), null, event.target.value),
+                      { scroll: false },
+                    );
+                  }}
+                >
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
                 </select>
               </label>
               <button

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { deleteNodeAttachmentBlobIfExists } from '@/server/utils/blobStorage';
+import { normalizeClientPrincipal } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 
 const MAX_NON_LEAF_TITLES = 64;
@@ -7,6 +8,9 @@ const MAX_LEAF_TITLE_EXEMPLARS = 48;
 const MAX_BREADCRUMB_EXEMPLARS = 48;
 const MAX_ATTACHMENT_FILE_NAME_EXEMPLARS = 32;
 const DEFAULT_TREE_MAX_DEPTH = '3';
+const TREE_VISIBILITY_PUBLIC = 'public';
+const TREE_VISIBILITY_PRIVATE = 'private';
+const TREE_VISIBILITY_BOTH = 'both';
 
 function normalizeTreeName(name) {
   return String(name ?? '').trim();
@@ -45,7 +49,91 @@ async function getScopedApplicationInstanceId() {
   return Number(applicationInstanceId);
 }
 
-async function assertScopedTree(treeId) {
+function normalizeAccessPrincipal(principal) {
+  return normalizeClientPrincipal(principal);
+}
+
+function getPrincipalOwnerObjectId(principal) {
+  const normalizedPrincipal = normalizeAccessPrincipal(principal);
+  const ownerObjectId = String(normalizedPrincipal?.objectId ?? normalizedPrincipal?.userId ?? '').trim();
+
+  return ownerObjectId || null;
+}
+
+function getOwnerMetadata(principal) {
+  const normalizedPrincipal = normalizeAccessPrincipal(principal);
+
+  return {
+    ownerObjectId: getPrincipalOwnerObjectId(normalizedPrincipal),
+    ownerUserDetails: String(normalizedPrincipal?.userDetails ?? '').trim() || null,
+    ownerDisplayName: String(normalizedPrincipal?.displayName ?? '').trim() || null,
+  };
+}
+
+function normalizeVisibilityFilter(value, defaultValue = TREE_VISIBILITY_BOTH) {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+
+  if (normalizedValue === TREE_VISIBILITY_PUBLIC || normalizedValue === TREE_VISIBILITY_PRIVATE || normalizedValue === TREE_VISIBILITY_BOTH) {
+    return normalizedValue;
+  }
+
+  return defaultValue;
+}
+
+function mapTreeRecord(row) {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? row.displayName ?? '').trim() || `Tree ${row.id}`,
+    displayName: String(row.displayName ?? row.name ?? '').trim() || `Tree ${row.id}`,
+    description: normalizeTreeDescription(row.description),
+    isDescriptionPublished: Boolean(row.isDescriptionPublished),
+    isPrivate: Boolean(row.isPrivate),
+    ownerObjectId: String(row.ownerObjectId ?? '').trim() || null,
+    ownerUserDetails: String(row.ownerUserDetails ?? '').trim() || null,
+    ownerDisplayName: String(row.ownerDisplayName ?? '').trim() || null,
+  };
+}
+
+function isOwnedByPrincipal(tree, principal) {
+  const ownerObjectId = String(tree?.ownerObjectId ?? '').trim();
+  const principalOwnerObjectId = getPrincipalOwnerObjectId(principal);
+
+  return Boolean(ownerObjectId && principalOwnerObjectId && ownerObjectId === principalOwnerObjectId);
+}
+
+function canViewTree(tree, principal, visibility) {
+  const normalizedVisibility = normalizeVisibilityFilter(visibility);
+
+  if (tree?.isPrivate) {
+    return normalizedVisibility !== TREE_VISIBILITY_PUBLIC && isOwnedByPrincipal(tree, principal);
+  }
+
+  return normalizedVisibility !== TREE_VISIBILITY_PRIVATE;
+}
+
+function canWriteTree(tree, principal) {
+  if (!tree?.isPrivate) {
+    return true;
+  }
+
+  return isOwnedByPrincipal(tree, principal);
+}
+
+function filterTreesForAccess(treeList, { principal = null, visibility = TREE_VISIBILITY_BOTH, enforceAccess = false } = {}) {
+  if (!enforceAccess) {
+    return treeList;
+  }
+
+  return treeList.filter((tree) => canViewTree(tree, principal, visibility));
+}
+
+async function assertScopedTree(treeId, options = {}) {
+  const {
+    principal = null,
+    visibility = TREE_VISIBILITY_BOTH,
+    requireWriteAccess = false,
+    enforceAccess = false,
+  } = options;
   const result = await new sql.Request()
     .input('tree_instance_id', sql.Int, Number(treeId))
     .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
@@ -54,20 +142,39 @@ async function assertScopedTree(treeId) {
         ti.id,
         ti.display_name AS displayName,
         ti.description,
-        CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished
+        CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished,
+        CAST(COALESCE(ti.is_private, 0) AS BIT) AS isPrivate,
+        ti.owner_object_id AS ownerObjectId,
+        ti.owner_user_details AS ownerUserDetails,
+        ti.owner_display_name AS ownerDisplayName
       FROM tree_instance ti
       INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
       WHERE ti.id = @tree_instance_id
         AND ai.app_identifier = @application_identifier;
     `);
 
-  const tree = result.recordset[0] ?? null;
+  const tree = result.recordset[0] ? mapTreeRecord(result.recordset[0]) : null;
 
   if (!tree) {
     throw new Error('Tree was not found for the active application instance');
   }
 
+  if (enforceAccess && !canViewTree(tree, principal, visibility)) {
+    throw new Error('Tree was not found for the active application instance');
+  }
+
+  if (enforceAccess && requireWriteAccess && !canWriteTree(tree, principal)) {
+    throw new Error('Tree was not found for the active application instance');
+  }
+
   return tree;
+}
+
+export async function assertTreeAccess(treeId, options = {}) {
+  return assertScopedTree(treeId, {
+    ...options,
+    enforceAccess: true,
+  });
 }
 
 function normalizeGeneratedTreeText(value) {
@@ -166,13 +273,23 @@ async function getScopedTreeAttachmentBlobs(treeId) {
   return result.recordset;
 }
 
-export async function getTreeList() {
+export async function getTreeList(options = {}) {
+  const {
+    principal = null,
+    visibility = TREE_VISIBILITY_BOTH,
+    enforceAccess = false,
+  } = options;
   const query = `
     SELECT
       CAST(ti.id AS VARCHAR(10)) AS id,
       COALESCE(NULLIF(ti.display_name, ''), root_node.text, CONCAT('Tree ', ti.id)) AS name,
       CAST(COALESCE(ti.description, '') AS NVARCHAR(MAX)) AS description,
-      CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished
+      CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished,
+      CAST(COALESCE(ti.is_private, 0) AS BIT) AS isPrivate,
+      ti.owner_object_id AS ownerObjectId,
+      ti.owner_user_details AS ownerUserDetails,
+      ti.owner_display_name AS ownerDisplayName,
+      ti.display_name AS displayName
     FROM tree_instance ti
     INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
     OUTER APPLY (
@@ -189,33 +306,45 @@ export async function getTreeList() {
       .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
       .query(query);
 
-    return result.recordset;
+    return filterTreesForAccess(
+      result.recordset.map((row) => mapTreeRecord(row)),
+      { principal, visibility, enforceAccess },
+    );
   });
 }
 
-export async function getAllowedTreeIds() {
-  const treeList = await getTreeList();
+export async function getAllowedTreeIds(options = {}) {
+  const treeList = await getTreeList(options);
   return treeList.map((tree) => String(tree.id));
 }
 
-export async function getTreeForPopulation(treeId) {
+export async function getTreeForPopulation(treeId, options = {}) {
   return withSqlConnection(async () => {
-    const scopedTree = await assertScopedTree(treeId);
+    const scopedTree = await assertScopedTree(treeId, options);
 
     return {
       id: String(scopedTree.id),
       name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
       description: normalizeTreeDescription(scopedTree.description),
       isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
+      isPrivate: Boolean(scopedTree.isPrivate),
+      ownerObjectId: scopedTree.ownerObjectId ?? null,
+      ownerUserDetails: scopedTree.ownerUserDetails ?? null,
+      ownerDisplayName: scopedTree.ownerDisplayName ?? null,
     };
   });
 }
 
-export async function createTree({ name }) {
+export async function createTree({ name, principal = null }) {
   const normalizedName = normalizeTreeName(name);
+  const ownerMetadata = getOwnerMetadata(principal);
 
   if (!normalizedName) {
     throw new Error('Tree name is required');
+  }
+
+  if (!ownerMetadata.ownerObjectId) {
+    throw new Error('An authenticated owner is required to create a private tree');
   }
 
   return withSqlConnection(async () => {
@@ -224,12 +353,34 @@ export async function createTree({ name }) {
       .input('application_instance_id', sql.Int, applicationInstanceId)
       .input('tree_key', sql.NVarChar(100), buildTreeKey(normalizedName))
       .input('display_name', sql.NVarChar(200), normalizedName)
+      .input('is_private', sql.Bit, 1)
+      .input('owner_object_id', sql.NVarChar(100), ownerMetadata.ownerObjectId)
+      .input('owner_user_details', sql.NVarChar(320), ownerMetadata.ownerUserDetails)
+      .input('owner_display_name', sql.NVarChar(200), ownerMetadata.ownerDisplayName)
       .query(`
         DECLARE @createdTrees TABLE (createdTreeId INT);
 
-        INSERT INTO tree_instance (application_instance_id, tree_key, display_name, is_active)
+        INSERT INTO tree_instance (
+          application_instance_id,
+          tree_key,
+          display_name,
+          is_private,
+          owner_object_id,
+          owner_user_details,
+          owner_display_name,
+          is_active
+        )
         OUTPUT INSERTED.id INTO @createdTrees (createdTreeId)
-        VALUES (@application_instance_id, @tree_key, @display_name, 1);
+        VALUES (
+          @application_instance_id,
+          @tree_key,
+          @display_name,
+          @is_private,
+          @owner_object_id,
+          @owner_user_details,
+          @owner_display_name,
+          1
+        );
 
         SELECT createdTreeId FROM @createdTrees;
       `);
@@ -254,11 +405,15 @@ export async function createTree({ name }) {
       name: normalizedName,
       description: '',
       isDescriptionPublished: false,
+      isPrivate: true,
+      ownerObjectId: ownerMetadata.ownerObjectId,
+      ownerUserDetails: ownerMetadata.ownerUserDetails,
+      ownerDisplayName: ownerMetadata.ownerDisplayName,
     };
   });
 }
 
-export async function updateTreeTitle({ treeId, name }) {
+export async function updateTreeTitle({ treeId, name, principal = null, enforceAccess = false }) {
   const normalizedName = normalizeTreeName(name);
 
   if (!normalizedName) {
@@ -266,7 +421,11 @@ export async function updateTreeTitle({ treeId, name }) {
   }
 
   return withSqlConnection(async () => {
-    const scopedTree = await assertScopedTree(treeId);
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      requireWriteAccess: true,
+      enforceAccess,
+    });
     const currentName = String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`;
 
     if (normalizedName === currentName) {
@@ -297,15 +456,82 @@ export async function updateTreeTitle({ treeId, name }) {
     return {
       id: String(treeId),
       name: normalizedName,
+      isPrivate: Boolean(scopedTree.isPrivate),
+      ownerObjectId: scopedTree.ownerObjectId ?? null,
+      ownerUserDetails: scopedTree.ownerUserDetails ?? null,
+      ownerDisplayName: scopedTree.ownerDisplayName ?? null,
     };
   });
 }
 
-export async function updateTreeDescription({ treeId, description }) {
+export async function updateTreeVisibility({ treeId, isPrivate, principal = null, enforceAccess = false }) {
+  const nextIsPrivate = Boolean(isPrivate);
+
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      requireWriteAccess: true,
+      enforceAccess,
+    });
+    const ownerMetadata = nextIsPrivate
+      ? getOwnerMetadata(principal)
+      : {
+        ownerObjectId: scopedTree.ownerObjectId ?? null,
+        ownerUserDetails: scopedTree.ownerUserDetails ?? null,
+        ownerDisplayName: scopedTree.ownerDisplayName ?? null,
+      };
+
+    if (nextIsPrivate && !ownerMetadata.ownerObjectId) {
+      throw new Error('An authenticated owner is required to make a tree private');
+    }
+
+    await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('is_private', sql.Bit, nextIsPrivate ? 1 : 0)
+      .input('owner_object_id', sql.NVarChar(100), ownerMetadata.ownerObjectId)
+      .input('owner_user_details', sql.NVarChar(320), ownerMetadata.ownerUserDetails)
+      .input('owner_display_name', sql.NVarChar(200), ownerMetadata.ownerDisplayName)
+      .query(`
+        UPDATE tree_instance
+        SET
+          is_private = @is_private,
+          owner_object_id = CASE
+            WHEN @is_private = 1 THEN @owner_object_id
+            ELSE COALESCE(owner_object_id, @owner_object_id)
+          END,
+          owner_user_details = CASE
+            WHEN @is_private = 1 THEN @owner_user_details
+            ELSE COALESCE(owner_user_details, @owner_user_details)
+          END,
+          owner_display_name = CASE
+            WHEN @is_private = 1 THEN @owner_display_name
+            ELSE COALESCE(owner_display_name, @owner_display_name)
+          END
+        WHERE id = @tree_instance_id;
+      `);
+
+    return {
+      id: String(treeId),
+      name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
+      description: normalizeTreeDescription(scopedTree.description),
+      isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
+      isPrivate: nextIsPrivate,
+      ownerObjectId: ownerMetadata.ownerObjectId,
+      ownerUserDetails: ownerMetadata.ownerUserDetails,
+      ownerDisplayName: ownerMetadata.ownerDisplayName,
+    };
+  });
+}
+
+export async function updateTreeDescription({ treeId, description, principal = null, enforceAccess = false }) {
   const normalizedDescription = normalizeTreeDescription(description);
 
   return withSqlConnection(async () => {
-    const scopedTree = await assertScopedTree(treeId);
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      requireWriteAccess: true,
+      enforceAccess,
+    });
     const nextDescription = normalizedDescription;
     const currentDescription = normalizeTreeDescription(scopedTree.description);
     const currentPublishedState = Boolean(scopedTree.isDescriptionPublished);
@@ -316,6 +542,10 @@ export async function updateTreeDescription({ treeId, description }) {
         name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
         description: currentDescription,
         isDescriptionPublished: false,
+        isPrivate: Boolean(scopedTree.isPrivate),
+        ownerObjectId: scopedTree.ownerObjectId ?? null,
+        ownerUserDetails: scopedTree.ownerUserDetails ?? null,
+        ownerDisplayName: scopedTree.ownerDisplayName ?? null,
       };
     }
 
@@ -343,6 +573,10 @@ export async function updateTreeDescription({ treeId, description }) {
       name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
       description: nextDescription,
       isDescriptionPublished: false,
+      isPrivate: Boolean(scopedTree.isPrivate),
+      ownerObjectId: scopedTree.ownerObjectId ?? null,
+      ownerUserDetails: scopedTree.ownerUserDetails ?? null,
+      ownerDisplayName: scopedTree.ownerDisplayName ?? null,
     };
   });
 }
@@ -417,9 +651,13 @@ export async function updateTreeDescriptionPublishedStates(treeStates) {
   });
 }
 
-export async function deleteTree({ treeId }) {
+export async function deleteTree({ treeId, principal = null, enforceAccess = false }) {
   return withSqlConnection(async () => {
-    await assertScopedTree(treeId);
+    await assertScopedTree(treeId, {
+      principal,
+      requireWriteAccess: true,
+      enforceAccess,
+    });
 
     const attachments = await getScopedTreeAttachmentBlobs(treeId);
 
@@ -502,8 +740,8 @@ export async function appendGeneratedNodesToTree({ treeId, generatedNodes }) {
   });
 }
 
-export async function getTreeRoutingProfiles() {
-  const treeList = await getTreeList();
+export async function getTreeRoutingProfiles(options = {}) {
+  const treeList = await getTreeList(options);
 
   if (treeList.length === 0) {
     return [];
@@ -708,9 +946,9 @@ export async function getTreeRoutingProfiles() {
   });
 }
 
-export async function getTreeRoutingProfile(treeId) {
-  const scopedTree = await assertScopedTree(treeId);
-  const treeProfiles = await getTreeRoutingProfiles();
+export async function getTreeRoutingProfile(treeId, options = {}) {
+  const scopedTree = await assertScopedTree(treeId, options);
+  const treeProfiles = await getTreeRoutingProfiles(options);
   const matchingTree = treeProfiles.find((tree) => String(tree.id) === String(treeId));
 
   if (!matchingTree) {
@@ -718,6 +956,10 @@ export async function getTreeRoutingProfile(treeId) {
       id: String(scopedTree.id),
       name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
       description: normalizeTreeDescription(scopedTree.description),
+      isPrivate: Boolean(scopedTree.isPrivate),
+      ownerObjectId: scopedTree.ownerObjectId ?? null,
+      ownerUserDetails: scopedTree.ownerUserDetails ?? null,
+      ownerDisplayName: scopedTree.ownerDisplayName ?? null,
       topLevelTopics: [],
       supportingTopics: [],
       nonLeafTitles: [],

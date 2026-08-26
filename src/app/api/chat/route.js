@@ -77,6 +77,7 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     const message = String(payload?.message ?? '').trim();
+    const visibility = String(payload?.visibility ?? '').trim() || 'public';
     const followUpSelection = normalizeFollowUpSelection(payload?.followUpSelection);
 
     if (!message && !followUpSelection) {
@@ -92,6 +93,7 @@ export async function POST(request) {
       message,
       history,
       principal,
+      visibility,
       followUpSelection,
     });
 

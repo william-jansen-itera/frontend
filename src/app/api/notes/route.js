@@ -8,8 +8,9 @@ import {
   generateLeafNotesDraft,
   selectChatLeafAnchorCandidate,
 } from '@/server/utils/chatService';
+import { parseClientPrincipal } from '@/server/utils/auth';
 import { sql, withSqlConnection } from '@/server/utils/sql';
-import { getTreeList } from '@/server/utils/treeCatalog';
+import { assertTreeAccess, getTreeList } from '@/server/utils/treeCatalog';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
@@ -31,6 +32,21 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   '.xls',
   '.xlsx',
 ]);
+
+async function assertReadableTreeForRequest(request, treeId, visibility = 'both') {
+  return assertTreeAccess(treeId, {
+    principal: parseClientPrincipal(request),
+    visibility,
+  });
+}
+
+async function assertWritableTreeForRequest(request, treeId) {
+  return assertTreeAccess(treeId, {
+    principal: parseClientPrincipal(request),
+    visibility: 'both',
+    requireWriteAccess: true,
+  });
+}
 
 async function queryTreeData(treeInstanceId) {
   const query = `WITH RecursiveTree AS (
@@ -1124,11 +1140,18 @@ export async function GET(request) {
   const treeIdParam = searchParams.get('treeId');
   const includeParam = searchParams.get('include');
   const nodeIdParam = searchParams.get('id');
+  const visibility = searchParams.get('visibility') ?? 'both';
 
   try {
     if (!treeIdParam) {
-      return NextResponse.json(await getTreeList());
+      return NextResponse.json(await getTreeList({
+        principal: parseClientPrincipal(request),
+        visibility,
+        enforceAccess: true,
+      }));
     }
+
+    await assertReadableTreeForRequest(request, treeIdParam, visibility);
 
     if (includeParam === 'settings') {
       return NextResponse.json(await getTreeSettings(treeIdParam));
@@ -1169,6 +1192,8 @@ export async function POST(request) {
         return NextResponse.json({ error: 'Invalid upload request, treeId, nodeId, and files are required' }, { status: 400 });
       }
 
+      await assertWritableTreeForRequest(request, treeId);
+
       return NextResponse.json(await CreateTreeNodeAttachment({
         treeInstanceId: parseInt(String(treeId), 10),
         nodeId: parseInt(String(nodeId), 10),
@@ -1200,6 +1225,8 @@ export async function POST(request) {
         return NextResponse.json({ error: 'A valid tree context is required for the chat add action.' }, { status: 400 });
       }
 
+      await assertWritableTreeForRequest(request, resolvedTreeId);
+
       return NextResponse.json(await CreateLeafNodeFromChat({
         treeInstanceId: parseInt(resolvedTreeId, 10),
         toolName,
@@ -1221,6 +1248,8 @@ export async function POST(request) {
         return NextResponse.json({ error: 'A valid tree context is required for the chat add action.' }, { status: 400 });
       }
 
+      await assertReadableTreeForRequest(request, resolvedTreeId);
+
       return NextResponse.json(await resolveChatLeafPlacement({
         treeInstanceId: parseInt(resolvedTreeId, 10),
         originalQuestion,
@@ -1231,6 +1260,8 @@ export async function POST(request) {
     if (!treeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
     }
+
+    await assertWritableTreeForRequest(request, treeId);
 
     if (action === 'generate-children') {
       if (!nodeId) {
@@ -1307,6 +1338,8 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Invalid request, treeId and nodes are required' }, { status: 400 });
     }
 
+    await assertWritableTreeForRequest(request, treeId);
+
     await UpdateTreeNodes(parseInt(treeId), nodes);
     return NextResponse.json(await getTreeData(treeId));
   } catch (err) {
@@ -1321,6 +1354,8 @@ export async function PATCH(request) {
     if (id === undefined || !treeId) {
       return NextResponse.json({ error: 'Invalid request, id and treeId are required' }, { status: 400 });
     }
+
+    await assertWritableTreeForRequest(request, treeId);
 
     if (typeof isExpanded === 'boolean') {
       await UpdateTreeNodeOpenState(parseInt(treeId), id, isExpanded);
@@ -1352,6 +1387,8 @@ export async function DELETE(request) {
         return NextResponse.json({ error: 'Invalid request, treeId is required for attachment delete' }, { status: 400 });
       }
 
+      await assertWritableTreeForRequest(request, treeIdParam);
+
       return NextResponse.json(await withSqlConnection(async () => {
         return deleteAttachmentMetadataRecord(parseInt(treeIdParam, 10), parseInt(attachmentIdParam, 10));
       }));
@@ -1360,6 +1397,8 @@ export async function DELETE(request) {
     if (!idParam || !treeIdParam) {
       return NextResponse.json({ error: 'Invalid request, id and treeId are required' }, { status: 400 });
     }
+
+    await assertWritableTreeForRequest(request, treeIdParam);
 
     return NextResponse.json(await withSqlConnection(async () => {
       const treeInstanceId = parseInt(treeIdParam, 10);

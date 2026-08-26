@@ -152,6 +152,10 @@ CREATE TABLE [dbo].[tree_instance](
 	[display_name] [nvarchar](200) NOT NULL,
 	[description] [nvarchar](max) NULL,
 	[description_published_to_agent] [bit] NOT NULL,
+	[is_private] [bit] NOT NULL,
+	[owner_object_id] [nvarchar](100) NULL,
+	[owner_user_details] [nvarchar](320) NULL,
+	[owner_display_name] [nvarchar](200) NULL,
 	[is_active] [bit] NOT NULL,
 	[created_at] [datetime2](0) NOT NULL,
 	[updated_at] [datetime2](0) NOT NULL,
@@ -168,6 +172,8 @@ PRIMARY KEY CLUSTERED
 GO
 
 ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ((0)) FOR [description_published_to_agent]
+GO
+ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ((1)) FOR [is_private]
 GO
 /****** Object:  Table [dbo].[tree_node_detail_files]    Script Date: 7/31/2026 4:11:42 PM ******/
 SET ANSI_NULLS ON

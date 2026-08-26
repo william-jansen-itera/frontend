@@ -19,6 +19,19 @@ function buildDraftNames(trees) {
   }, {});
 }
 
+function buildDraftVisibility(trees, currentDrafts = {}, resetTreeIds = new Set()) {
+  return trees.reduce((drafts, tree) => {
+    const treeId = String(tree.id);
+    const storedVisibility = tree.isPrivate ? "private" : "public";
+
+    drafts[treeId] = resetTreeIds.has(treeId)
+      ? storedVisibility
+      : (currentDrafts[treeId] ?? storedVisibility);
+
+    return drafts;
+  }, {});
+}
+
 function buildDraftDescriptions(trees, currentDrafts = {}, resetTreeIds = new Set()) {
   return trees.reduce((drafts, tree) => {
     const treeId = String(tree.id);
@@ -82,10 +95,12 @@ function formatPublishOutcomeMessage(syncStatus, treeId) {
 export default function TreesPage() {
   const [trees, setTrees] = useState([]);
   const [draftNames, setDraftNames] = useState({});
+  const [draftVisibility, setDraftVisibility] = useState({});
   const [draftDescriptions, setDraftDescriptions] = useState({});
   const [editingDescriptions, setEditingDescriptions] = useState({});
   const [newTreeName, setNewTreeName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [visibilityFilter, setVisibilityFilter] = useState("public");
   const [isCreating, setIsCreating] = useState(false);
   const [rowPendingStates, setRowPendingStates] = useState({});
   const [rowFeedback, setRowFeedback] = useState({});
@@ -93,10 +108,12 @@ export default function TreesPage() {
 
   const applyTreeList = (nextTrees, options = {}) => {
     const resetNameTreeIds = new Set((options.resetNameTreeIds ?? []).map((treeId) => String(treeId)));
+    const resetVisibilityTreeIds = new Set((options.resetVisibilityTreeIds ?? []).map((treeId) => String(treeId)));
     const resetDescriptionTreeIds = new Set((options.resetDescriptionTreeIds ?? []).map((treeId) => String(treeId)));
 
     setTrees(nextTrees);
     setDraftNames((currentDrafts) => buildNextDraftNames(nextTrees, currentDrafts, resetNameTreeIds));
+    setDraftVisibility((currentDrafts) => buildDraftVisibility(nextTrees, currentDrafts, resetVisibilityTreeIds));
     setDraftDescriptions((currentDrafts) => buildDraftDescriptions(nextTrees, currentDrafts, resetDescriptionTreeIds));
     setEditingDescriptions((currentState) => filterTreeStateByList(currentState, nextTrees));
     setRowPendingStates((currentState) => filterTreeStateByList(currentState, nextTrees));
@@ -139,8 +156,12 @@ export default function TreesPage() {
     let isMounted = true;
 
     async function loadTrees() {
+      if (isMounted) {
+        setIsLoading(true);
+      }
+
       try {
-        const response = await fetch("/api/trees", { cache: "no-store" });
+        const response = await fetch(`/api/trees?visibility=${encodeURIComponent(visibilityFilter)}`, { cache: "no-store" });
         const data = await response.json();
 
         if (!response.ok) {
@@ -169,7 +190,7 @@ export default function TreesPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [visibilityFilter]);
 
   const handleCreateTree = async (event) => {
     event.preventDefault();
@@ -188,7 +209,7 @@ export default function TreesPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: trimmedName }),
+        body: JSON.stringify({ name: trimmedName, visibility: visibilityFilter }),
       });
       const data = await response.json();
 
@@ -200,6 +221,9 @@ export default function TreesPage() {
         resetNameTreeIds: [data?.createdTree?.id],
         resetDescriptionTreeIds: [data?.createdTree?.id],
       });
+      if (!Array.isArray(data?.trees) || !data.trees.some((tree) => String(tree.id) === String(data?.createdTree?.id))) {
+        setErrorMessage("Tree was created, but it is outside the current visibility filter.");
+      }
       setNewTreeName("");
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree could not be created"));
@@ -208,15 +232,19 @@ export default function TreesPage() {
     }
   };
 
-  const handleRenameTree = async (tree) => {
+  const handleSaveTreeMeta = async (tree) => {
     const treeId = String(tree.id);
     const nextName = String(draftNames[treeId] ?? "").trim();
+    const nextVisibility = draftVisibility[treeId] ?? (tree.isPrivate ? "private" : "public");
+    const isPrivate = nextVisibility === "private";
+    const isNameChanged = nextName !== tree.name;
+    const isVisibilityChanged = isPrivate !== Boolean(tree.isPrivate);
 
-    if (!nextName || nextName === tree.name) {
+    if (!nextName || (!isNameChanged && !isVisibilityChanged)) {
       return;
     }
 
-    setTreePendingState(treeId, "rename", true);
+    setTreePendingState(treeId, "meta", true);
     setErrorMessage("");
 
     try {
@@ -225,21 +253,31 @@ export default function TreesPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ treeId, name: nextName }),
+        body: JSON.stringify({
+          treeId,
+          name: nextName,
+          isPrivate,
+          visibility: visibilityFilter,
+        }),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.error || "Tree title could not be updated");
+        throw new Error(data?.error || "Tree settings could not be updated");
       }
 
       applyTreeList(Array.isArray(data?.trees) ? data.trees : [], {
         resetNameTreeIds: [treeId],
+        resetVisibilityTreeIds: [treeId],
       });
+
+      if (!Array.isArray(data?.trees) || !data.trees.some((entry) => String(entry.id) === treeId)) {
+        setErrorMessage("Tree settings were updated, but the tree is outside the current visibility filter.");
+      }
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, "Tree title could not be updated"));
+      setErrorMessage(getErrorMessage(error, "Tree settings could not be updated"));
     } finally {
-      setTreePendingState(treeId, "rename", false);
+      setTreePendingState(treeId, "meta", false);
     }
   };
 
@@ -267,6 +305,7 @@ export default function TreesPage() {
         body: JSON.stringify({
           action: "generate-description",
           treeId,
+          visibility: visibilityFilter,
         }),
       });
       const data = await response.json();
@@ -331,6 +370,7 @@ export default function TreesPage() {
           action: "save-description",
           treeId,
           description: nextDescription,
+          visibility: visibilityFilter,
         }),
       });
       const data = await response.json();
@@ -437,6 +477,7 @@ export default function TreesPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ treeId }),
+        body: JSON.stringify({ treeId, visibility: visibilityFilter }),
       });
       const data = await response.json();
 
@@ -471,7 +512,7 @@ export default function TreesPage() {
     setErrorMessage("");
 
     try {
-      const response = await fetch(`/api/trees?treeId=${encodeURIComponent(treeId)}`, {
+      const response = await fetch(`/api/trees?treeId=${encodeURIComponent(treeId)}&visibility=${encodeURIComponent(visibilityFilter)}`, {
         method: "DELETE",
       });
       const data = await response.json();
@@ -526,16 +567,23 @@ export default function TreesPage() {
 
       <section className={`appTopLevelPanel ${styles.listPanel}`}>
         <div className={`appPanelTopBar ${styles.listToolbar}`}>
-          <div>
-            <p className="appSectionEyebrow">Current trees</p>
-            <h2 className={styles.sectionTitle}>{trees.length} tree{trees.length === 1 ? "" : "s"}</h2>
-            <p className={styles.syncHint}>
-              Trees without a saved description are not published to the agent.
-            </p>
-          </div>
+          <span className={styles.panelHeading}>Current Trees</span>
+          <label className={styles.toolbarLabel}>
+            <select
+              value={visibilityFilter}
+              onChange={(event) => setVisibilityFilter(event.target.value)}
+            >
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+          </label>
         </div>
 
         <div className={styles.listBody}>
+          <h2 className={styles.sectionTitle}>{trees.length} tree{trees.length === 1 ? "" : "s"}</h2>
+          <p className={styles.syncHint}>
+            Trees without a saved description are not published to the agent.
+          </p>
           {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
 
           {isLoading ? (
@@ -555,6 +603,9 @@ export default function TreesPage() {
                 const isPending = Object.values(rowPendingState).some(Boolean);
                 const isDescriptionEditing = Boolean(editingDescriptions[treeId]);
                 const isNameChanged = draftName.trim() !== tree.name;
+                const currentVisibility = tree.isPrivate ? "private" : "public";
+                const nextVisibility = draftVisibility[treeId] ?? currentVisibility;
+                const isVisibilityChanged = nextVisibility !== currentVisibility;
                 const isDescriptionChanged = normalizeComparableValue(draftDescription) !== normalizeComparableValue(storedDescription);
                 const hasSavedDescription = Boolean(normalizeComparableValue(storedDescription));
 
@@ -564,40 +615,57 @@ export default function TreesPage() {
                       <div className={styles.treeMetaRow}>
                         <div className={styles.treeMeta}>
                           <span className={styles.treeId}>Tree {treeId}</span>
-                          <input
-                            type="text"
-                            value={draftName}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setDraftNames((currentDrafts) => ({
-                                ...currentDrafts,
-                                [treeId]: nextValue,
-                              }));
-                            }}
-                            disabled={isPending}
-                            className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
-                          />
+                          <div className={styles.treeMetaEditor}>
+                            <select
+                              value={nextVisibility}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setDraftVisibility((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [treeId]: nextValue,
+                                }));
+                              }}
+                              disabled={isPending}
+                              className={`appSelectControl ${styles.treeVisibilitySelect}`}
+                            >
+                              <option value="public">Public</option>
+                              <option value="private">Private</option>
+                            </select>
+                            <input
+                              type="text"
+                              value={draftName}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setDraftNames((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [treeId]: nextValue,
+                                }));
+                              }}
+                              disabled={isPending}
+                              className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
+                            />
+                          </div>
                         </div>
 
                         <div className={styles.rowActions}>
                           <button
                             type="button"
-                            onClick={() => handleRenameTree(tree)}
-                            disabled={isPending || !draftName.trim() || !isNameChanged}
+                            onClick={() => handleSaveTreeMeta(tree)}
+                            disabled={isPending || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
-                            {rowPendingState.rename ? "Saving..." : "Save Title"}
+                            {rowPendingState.meta ? "Saving..." : "Save"}
                           </button>
                           <button
                             type="button"
                             onClick={() => handlePopulateTree(tree)}
-                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !hasSavedDescription || isDescriptionChanged}
+                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             {rowPendingState.populate ? "Populating..." : "Populate"}
                           </button>
                           <Link
-                            href={`/notes?treeId=${encodeURIComponent(treeId)}`}
+                            href={`/notes?treeId=${encodeURIComponent(treeId)}${visibilityFilter === "public" ? "" : `&visibility=${encodeURIComponent(visibilityFilter)}`}`}
                             className={`appCompactActionButton ${styles.actionButtonLink}`}
                           >
                             Open

@@ -27,6 +27,12 @@
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
+.toolbarLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .eyebrow,
 .fieldLabel,
 .toolLabel {

@@ -126,9 +126,10 @@ function getCitationBreadcrumbParts(citation) {
   return [breadcrumb];
 }
 
-function getCitationBreadcrumbItems(citation) {
+function getCitationBreadcrumbItems(citation, visibility = "public") {
   const breadcrumbParts = getCitationBreadcrumbParts(citation);
-  const nodeHref = `/notes?treeId=${encodeURIComponent(citation.treeId)}&nodeId=${encodeURIComponent(citation.nodeId)}`;
+  const visibilityQuery = visibility === "public" ? "" : `&visibility=${encodeURIComponent(visibility)}`;
+  const nodeHref = `/notes?treeId=${encodeURIComponent(citation.treeId)}&nodeId=${encodeURIComponent(citation.nodeId)}${visibilityQuery}`;
   const nodeIdPath = String(citation?.nodeIdPath || "").trim();
   const pathNodeIds = nodeIdPath
     ? nodeIdPath.split("/").map((part) => part.trim()).filter(Boolean)
@@ -137,13 +138,13 @@ function getCitationBreadcrumbItems(citation) {
   return breadcrumbParts.map((part, index) => ({
     label: part,
     href: pathNodeIds.length === breadcrumbParts.length
-      ? `/notes?treeId=${encodeURIComponent(citation.treeId)}&nodeId=${encodeURIComponent(pathNodeIds[index])}`
+      ? `/notes?treeId=${encodeURIComponent(citation.treeId)}&nodeId=${encodeURIComponent(pathNodeIds[index])}${visibilityQuery}`
       : nodeHref,
     isLeaf: index === breadcrumbParts.length - 1,
   }));
 }
 
-function CitationBreadcrumbs({ citations }) {
+function CitationBreadcrumbs({ citations, visibility }) {
   if (!Array.isArray(citations) || citations.length === 0) {
     return null;
   }
@@ -153,7 +154,7 @@ function CitationBreadcrumbs({ citations }) {
       <p className={styles.citationEyebrow}>Grounding nodes</p>
       <div className={styles.citationList}>
         {citations.map((citation, index) => {
-          const breadcrumbItems = getCitationBreadcrumbItems(citation);
+          const breadcrumbItems = getCitationBreadcrumbItems(citation, visibility);
           const key = `${citation.treeId}-${citation.nodeId}-${index}`;
 
           return (
@@ -442,6 +443,7 @@ function getLatestNoResultOfferTurn(turns, dismissedTurnId) {
 
 export default function ChatPageClient({ includeDebug }) {
   const [prompt, setPrompt] = useState("");
+  const [visibility, setVisibility] = useState("public");
   const [turns, setTurns] = useState([]);
   const [selectedTurnId, setSelectedTurnId] = useState(null);
   const [dismissedFollowUpTurnId, setDismissedFollowUpTurnId] = useState(null);
@@ -498,6 +500,7 @@ export default function ChatPageClient({ includeDebug }) {
         body: JSON.stringify({
           message,
           history,
+          visibility,
           followUpSelection,
         }),
       });
@@ -734,7 +737,7 @@ export default function ChatPageClient({ includeDebug }) {
           : `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb}.`,
       });
 
-      const notesHref = `/notes?treeId=${encodeURIComponent(payload.treeId)}&nodeId=${encodeURIComponent(payload.createdNodeId)}`;
+      const notesHref = `/notes?treeId=${encodeURIComponent(payload.treeId)}&nodeId=${encodeURIComponent(payload.createdNodeId)}${visibility === "public" ? "" : `&visibility=${encodeURIComponent(visibility)}`}`;
       window.open(notesHref, "_blank", "noopener,noreferrer");
     } catch (error) {
       setAddActionState({
@@ -753,6 +756,17 @@ export default function ChatPageClient({ includeDebug }) {
           <section className={styles.heroCard}>
             <div className={`appPanelTopBar ${styles.promptPanelHeader}`}>
               <p className="appEyebrow">Prompt</p>
+              <label className={styles.toolbarLabel}>
+                <select
+                  value={visibility}
+                  onChange={(event) => setVisibility(event.target.value)}
+                  disabled={isSubmitting}
+                >
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                  <option value="both">Both</option>
+                </select>
+              </label>
               {isPromptInOptionMode ? null : (
                 <button
                   type="submit"
@@ -906,7 +920,7 @@ export default function ChatPageClient({ includeDebug }) {
                         <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>
                       </div>
 
-                      {!turn.isPending && !turn.error ? <CitationBreadcrumbs citations={turn.citations} /> : null}
+                      {!turn.isPending && !turn.error ? <CitationBreadcrumbs citations={turn.citations} visibility={visibility} /> : null}
                     </article>
                   );
                 })

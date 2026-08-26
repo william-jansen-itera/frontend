@@ -50,6 +50,20 @@
   justify-content: space-between;
 }
 
+.panelHeading {
+  color: var(--ui-eyebrow-color);
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
+}
+
+.toolbarLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .listBody {
   padding: 1.2rem 1.5rem 1.35rem;
 }
@@ -117,6 +131,15 @@
   display: contents;
 }
 
+.treeMetaEditor {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .treeId {
   grid-column: 1;
   grid-row: 1;
@@ -153,8 +176,12 @@
 }
 
 .treeNameInput {
-  grid-column: 1;
-  grid-row: 2;
+  min-width: 0;
+}
+
+.treeVisibilitySelect {
+  min-width: 8.5rem;
+  padding: 10px 10px 10px 9px;
 }
 
 .descriptionBlock {

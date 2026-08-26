@@ -105,8 +105,14 @@ export function getNextSelectedNodeId(flatData, currentSelectedNodeId, targetSel
   return matchingNode ? String(nextSelectedNodeId) : null;
 }
 
-export function getTreeSelectionHref(pathname, searchParamsString, nextTreeId) {
+export function getTreeSelectionHref(pathname, searchParamsString, nextTreeId, visibility = null) {
   const nextSearchParams = new URLSearchParams(searchParamsString);
+
+  if (visibility && visibility !== "public") {
+    nextSearchParams.set("visibility", visibility);
+  } else {
+    nextSearchParams.delete("visibility");
+  }
 
   if (nextTreeId) {
     nextSearchParams.set("treeId", String(nextTreeId));

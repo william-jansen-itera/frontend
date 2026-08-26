@@ -75,9 +75,10 @@ function getBreadcrumbParts(result) {
   return [breadcrumb];
 }
 
-function getBreadcrumbItems(result) {
+function getBreadcrumbItems(result, visibility = "public") {
   const breadcrumbParts = getBreadcrumbParts(result);
-  const nodeHref = `/notes?treeId=${encodeURIComponent(result.treeId)}&nodeId=${encodeURIComponent(result.nodeId)}`;
+  const visibilityQuery = visibility === "public" ? "" : `&visibility=${encodeURIComponent(visibility)}`;
+  const nodeHref = `/notes?treeId=${encodeURIComponent(result.treeId)}&nodeId=${encodeURIComponent(result.nodeId)}${visibilityQuery}`;
   const nodeIdPath = String(result.nodeIdPath || result.nodeDocument?.nodeIdPath || result.primaryDocument?.nodeIdPath || "").trim();
   const pathNodeIds = nodeIdPath
     ? nodeIdPath.split("/").map((part) => part.trim()).filter(Boolean)
@@ -86,7 +87,7 @@ function getBreadcrumbItems(result) {
   return breadcrumbParts.map((part, index) => ({
     label: part,
     href: pathNodeIds.length === breadcrumbParts.length
-      ? `/notes?treeId=${encodeURIComponent(result.treeId)}&nodeId=${encodeURIComponent(pathNodeIds[index])}`
+      ? `/notes?treeId=${encodeURIComponent(result.treeId)}&nodeId=${encodeURIComponent(pathNodeIds[index])}${visibilityQuery}`
       : nodeHref,
     isLeaf: index === breadcrumbParts.length - 1,
   }));
@@ -158,6 +159,7 @@ function SearchPageContent() {
   const searchParams = useSearchParams();
   const queryParam = searchParams.get("q") ?? "";
   const treeIdParam = searchParams.get("treeId") ?? "";
+  const visibilityParam = searchParams.get("visibility") ?? "public";
   const queryInputRef = useRef(null);
   const [availableTrees, setAvailableTrees] = useState([]);
   const [isLoadingTrees, setIsLoadingTrees] = useState(true);
@@ -172,7 +174,7 @@ function SearchPageContent() {
   useEffect(() => {
     let isCancelled = false;
 
-    fetch("/api/notes")
+    fetch(`/api/notes?visibility=${encodeURIComponent(visibilityParam)}`)
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
       .then(({ ok, data }) => {
         if (isCancelled) {
@@ -204,7 +206,22 @@ function SearchPageContent() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [visibilityParam]);
+
+  useEffect(() => {
+    if (!treeIdParam) {
+      return;
+    }
+
+    if (availableTrees.some((tree) => String(tree.id) === String(treeIdParam))) {
+      return;
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    nextSearchParams.delete("treeId");
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  }, [availableTrees, pathname, router, searchParams, treeIdParam]);
 
   useEffect(() => {
     const trimmedQuery = queryParam.trim();
@@ -216,6 +233,7 @@ function SearchPageContent() {
     let isCancelled = false;
     const requestSearchParams = new URLSearchParams();
     requestSearchParams.set("q", trimmedQuery);
+    requestSearchParams.set("visibility", visibilityParam);
 
     if (treeIdParam) {
       requestSearchParams.set("treeId", treeIdParam);
@@ -259,7 +277,7 @@ function SearchPageContent() {
     return () => {
       isCancelled = true;
     };
-  }, [queryParam, treeIdParam]);
+  }, [queryParam, treeIdParam, visibilityParam]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -281,6 +299,12 @@ function SearchPageContent() {
       nextSearchParams.delete("treeId");
     }
 
+    if (visibilityParam && visibilityParam !== "public") {
+      nextSearchParams.set("visibility", visibilityParam);
+    } else {
+      nextSearchParams.delete("visibility");
+    }
+
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   };
@@ -297,6 +321,32 @@ function SearchPageContent() {
       nextSearchParams.set("treeId", nextTreeId);
     } else {
       nextSearchParams.delete("treeId");
+    }
+
+    if (visibilityParam && visibilityParam !== "public") {
+      nextSearchParams.set("visibility", visibilityParam);
+    } else {
+      nextSearchParams.delete("visibility");
+    }
+
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  };
+
+  const handleVisibilityChange = (event) => {
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    const nextVisibility = event.target.value;
+
+    setIsLoadingTrees(true);
+
+    if (queryParam.trim()) {
+      setIsSearching(true);
+    }
+
+    if (nextVisibility && nextVisibility !== "public") {
+      nextSearchParams.set("visibility", nextVisibility);
+    } else {
+      nextSearchParams.delete("visibility");
     }
 
     const nextQueryString = nextSearchParams.toString();
@@ -339,6 +389,19 @@ function SearchPageContent() {
                   {tree.name}
                 </option>
               ))}
+            </select>
+          </label>
+
+          <label className={styles.filterField}>
+            <span className="appFieldLabel">Visibility</span>
+            <select
+              value={visibilityParam}
+              onChange={handleVisibilityChange}
+              className={`appSelectControl ${styles.selectInput}`}
+            >
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+              <option value="both">Both</option>
             </select>
           </label>
 
@@ -444,7 +507,7 @@ function SearchPageContent() {
               {results.map((result) => (
                 <article key={result.id} className={styles.resultCard}>
                   {(() => {
-                    const breadcrumbItems = getBreadcrumbItems(result);
+                    const breadcrumbItems = getBreadcrumbItems(result, visibilityParam);
 
                     return (
                       <div className={styles.resultMetaRow}>
