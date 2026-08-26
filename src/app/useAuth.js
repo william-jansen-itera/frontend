@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { normalizeClientPrincipal } from "@/shared/clientPrincipal";
 
 export function useAuth() {
   const [user, setUser] = useState(null);
@@ -12,7 +13,7 @@ export function useAuth() {
     async function getUser() {
       const res = await fetch("/.auth/me");
       const data = await res.json();
-      setUser(data.clientPrincipal || null);
+      setUser(normalizeClientPrincipal(data.clientPrincipal));
     }
     getUser();
   }, []);

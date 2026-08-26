@@ -1,6 +1,7 @@
 // src/app/api/hello/route.js
 import { NextResponse } from 'next/server';
 import { sql, withSqlConnection } from '@/server/utils/sql';
+import { getRelevantPrincipalDetails, parseClientPrincipal } from '@/server/utils/auth';
 
 function isLikelySleepingSqlError(error) {
   const message = String(
@@ -28,19 +29,20 @@ function isLikelySleepingSqlError(error) {
 
 export async function GET(request) {
   const { logTrace, logException } = await import('../../../server/utils/logging');
-  // Try to get the x-ms-client-principal header
-  const principalHeader = request.headers.get('x-ms-client-principal');
+  const principal = parseClientPrincipal(request);
+  const principalDetails = getRelevantPrincipalDetails(principal);
   let userName = 'Anonymous';
-  if (principalHeader) {
-    try {
-      const principal = JSON.parse(Buffer.from(principalHeader, 'base64').toString('utf8'));
-      console.log('principal: ', principal);
-      logTrace('Parsed principal: ' + JSON.stringify(principal));
-      userName = principal.userDetails || 'Authenticated User';
-    } catch (err) {
-      logException(err);
-      userName = 'Invalid principal';
-    }
+
+  if (principalDetails) {
+    await logTrace(`Parsed principal: ${JSON.stringify({
+      identityProvider: principalDetails.identityProvider,
+      userId: principalDetails.userId,
+      userDetails: principalDetails.userDetails,
+      userRoles: principalDetails.userRoles,
+      tenantId: principalDetails.tenantId,
+      objectId: principalDetails.objectId,
+    })}`);
+    userName = principalDetails.userDetails || 'Authenticated User';
   }
 
   try {

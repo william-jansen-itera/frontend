@@ -1,23 +1,9 @@
 import { NextResponse } from 'next/server';
 import { invokeTreeSearchAgent } from '@/server/utils/chatService';
 import { logException, logTrace } from '@/server/utils/logging';
+import { parseClientPrincipal } from '@/server/utils/auth';
 
 export const runtime = 'nodejs';
-
-function parseClientPrincipal(request) {
-  const encodedPrincipal = request.headers.get('x-ms-client-principal');
-
-  if (!encodedPrincipal) {
-    return null;
-  }
-
-  try {
-    const payload = Buffer.from(encodedPrincipal, 'base64').toString('utf8');
-    return JSON.parse(payload);
-  } catch {
-    return null;
-  }
-}
 
 function normalizeHistory(history) {
   if (!Array.isArray(history)) {
