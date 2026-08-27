@@ -728,13 +728,23 @@ export default function ChatPageClient({ includeDebug }) {
         throw new Error(payload?.error || "Unable to add this answer to the tree.");
       }
 
+      const indexerMessage = payload.indexerRun?.status === "requested"
+        ? " Search index refresh requested."
+        : payload.indexerRun?.status === "already-running"
+          ? " Search index refresh is already running."
+          : payload.indexerRun?.status === "skipped"
+            ? ` Note created, but search index refresh was skipped: ${payload.indexerRun.reason}`
+            : payload.indexerRun?.status === "failed"
+              ? ` Note created, but search index refresh failed: ${payload.indexerRun.message}`
+              : "";
+
       setAddActionState({
         status: "success",
         turnId: turn.id,
         toolName: addActionState.toolName,
         message: payload.createdIntermediateNodes?.length
-          ? `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb} with ${payload.createdIntermediateNodes.length} new path node${payload.createdIntermediateNodes.length === 1 ? "" : "s"}.`
-          : `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb}.`,
+          ? `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb} with ${payload.createdIntermediateNodes.length} new path node${payload.createdIntermediateNodes.length === 1 ? "" : "s"}.${indexerMessage}`
+          : `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb}.${indexerMessage}`,
       });
 
       const notesHref = `/notes?treeId=${encodeURIComponent(payload.treeId)}&nodeId=${encodeURIComponent(payload.createdNodeId)}${visibility === "public" ? "" : `&visibility=${encodeURIComponent(visibility)}`}`;

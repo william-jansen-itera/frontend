@@ -78,6 +78,33 @@ export function expandPathToNode(flatData, expandedState, targetNodeId) {
   return nextExpandedState;
 }
 
+export function getAncestorExpandableNodeIds(flatData, targetNodeId) {
+  if (!targetNodeId) {
+    return [];
+  }
+
+  const nodeById = new Map(flatData.map((node) => [String(node.id), node]));
+  const ancestorIds = [];
+  let currentNode = nodeById.get(String(targetNodeId));
+
+  while (currentNode?.parent !== null && currentNode?.parent !== undefined) {
+    const parentId = String(currentNode.parent);
+    const parentNode = nodeById.get(parentId);
+
+    if (!parentNode) {
+      break;
+    }
+
+    if (!parentNode.isLeafNode) {
+      ancestorIds.push(parentId);
+    }
+
+    currentNode = parentNode;
+  }
+
+  return ancestorIds;
+}
+
 export function findNodeById(nodes, targetId) {
   for (const node of nodes) {
     if (String(node.id) === String(targetId)) {

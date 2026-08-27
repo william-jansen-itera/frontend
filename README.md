@@ -15,6 +15,14 @@ Optional chat settings:
 - `AZURE_AI_AGENT_SYNC_TOKEN` enables manual `/api/chat/sync` protection
 - `APPLICATION_DEBUG` controls whether debug data is included in chat and search responses
 
+Optional Azure AI Search settings:
+
+- `AZURE_SEARCH_ENDPOINT`
+- `AZURE_SEARCH_INDEX_NAME`
+- `AZURE_SEARCH_QUERY_KEY` for search/query requests
+- `AZURE_SEARCH_ADMIN_KEY` for server-side indexer run requests
+- `AZURE_SEARCH_SQL_INDEXER_NAME` defaults to `tree-sql-indexer`
+
 `APPLICATION_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `false`.
 
 For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.
@@ -35,6 +43,8 @@ Security is currently handled in three layers.
 The important distinction is that navigation trimming is not security by itself. Even if a link is hidden, the request still blocked by Static Web Apps route rules and/or server-side authorization checks.
 
 For Azure AI Search SQL indexing, soft-delete detection now depends on the string column `isDeletedMarker` in `dbo.vw_tree_search_nodes`, matched by the datasource policy value `true`. The older computed `bit` column `isDeleted` remains useful for querying and admin UI filtering, but it did not reliably trigger document deletion in the SQL indexer.
+
+The application only requests an on-demand SQL indexer run for the confirmed `create-leaf-from-chat` flow. Regular edits such as manual note text changes, rename operations, generated child nodes, tree population, expand/collapse state changes, and other routine updates do not trigger the indexer from application code. The scheduled indexer remains the general backstop, and the app-triggered refresh requires `AZURE_SEARCH_ADMIN_KEY` on the server.
 
 ## Agent Behavior
 

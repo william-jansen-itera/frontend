@@ -1,6 +1,8 @@
 const searchEndpoint = process.env.AZURE_SEARCH_ENDPOINT;
 const searchIndexName = process.env.AZURE_SEARCH_INDEX_NAME;
 const searchQueryKey = process.env.AZURE_SEARCH_QUERY_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
+const searchAdminKey = process.env.AZURE_SEARCH_ADMIN_KEY;
+const searchSqlIndexerName = process.env.AZURE_SEARCH_SQL_INDEXER_NAME || 'tree-sql-indexer';
 const applicationIdentifier = process.env.APPLICATION_IDENTIFIER;
 const SEARCH_API_VERSION = '2024-07-01';
 const DEFAULT_SEARCH_PAGE_TOP = 25;
@@ -71,6 +73,68 @@ function getRequiredSearchConfig() {
     indexName: searchIndexName,
     queryKey: searchQueryKey,
   };
+}
+
+function getSearchIndexerRunConfig() {
+  if (!searchEndpoint) {
+    return { isConfigured: false, reason: 'Azure Search endpoint env var is not configured' };
+  }
+
+  if (!searchAdminKey) {
+    return { isConfigured: false, reason: 'Azure Search admin key env var is not configured' };
+  }
+
+  if (!searchSqlIndexerName) {
+    return { isConfigured: false, reason: 'Azure Search indexer name env var is not configured' };
+  }
+
+  return {
+    isConfigured: true,
+    endpoint: searchEndpoint.replace(/\/$/, ''),
+    adminKey: searchAdminKey,
+    indexerName: searchSqlIndexerName,
+  };
+}
+
+export async function requestTreeSqlIndexerRun() {
+  const config = getSearchIndexerRunConfig();
+
+  if (!config.isConfigured) {
+    return {
+      status: 'skipped',
+      reason: config.reason,
+    };
+  }
+
+  const response = await fetch(
+    `${config.endpoint}/indexers/${encodeURIComponent(config.indexerName)}/run?api-version=${SEARCH_API_VERSION}`,
+    {
+      method: 'POST',
+      headers: {
+        'api-key': config.adminKey,
+      },
+      cache: 'no-store',
+    },
+  );
+
+  if (response.ok) {
+    return {
+      status: 'requested',
+      indexerName: config.indexerName,
+    };
+  }
+
+  const errorText = (await response.text()).trim();
+
+  if (response.status === 409) {
+    return {
+      status: 'already-running',
+      indexerName: config.indexerName,
+      message: errorText || 'Azure Search reported that the indexer is already running.',
+    };
+  }
+
+  throw new Error(`Azure Search indexer run failed (${response.status}): ${errorText || 'No error details were returned.'}`);
 }
 
 function escapeODataString(value) {

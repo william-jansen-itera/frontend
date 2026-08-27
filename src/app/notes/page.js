@@ -17,6 +17,7 @@ import {
   expandPathToNode,
   extractExpandedState,
   findNodeById,
+  getAncestorExpandableNodeIds,
   getNextSelectedNodeId,
   getTreeSelectionHref,
 } from "./treeUtils";
@@ -278,6 +279,7 @@ function NotesPage() {
       .then((res) => res.json())
       .then((flatData) => {
         if (Array.isArray(flatData)) {
+          const persistedExpandedState = extractExpandedState(flatData);
           const nextSelectedNodeId = getNextSelectedNodeId(
             flatData,
             null,
@@ -288,7 +290,7 @@ function NotesPage() {
             : null;
           const nextExpandedState = expandPathToNode(
             flatData,
-            extractExpandedState(flatData),
+            persistedExpandedState,
             nextSelectedNodeId,
           );
 
@@ -301,6 +303,23 @@ function NotesPage() {
           setNodeDetailsError(null);
           setIsEditingNotes(false);
           setError(null);
+
+          const missingExpandedAncestorIds = nextSelectedNodeId
+            ? getAncestorExpandableNodeIds(flatData, nextSelectedNodeId).filter((nodeId) => !persistedExpandedState[String(nodeId)])
+            : [];
+
+          if (missingExpandedAncestorIds.length > 0) {
+            fetch("/api/notes", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                treeId: treeIdParam,
+                expandedNodeIds: missingExpandedAncestorIds,
+              }),
+            }).catch((persistError) => {
+              console.error("Failed to persist expanded ancestor path:", persistError);
+            });
+          }
         } else {
           setTreeData([]);
           setExpandedState({});

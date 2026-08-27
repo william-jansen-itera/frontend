@@ -9,6 +9,8 @@ import {
   selectChatLeafAnchorCandidate,
 } from '@/server/utils/chatService';
 import { parseClientPrincipal } from '@/server/utils/auth';
+import { requestTreeSqlIndexerRun } from '@/server/utils/azureSearch';
+import { logException, logTrace } from '@/server/utils/logging';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 import { assertTreeAccess, getTreeList } from '@/server/utils/treeCatalog';
@@ -47,6 +49,25 @@ async function assertWritableTreeForRequest(request, treeId) {
     visibility: 'both',
     requireWriteAccess: true,
   });
+}
+
+async function requestIndexerRefreshForMutation(treeInstanceId, mutationLabel) {
+  try {
+    const indexerRun = await requestTreeSqlIndexerRun();
+
+    if (indexerRun.status === 'requested' || indexerRun.status === 'already-running') {
+      await logTrace(`Requested Azure Search indexer refresh for tree ${treeInstanceId} after ${mutationLabel} (${indexerRun.status}).`);
+    }
+
+    return indexerRun;
+  } catch (indexerError) {
+    await logException(indexerError);
+
+    return {
+      status: 'failed',
+      message: indexerError instanceof Error ? indexerError.message : 'Azure Search indexer request failed.',
+    };
+  }
 }
 
 async function queryTreeData(treeInstanceId) {
@@ -855,6 +876,36 @@ async function UpdateTreeNodeOpenState(treeInstanceId, nodeId, isExpanded) {
   });
 }
 
+async function UpdateTreeNodeOpenStates(treeInstanceId, nodeIds, isExpanded) {
+  const normalizedNodeIds = Array.isArray(nodeIds)
+    ? Array.from(new Set(nodeIds.map((nodeId) => Number.parseInt(String(nodeId), 10)).filter(Number.isFinite)))
+    : [];
+
+  if (normalizedNodeIds.length === 0) {
+    return;
+  }
+
+  return withSqlConnection(async () => {
+    const request = new sql.Request()
+      .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('is_expanded', sql.Bit, isExpanded ? 1 : 0);
+
+    const nodeIdParameters = normalizedNodeIds.map((nodeId, index) => {
+      const parameterName = `node_id_${index}`;
+      request.input(parameterName, sql.Int, nodeId);
+      return `@${parameterName}`;
+    });
+
+    await request.query(`
+      UPDATE tree_nodes
+      SET is_expanded = @is_expanded
+      WHERE tree_instance_id = @tree_instance_id
+        AND is_leaf_node = 0
+        AND id IN (${nodeIdParameters.join(', ')});
+    `);
+  });
+}
+
 async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
   return withSqlConnection(async () => {
     const trimmedName = name.trim();
@@ -1025,6 +1076,8 @@ async function CreateLeafNodeFromChat({
 
       await transaction.commit();
 
+      const indexerRun = await requestIndexerRefreshForMutation(treeInstanceId, 'chat add');
+
       return {
         treeId: String(treeInstanceId),
         toolName: String(toolName ?? '').trim(),
@@ -1037,6 +1090,7 @@ async function CreateLeafNodeFromChat({
         generatedLeafTitle: resolvedPlacement.generatedLeafTitle,
         flatData: await queryTreeData(treeInstanceId),
         details: await queryNodeDetails(treeInstanceId, placementResult.createdLeafNode.createdNodeId),
+        indexerRun,
       };
     } catch (error) {
       if (transaction._aborted !== true) {
@@ -1434,13 +1488,22 @@ export async function PUT(request) {
 
 export async function PATCH(request) {
   try {
-    const { id, treeId, isExpanded, name, notes } = await request.json();
+    const { id, treeId, isExpanded, expandedNodeIds, name, notes } = await request.json();
 
-    if (id === undefined || !treeId) {
-      return NextResponse.json({ error: 'Invalid request, id and treeId are required' }, { status: 400 });
+    if (!treeId) {
+      return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
     }
 
     await assertWritableTreeForRequest(request, treeId);
+
+    if (Array.isArray(expandedNodeIds)) {
+      await UpdateTreeNodeOpenStates(parseInt(treeId, 10), expandedNodeIds, true);
+      return NextResponse.json({ success: true });
+    }
+
+    if (id === undefined) {
+      return NextResponse.json({ error: 'Invalid request, id is required' }, { status: 400 });
+    }
 
     if (typeof isExpanded === 'boolean') {
       await UpdateTreeNodeOpenState(parseInt(treeId), id, isExpanded);
