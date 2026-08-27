@@ -192,6 +192,7 @@ export default function TreesPage() {
     };
   }, [visibilityFilter]);
 
+
   const handleCreateTree = async (event) => {
     event.preventDefault();
 

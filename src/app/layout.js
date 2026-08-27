@@ -4,6 +4,7 @@ import "./globals.css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./useAuth";
+import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,9 +18,10 @@ const geistMono = Geist_Mono({
 
 const navLinks = [
   { href: "/about", label: "About" },
-  { href: "/notes", label: "Notes" },
-  { href: "/search", label: "Search" },
-  { href: "/chat", label: "Agent" },
+  { href: "/notes", label: "Notes", requiresRole: "mdsusers" },
+  { href: "/search", label: "Search", requiresRole: "mdsusers" },
+  { href: "/chat", label: "Agent", requiresRole: "mdsusers" },
+  { href: "/admin", label: "Admin", requiresRole: "mdsadmin" },
 ];
 
 function getPageSurfaceClassName(pathname) {
@@ -43,6 +45,10 @@ function getPageSurfaceClassName(pathname) {
     return "appPageSurface appPageSurfaceAbout";
   }
 
+  if (pathname === "/admin") {
+    return "appPageSurface appPageSurfaceAbout";
+  }
+
   return "appPageSurface appPageSurfaceHome";
 }
 
@@ -60,6 +66,10 @@ export default function RootLayout({ children }) {
                 <Link href="/" className="appBrandLink">Knowledge App</Link>
                 <div className="appNavLinks">
                   {navLinks.map((link) => {
+                    if (link.requiresRole && !hasClientPrincipalRole(user, link.requiresRole)) {
+                      return null;
+                    }
+
                     const isActive = pathname === link.href;
 
                     return (

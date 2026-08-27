@@ -88,6 +88,7 @@ function mapTreeRecord(row) {
     description: normalizeTreeDescription(row.description),
     isDescriptionPublished: Boolean(row.isDescriptionPublished),
     isPrivate: Boolean(row.isPrivate),
+    deletedAt: row.deletedAt ?? null,
     ownerObjectId: String(row.ownerObjectId ?? '').trim() || null,
     ownerUserDetails: String(row.ownerUserDetails ?? '').trim() || null,
     ownerDisplayName: String(row.ownerDisplayName ?? '').trim() || null,
@@ -133,10 +134,12 @@ async function assertScopedTree(treeId, options = {}) {
     visibility = TREE_VISIBILITY_BOTH,
     requireWriteAccess = false,
     enforceAccess = false,
+    includeDeleted = false,
   } = options;
   const result = await new sql.Request()
     .input('tree_instance_id', sql.Int, Number(treeId))
     .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .input('include_deleted', sql.Bit, includeDeleted ? 1 : 0)
     .query(`
       SELECT TOP 1
         ti.id,
@@ -144,13 +147,15 @@ async function assertScopedTree(treeId, options = {}) {
         ti.description,
         CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished,
         CAST(COALESCE(ti.is_private, 0) AS BIT) AS isPrivate,
+        ti.deleted_at AS deletedAt,
         ti.owner_object_id AS ownerObjectId,
         ti.owner_user_details AS ownerUserDetails,
         ti.owner_display_name AS ownerDisplayName
       FROM tree_instance ti
       INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
       WHERE ti.id = @tree_instance_id
-        AND ai.app_identifier = @application_identifier;
+        AND ai.app_identifier = @application_identifier
+        AND (@include_deleted = 1 OR ti.deleted_at IS NULL);
     `);
 
   const tree = result.recordset[0] ? mapTreeRecord(result.recordset[0]) : null;
@@ -260,6 +265,7 @@ async function getScopedTreeAttachmentBlobs(treeId) {
   const result = await new sql.Request()
     .input('tree_instance_id', sql.Int, Number(treeId))
     .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .input('include_deleted', sql.Bit, 0)
     .query(`
       SELECT files.blob_name AS blobName
       FROM tree_node_detail_files files
@@ -267,7 +273,9 @@ async function getScopedTreeAttachmentBlobs(treeId) {
       INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
       INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
       WHERE ti.id = @tree_instance_id
-        AND ai.app_identifier = @application_identifier;
+        AND ai.app_identifier = @application_identifier
+        AND (@include_deleted = 1 OR ti.deleted_at IS NULL)
+        AND (@include_deleted = 1 OR tn.deleted_at IS NULL);
     `);
 
   return result.recordset;
@@ -278,6 +286,8 @@ export async function getTreeList(options = {}) {
     principal = null,
     visibility = TREE_VISIBILITY_BOTH,
     enforceAccess = false,
+    includeDeleted = false,
+    deletedOnly = false,
   } = options;
   const query = `
     SELECT
@@ -286,6 +296,7 @@ export async function getTreeList(options = {}) {
       CAST(COALESCE(ti.description, '') AS NVARCHAR(MAX)) AS description,
       CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished,
       CAST(COALESCE(ti.is_private, 0) AS BIT) AS isPrivate,
+      ti.deleted_at AS deletedAt,
       ti.owner_object_id AS ownerObjectId,
       ti.owner_user_details AS ownerUserDetails,
       ti.owner_display_name AS ownerDisplayName,
@@ -295,15 +306,21 @@ export async function getTreeList(options = {}) {
     OUTER APPLY (
       SELECT TOP 1 tn.text
       FROM tree_nodes tn
-      WHERE tn.tree_instance_id = ti.id AND tn.parent_id IS NULL
+      WHERE tn.tree_instance_id = ti.id AND tn.parent_id IS NULL AND tn.deleted_at IS NULL
       ORDER BY tn.sort_order, tn.id
     ) root_node
     WHERE ai.app_identifier = @application_identifier
+      AND (
+        (@deleted_only = 1 AND ti.deleted_at IS NOT NULL)
+        OR (@deleted_only = 0 AND (@include_deleted = 1 OR ti.deleted_at IS NULL))
+      )
     ORDER BY ti.updated_at DESC, ti.id DESC;`;
 
   return withSqlConnection(async () => {
     const result = await new sql.Request()
       .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('include_deleted', sql.Bit, includeDeleted ? 1 : 0)
+      .input('deleted_only', sql.Bit, deletedOnly ? 1 : 0)
       .query(query);
 
     return filterTreesForAccess(
@@ -659,13 +676,61 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
       enforceAccess,
     });
 
-    const attachments = await getScopedTreeAttachmentBlobs(treeId);
+    const deletedAt = new Date();
+    const deleteResult = await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('deleted_at', sql.DateTime2, deletedAt)
+      .query(`
+        UPDATE ti
+        SET deleted_at = COALESCE(ti.deleted_at, @deleted_at),
+            updated_at = @deleted_at
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier
+          AND ti.deleted_at IS NULL;
+      `);
 
-    for (const attachment of attachments) {
+    if (!deleteResult.rowsAffected[0]) {
+      throw new Error('Tree was not found for the active application instance');
+    }
+
+    return { success: true };
+  });
+}
+
+export async function purgeTree({ treeId, principal = null, enforceAccess = false }) {
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      requireWriteAccess: true,
+      enforceAccess,
+      includeDeleted: true,
+    });
+
+    if (!scopedTree.deletedAt) {
+      throw new Error('Tree must be soft-deleted before it can be purged');
+    }
+
+    const attachments = await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .query(`
+        SELECT files.blob_name AS blobName
+        FROM tree_node_detail_files files
+        INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+
+    for (const attachment of attachments.recordset) {
       await deleteNodeAttachmentBlobIfExists(attachment.blobName);
     }
 
-    const deleteResult = await new sql.Request()
+    const purgeResult = await new sql.Request()
       .input('tree_instance_id', sql.Int, Number(treeId))
       .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
       .query(`
@@ -673,11 +738,12 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
         FROM tree_instance ti
         INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
         WHERE ti.id = @tree_instance_id
-          AND ai.app_identifier = @application_identifier;
+          AND ai.app_identifier = @application_identifier
+          AND ti.deleted_at IS NOT NULL;
       `);
 
-    if (!deleteResult.rowsAffected[0]) {
-      throw new Error('Tree was not found for the active application instance');
+    if (!purgeResult.rowsAffected[0]) {
+      throw new Error('Tree was not found for purge');
     }
 
     return { success: true };
@@ -762,6 +828,8 @@ export async function getTreeRoutingProfiles(options = {}) {
       INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
       INNER JOIN tree_nodes tn ON tn.tree_instance_id = ti.id
       WHERE ai.app_identifier = @application_identifier
+        AND ti.deleted_at IS NULL
+        AND tn.deleted_at IS NULL
         AND tn.parent_id IS NULL
 
       UNION ALL
@@ -777,6 +845,7 @@ export async function getTreeRoutingProfiles(options = {}) {
         CAST(rt.breadcrumb + N' > ' + tn.text AS NVARCHAR(MAX)) AS breadcrumb
       FROM tree_nodes tn
       INNER JOIN RecursiveTree rt ON tn.parent_id = rt.id
+      WHERE tn.deleted_at IS NULL
     )
     SELECT
       CAST(tree_id AS VARCHAR(10)) AS treeId,
@@ -803,6 +872,8 @@ export async function getTreeRoutingProfiles(options = {}) {
       INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
       INNER JOIN tree_nodes tn ON tn.tree_instance_id = ti.id
       WHERE ai.app_identifier = @application_identifier
+        AND ti.deleted_at IS NULL
+        AND tn.deleted_at IS NULL
         AND tn.parent_id IS NULL
 
       UNION ALL
@@ -817,6 +888,7 @@ export async function getTreeRoutingProfiles(options = {}) {
         CAST(rt.breadcrumb + N' > ' + tn.text AS NVARCHAR(MAX)) AS breadcrumb
       FROM tree_nodes tn
       INNER JOIN RecursiveTree rt ON tn.parent_id = rt.id
+      WHERE tn.deleted_at IS NULL
     )
     SELECT
       CAST(rt.tree_id AS VARCHAR(10)) AS treeId,

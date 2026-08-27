@@ -1,0 +1,171 @@
+.pageShell {
+  width: 100%;
+  padding: 0 var(--page-shell-padding) var(--page-shell-padding);
+  box-sizing: border-box;
+}
+
+.heroCard,
+.panel {
+  max-width: var(--page-content-width);
+  margin: 0 auto 1.5rem;
+}
+
+.heroCard {
+  padding: 2rem;
+}
+
+.heroHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.statusMessage,
+.errorMessage {
+  margin: 1rem 0 0;
+  font-weight: 600;
+}
+
+.statusMessage {
+  color: #166534;
+}
+
+.errorMessage {
+  color: #b91c1c;
+}
+
+.grid {
+  max-width: var(--page-content-width);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.panel {
+  overflow: hidden;
+}
+
+.panelToolbar {
+  justify-content: space-between;
+}
+
+.panelHeaderGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.panelHeading {
+  color: var(--ui-eyebrow-color);
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
+}
+
+.countLabel {
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.panelBody {
+  padding: 1.2rem 1.5rem 1.35rem;
+}
+
+.emptyState {
+  color: #475569;
+}
+
+.list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.listItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: start;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 250, 250, 0.98), rgba(248, 250, 252, 0.96));
+}
+
+.actionGroup {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.itemMeta {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.itemHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badge,
+.badgeMuted {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.badge {
+  color: #7c2d12;
+  background: rgba(254, 215, 170, 0.54);
+}
+
+.badgeMuted {
+  color: #334155;
+  background: rgba(226, 232, 240, 0.8);
+}
+
+.itemTitle {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.itemDetail {
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 980px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .heroHeader,
+  .listItem {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .actionGroup {
+    justify-content: flex-start;
+  }
+}

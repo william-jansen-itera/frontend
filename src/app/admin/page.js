@@ -1,0 +1,504 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useAuth } from "@/app/useAuth";
+import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
+import styles from "./page.module.css";
+
+function getErrorMessage(error, fallbackMessage) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
+
+function formatTimestamp(value) {
+  if (!value) {
+    return "Unknown time";
+  }
+
+  const parsedValue = new Date(value);
+
+  if (Number.isNaN(parsedValue.getTime())) {
+    return "Unknown time";
+  }
+
+  return parsedValue.toLocaleString();
+}
+
+export default function AdminPage() {
+  const { user } = useAuth();
+  const isAdmin = hasClientPrincipalRole(user, "mdsadmin");
+  const [deletedTrees, setDeletedTrees] = useState([]);
+  const [deletedNodes, setDeletedNodes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [pendingItems, setPendingItems] = useState({});
+
+  const setPending = (key, isPending) => {
+    setPendingItems((current) => ({
+      ...current,
+      [key]: isPending,
+    }));
+  };
+
+  const loadDeletedItems = async () => {
+    if (!isAdmin) {
+      setDeletedTrees([]);
+      setDeletedNodes([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/admin/deleted", { cache: "no-store" });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Deleted items could not be loaded");
+      }
+
+      setDeletedTrees(Array.isArray(data?.deletedTrees) ? data.deletedTrees : []);
+      setDeletedNodes(Array.isArray(data?.deletedNodes) ? data.deletedNodes : []);
+      setErrorMessage("");
+    } catch (error) {
+      setDeletedTrees([]);
+      setDeletedNodes([]);
+      setErrorMessage(getErrorMessage(error, "Deleted items could not be loaded"));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!isAdmin) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    Promise.resolve().then(async () => {
+      try {
+        const response = await fetch("/api/admin/deleted", { cache: "no-store" });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Deleted items could not be loaded");
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setDeletedTrees(Array.isArray(data?.deletedTrees) ? data.deletedTrees : []);
+        setDeletedNodes(Array.isArray(data?.deletedNodes) ? data.deletedNodes : []);
+        setErrorMessage("");
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setDeletedTrees([]);
+        setDeletedNodes([]);
+        setErrorMessage(getErrorMessage(error, "Deleted items could not be loaded"));
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isAdmin]);
+
+  const handlePurgeTree = async (tree) => {
+    const treeId = String(tree.id);
+    const confirmed = window.confirm(`Purge tree "${tree.name}" permanently? This cannot be undone.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPending(`tree:${treeId}`, true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(`/api/trees?treeId=${encodeURIComponent(treeId)}&purge=true&visibility=both`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Tree could not be purged");
+      }
+
+      setStatusMessage(`Tree ${treeId} was purged.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Tree could not be purged"));
+    } finally {
+      setPending(`tree:${treeId}`, false);
+    }
+  };
+
+  const handleUndeleteTree = async (tree) => {
+    const treeId = String(tree.id);
+
+    setPending(`undelete-tree:${treeId}`, true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/deleted", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "undelete-tree", treeId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Tree could not be undeleted");
+      }
+
+      setStatusMessage(`Tree ${treeId} was undeleted.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Tree could not be undeleted"));
+    } finally {
+      setPending(`undelete-tree:${treeId}`, false);
+    }
+  };
+
+  const handlePurgeAllTrees = async () => {
+    if (deletedTrees.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm("Purge all deleted trees permanently? This will also remove all remaining nodes and attachments under those trees.");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPending("bulk:trees", true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/deleted", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "purge-all-trees" }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Deleted trees could not be purged");
+      }
+
+      setStatusMessage(`Purged ${data?.purgedTreeCount ?? 0} deleted tree${Number(data?.purgedTreeCount ?? 0) === 1 ? "" : "s"}.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Deleted trees could not be purged"));
+    } finally {
+      setPending("bulk:trees", false);
+    }
+  };
+
+  const handlePurgeNode = async (node) => {
+    const treeId = String(node.treeId);
+    const nodeId = String(node.nodeId);
+    const confirmed = window.confirm(`Purge node "${node.title}" from tree "${node.treeDisplayName}" permanently? This cannot be undone.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPending(`node:${node.id}`, true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(`/api/notes?treeId=${encodeURIComponent(treeId)}&id=${encodeURIComponent(nodeId)}&purge=true`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Node could not be purged");
+      }
+
+      setStatusMessage(`Node ${nodeId} in tree ${treeId} was purged.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Node could not be purged"));
+    } finally {
+      setPending(`node:${node.id}`, false);
+    }
+  };
+
+  const handleUndeleteNode = async (node) => {
+    const treeId = String(node.treeId);
+    const nodeId = String(node.nodeId);
+
+    setPending(`undelete-node:${node.id}`, true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/deleted", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "undelete-node", treeId, nodeId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Node could not be undeleted");
+      }
+
+      setStatusMessage(`Node ${nodeId} in tree ${treeId} was undeleted.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Node could not be undeleted"));
+    } finally {
+      setPending(`undelete-node:${node.id}`, false);
+    }
+  };
+
+  const handlePurgeAllNodes = async () => {
+    if (deletedNodes.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm("Purge all deleted nodes permanently? This cannot be undone.");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPending("bulk:nodes", true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/deleted", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "purge-all-nodes" }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Deleted nodes could not be purged");
+      }
+
+      setStatusMessage(`Purged ${data?.purgedNodeCount ?? 0} deleted node${Number(data?.purgedNodeCount ?? 0) === 1 ? "" : "s"}.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Deleted nodes could not be purged"));
+    } finally {
+      setPending("bulk:nodes", false);
+    }
+  };
+
+  if (!user) {
+    return (
+      <main className={`${styles.pageShell} appPageShell`}>
+        <section className={`appTopLevelPanel ${styles.heroCard}`}>
+          <p className="appEyebrow">Admin</p>
+          <h1 className="appPageTitle">Admin purge workspace</h1>
+          <p className="appPageDescription">Sign in with a user that has the mdsadmin role to view deleted trees and deleted nodes.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <main className={`${styles.pageShell} appPageShell`}>
+        <section className={`appTopLevelPanel ${styles.heroCard}`}>
+          <p className="appEyebrow">Admin</p>
+          <h1 className="appPageTitle">Admin purge workspace</h1>
+          <p className="appPageDescription">This page requires the mdsadmin role.</p>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className={`${styles.pageShell} appPageShell`}>
+      <section className={`appTopLevelPanel ${styles.heroCard}`}>
+        <div className={styles.heroHeader}>
+          <div className="appHeroCopy">
+            <p className="appEyebrow">Admin</p>
+            <h1 className="appPageTitle">Purge deleted content</h1>
+            <p className="appPageDescription">Review soft-deleted trees and deleted nodes from the SQL search view, then purge them permanently when retention is no longer needed.</p>
+          </div>
+          <button
+            type="button"
+            onClick={loadDeletedItems}
+            disabled={isLoading}
+            className="appPrimaryFormButton"
+          >
+            {isLoading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+        {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}
+        {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
+      </section>
+
+      <section className={styles.grid}>
+        <article className={`appTopLevelPanel ${styles.panel}`}>
+          <div className={`appPanelTopBar ${styles.panelToolbar}`}>
+            <div className={styles.panelHeaderGroup}>
+              <span className={styles.panelHeading}>Deleted Trees</span>
+              <span className={styles.countLabel}>{deletedTrees.length}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handlePurgeAllTrees}
+              disabled={isLoading || deletedTrees.length === 0 || Boolean(pendingItems["bulk:trees"])}
+              className="appCompactActionButton appCompactActionButtonDanger"
+            >
+              {pendingItems["bulk:trees"] ? "Purging..." : "Purge All"}
+            </button>
+          </div>
+          <div className={styles.panelBody}>
+            {isLoading ? (
+              <div className={styles.emptyState}>Loading deleted trees...</div>
+            ) : deletedTrees.length === 0 ? (
+              <div className={styles.emptyState}>No deleted trees are waiting for purge.</div>
+            ) : (
+              <div className={styles.list}>
+                {deletedTrees.map((tree) => {
+                  const pendingKey = `tree:${tree.id}`;
+                  const undeletePendingKey = `undelete-tree:${tree.id}`;
+
+                  return (
+                    <article key={tree.id} className={styles.listItem}>
+                      <div className={styles.itemMeta}>
+                        <div className={styles.itemHeader}>
+                          <span className={styles.badge}>Tree {tree.id}</span>
+                          <span className={styles.badgeMuted}>{tree.isPrivate ? "Private" : "Public"}</span>
+                        </div>
+                        <h2 className={styles.itemTitle}>{tree.name}</h2>
+                        <p className={styles.itemDetail}>Deleted at: {formatTimestamp(tree.deletedAt)}</p>
+                        {tree.ownerDisplayName || tree.ownerUserDetails ? (
+                          <p className={styles.itemDetail}>Owner: {tree.ownerDisplayName || tree.ownerUserDetails}</p>
+                        ) : null}
+                      </div>
+                      <div className={styles.actionGroup}>
+                        <button
+                          type="button"
+                          onClick={() => handleUndeleteTree(tree)}
+                          disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[pendingKey])}
+                          className="appCompactActionButton appCompactActionButtonNeutral"
+                        >
+                          {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePurgeTree(tree)}
+                          disabled={Boolean(pendingItems[pendingKey]) || Boolean(pendingItems[undeletePendingKey])}
+                          className="appCompactActionButton appCompactActionButtonDanger"
+                        >
+                          {pendingItems[pendingKey] ? "Purging..." : "Purge"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </article>
+
+        <article className={`appTopLevelPanel ${styles.panel}`}>
+          <div className={`appPanelTopBar ${styles.panelToolbar}`}>
+            <div className={styles.panelHeaderGroup}>
+              <span className={styles.panelHeading}>Deleted Nodes</span>
+              <span className={styles.countLabel}>{deletedNodes.length}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handlePurgeAllNodes}
+              disabled={isLoading || deletedNodes.length === 0 || Boolean(pendingItems["bulk:nodes"])}
+              className="appCompactActionButton appCompactActionButtonDanger"
+            >
+              {pendingItems["bulk:nodes"] ? "Purging..." : "Purge All"}
+            </button>
+          </div>
+          <div className={styles.panelBody}>
+            {isLoading ? (
+              <div className={styles.emptyState}>Loading deleted nodes...</div>
+            ) : deletedNodes.length === 0 ? (
+              <div className={styles.emptyState}>No deleted nodes are currently exposed by the search view.</div>
+            ) : (
+              <div className={styles.list}>
+                {deletedNodes.map((node) => {
+                  const pendingKey = `node:${node.id}`;
+                  const undeletePendingKey = `undelete-node:${node.id}`;
+
+                  return (
+                    <article key={node.id} className={styles.listItem}>
+                      <div className={styles.itemMeta}>
+                        <div className={styles.itemHeader}>
+                          <span className={styles.badge}>Tree {node.treeId}</span>
+                          <span className={styles.badge}>Node {node.nodeId}</span>
+                          {node.hasAttachments ? <span className={styles.badgeMuted}>{node.attachmentCount} attachment{node.attachmentCount === 1 ? "" : "s"}</span> : null}
+                        </div>
+                        <h2 className={styles.itemTitle}>{node.title}</h2>
+                        <p className={styles.itemDetail}>Tree: {node.treeDisplayName}</p>
+                        <p className={styles.itemDetail}>{node.breadcrumb || "No breadcrumb available."}</p>
+                        <p className={styles.itemDetail}>Search-view delete marker timestamp: {formatTimestamp(node.updatedAt)}</p>
+                        {!node.canUndelete ? <p className={styles.itemDetail}>Undelete is unavailable while the parent tree is still deleted.</p> : null}
+                      </div>
+                      <div className={styles.actionGroup}>
+                        {node.canUndelete ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUndeleteNode(node)}
+                            disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[pendingKey])}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handlePurgeNode(node)}
+                          disabled={Boolean(pendingItems[pendingKey]) || Boolean(pendingItems[undeletePendingKey])}
+                          className="appCompactActionButton appCompactActionButtonDanger"
+                        >
+                          {pendingItems[pendingKey] ? "Purging..." : "Purge"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </article>
+      </section>
+    </main>
+  );
+}

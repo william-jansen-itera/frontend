@@ -14,6 +14,10 @@ function isLocalHostName(hostname) {
   return normalizedHostname === 'localhost' || normalizedHostname === '127.0.0.1';
 }
 
+function normalizeRoleName(role) {
+  return String(role ?? '').trim().toLowerCase();
+}
+
 export function isLocalDevelopmentHost(hostname) {
   return isLocalHostName(hostname);
 }
@@ -29,7 +33,7 @@ export function createLocalDevelopmentPrincipal(overrides = {}) {
   const expiresAtEpoch = String(overrides.expiresAtEpoch ?? '1787741761').trim();
   const userRoles = Array.isArray(overrides.userRoles) && overrides.userRoles.length > 0
     ? overrides.userRoles
-    : ['mdsusers', 'anonymous', 'authenticated'];
+    : ['mdsadmin', 'mdsusers', 'anonymous', 'authenticated'];
   const claims = [
     createClaim('name', displayName),
     createClaim('preferred_username', userDetails),
@@ -70,4 +74,17 @@ export function normalizeClientPrincipal(principal) {
     expiresAtEpoch: getClaimValue(claims, 'exp'),
     claims,
   };
+}
+
+export function hasClientPrincipalRole(principal, role) {
+  const normalizedRole = normalizeRoleName(role);
+
+  if (!normalizedRole) {
+    return false;
+  }
+
+  const normalizedPrincipal = normalizeClientPrincipal(principal);
+  const userRoles = Array.isArray(normalizedPrincipal?.userRoles) ? normalizedPrincipal.userRoles : [];
+
+  return userRoles.some((userRole) => normalizeRoleName(userRole) === normalizedRole);
 }

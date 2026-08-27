@@ -63,6 +63,7 @@ CREATE TABLE [dbo].[tree_nodes](
 	[is_expanded] [bit] NOT NULL,
 	[draggable] [bit] NOT NULL,
 	[sort_order] [int] NOT NULL,
+	[deleted_at] [datetime2](7) NULL,
 	[created_at] [datetime2](0) NOT NULL,
 	[updated_at] [datetime2](0) NOT NULL,
 PRIMARY KEY CLUSTERED 
@@ -157,6 +158,7 @@ CREATE TABLE [dbo].[tree_instance](
 	[owner_user_details] [nvarchar](320) NULL,
 	[owner_display_name] [nvarchar](200) NULL,
 	[is_active] [bit] NOT NULL,
+	[deleted_at] [datetime2](7) NULL,
 	[created_at] [datetime2](0) NOT NULL,
 	[updated_at] [datetime2](0) NOT NULL,
 PRIMARY KEY CLUSTERED 
@@ -339,6 +341,43 @@ ON DELETE CASCADE
 GO
 ALTER TABLE [dbo].[tree_setting] CHECK CONSTRAINT [FK_tree_setting_tree_instance]
 GO
+CREATE OR ALTER TRIGGER [dbo].[TR_tree_nodes_set_updated_at]
+ON [dbo].[tree_nodes]
+AFTER UPDATE
+AS
+BEGIN
+	SET NOCOUNT ON;
+
+	DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+
+	WITH ChangedPathNodes AS (
+		SELECT i.id
+		FROM inserted i
+		INNER JOIN deleted d ON d.id = i.id
+		WHERE ISNULL(i.[text], N'') <> ISNULL(d.[text], N'')
+		   OR ISNULL(i.parent_id, -1) <> ISNULL(d.parent_id, -1)
+		   OR ISNULL(i.sort_order, -2147483648) <> ISNULL(d.sort_order, -2147483648)
+	),
+	Descendants AS (
+		SELECT id
+		FROM ChangedPathNodes
+
+		UNION ALL
+
+		SELECT child.id
+		FROM dbo.tree_nodes child
+		INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
+	)
+	UPDATE tn
+	SET updated_at = @now
+	FROM dbo.tree_nodes tn
+	WHERE tn.id IN (
+		SELECT i.id FROM inserted i
+		UNION
+		SELECT d.id FROM Descendants d
+	);
+END;
+GO
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -353,6 +392,7 @@ WITH TreeHierarchy AS (
 		tn.[text],
 		tn.is_leaf_node,
 		tn.sort_order,
+		tn.deleted_at,
 		tn.created_at,
 		tn.updated_at,
 		CAST(tn.updated_at AS DATETIME2(7)) AS path_updated_at,
@@ -372,6 +412,7 @@ WITH TreeHierarchy AS (
 		child.[text],
 		child.is_leaf_node,
 		child.sort_order,
+		child.deleted_at,
 		child.created_at,
 		child.updated_at,
 		CAST(CASE
@@ -413,6 +454,8 @@ SELECT
 	th.is_leaf_node AS isLeafNode,
 	th.depth,
 	th.sort_path AS sortPath,
+	CAST(CASE WHEN th.deleted_at IS NOT NULL OR ti.deleted_at IS NOT NULL THEN 1 ELSE 0 END AS bit) AS isDeleted,
+	CAST(CASE WHEN th.deleted_at IS NOT NULL OR ti.deleted_at IS NOT NULL THEN N'true' ELSE N'false' END AS NVARCHAR(5)) AS isDeletedMarker,
 	ISNULL(attachments.attachment_count, 0) AS attachmentCount,
 	CAST(CASE WHEN ISNULL(attachments.attachment_count, 0) > 0 THEN 1 ELSE 0 END AS bit) AS hasAttachments,
 	CAST((
@@ -431,15 +474,25 @@ SELECT
 		FOR JSON PATH
 	) AS NVARCHAR(MAX)) AS attachmentMetadataJson,
 	CAST(CASE
-		WHEN attachments.latest_attachment_updated_at IS NULL AND details.updated_at IS NULL THEN th.path_updated_at
+		WHEN attachments.latest_attachment_updated_at IS NULL AND details.updated_at IS NULL THEN
+			CASE WHEN ti.updated_at >= th.path_updated_at THEN ti.updated_at ELSE th.path_updated_at END
 		WHEN attachments.latest_attachment_updated_at IS NULL THEN
-			CASE WHEN details.updated_at >= th.path_updated_at THEN details.updated_at ELSE th.path_updated_at END
+			CASE
+				WHEN details.updated_at >= ti.updated_at AND details.updated_at >= th.path_updated_at THEN details.updated_at
+				WHEN ti.updated_at >= details.updated_at AND ti.updated_at >= th.path_updated_at THEN ti.updated_at
+				ELSE th.path_updated_at
+			END
 		WHEN details.updated_at IS NULL THEN
-			CASE WHEN attachments.latest_attachment_updated_at >= th.path_updated_at THEN attachments.latest_attachment_updated_at ELSE th.path_updated_at END
+			CASE
+				WHEN attachments.latest_attachment_updated_at >= ti.updated_at AND attachments.latest_attachment_updated_at >= th.path_updated_at THEN attachments.latest_attachment_updated_at
+				WHEN ti.updated_at >= attachments.latest_attachment_updated_at AND ti.updated_at >= th.path_updated_at THEN ti.updated_at
+				ELSE th.path_updated_at
+			END
 		ELSE (
 			CASE
-				WHEN attachments.latest_attachment_updated_at >= details.updated_at AND attachments.latest_attachment_updated_at >= th.path_updated_at THEN attachments.latest_attachment_updated_at
-				WHEN details.updated_at >= attachments.latest_attachment_updated_at AND details.updated_at >= th.path_updated_at THEN details.updated_at
+				WHEN attachments.latest_attachment_updated_at >= details.updated_at AND attachments.latest_attachment_updated_at >= ti.updated_at AND attachments.latest_attachment_updated_at >= th.path_updated_at THEN attachments.latest_attachment_updated_at
+				WHEN details.updated_at >= attachments.latest_attachment_updated_at AND details.updated_at >= ti.updated_at AND details.updated_at >= th.path_updated_at THEN details.updated_at
+				WHEN ti.updated_at >= attachments.latest_attachment_updated_at AND ti.updated_at >= details.updated_at AND ti.updated_at >= th.path_updated_at THEN ti.updated_at
 				ELSE th.path_updated_at
 			END
 		)

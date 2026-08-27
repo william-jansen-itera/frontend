@@ -19,6 +19,23 @@ Optional chat settings:
 
 For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.
 
+## TODO
+
+- Implement attachment cleanup and retention handling so blob/file records do not accumulate indefinitely after node or tree lifecycle changes.
+- Because attachments are indexed through their own blob indexer, implement attachment soft delete by writing delete-state metadata to the blob and preserving the SQL/blob records long enough for index cleanup before final purge removes the blob and metadata.
+
+## Security
+
+Security is currently handled in three layers.
+
+1. Azure Static Web Apps route protection in `staticwebapp.config.json` is the first gate. Protected pages and API routes are assigned roles such as `mdsusers` and `mdsadmin`, and unauthenticated requests are redirected to `/.auth/login/aad`.
+2. Navigation trimming in `src/app/layout.js` is a user-experience layer. The nav defines role requirements per link and hides links when the signed-in principal does not have the required role. This uses the shared role helper in `src/shared/clientPrincipal.js` together with auth state from `src/app/useAuth.js`.
+3. Server-side in-code checks remain the enforcement boundary inside the app. API routes parse the client principal with `src/server/utils/auth.js`, then apply route-specific authorization such as `assertTreeAccess(...)` for tree-scoped access and `assertAdminPrincipal(...)` or `hasClientPrincipalRole(..., 'mdsadmin')` for admin-only operations.
+
+The important distinction is that navigation trimming is not security by itself. Even if a link is hidden, the request still blocked by Static Web Apps route rules and/or server-side authorization checks.
+
+For Azure AI Search SQL indexing, soft-delete detection now depends on the string column `isDeletedMarker` in `dbo.vw_tree_search_nodes`, matched by the datasource policy value `true`. The older computed `bit` column `isDeleted` remains useful for querying and admin UI filtering, but it did not reliably trigger document deletion in the SQL indexer.
+
 ## Agent Behavior
 
 ### Is tool selection behavior internal to the agent?

@@ -8,6 +8,11 @@
     "@odata.type": "#Microsoft.Azure.Search.HighWaterMarkChangeDetectionPolicy",
     "highWaterMarkColumnName": "updatedAt"
   },
+  "dataDeletionDetectionPolicy": {
+    "@odata.type": "#Microsoft.Azure.Search.SoftDeleteColumnDeletionDetectionPolicy",
+    "softDeleteColumnName": "isDeletedMarker",
+    "softDeleteMarkerValue": "true"
+  },
   "container": {
     "name": "dbo.vw_tree_search_nodes"
   }

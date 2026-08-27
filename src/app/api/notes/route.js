@@ -9,7 +9,8 @@ import {
   selectChatLeafAnchorCandidate,
 } from '@/server/utils/chatService';
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { sql, withSqlConnection } from '@/server/utils/sql';
+import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
+import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 import { assertTreeAccess, getTreeList } from '@/server/utils/treeCatalog';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -62,6 +63,7 @@ async function queryTreeData(treeInstanceId) {
         0 AS _depth
       FROM tree_nodes
       WHERE tree_instance_id = @tree_instance_id
+        AND deleted_at IS NULL
         AND parent_id IS NULL
       UNION ALL
       SELECT
@@ -77,6 +79,7 @@ async function queryTreeData(treeInstanceId) {
       FROM tree_nodes t
       INNER JOIN RecursiveTree rt ON t.parent_id = rt.id
       WHERE t.tree_instance_id = @tree_instance_id
+        AND t.deleted_at IS NULL
     )
     SELECT
       CAST(id AS VARCHAR(10)) AS id,
@@ -114,7 +117,7 @@ async function queryTreeNode(treeInstanceId, nodeId, transaction = null) {
         text AS name,
         is_leaf_node AS isLeafNode
       FROM tree_nodes
-      WHERE tree_instance_id = @tree_instance_id AND id = @id;
+      WHERE tree_instance_id = @tree_instance_id AND id = @id AND deleted_at IS NULL;
     `);
 
   return result.recordset[0] ?? null;
@@ -146,7 +149,7 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
         ISNULL(tnd.notes, '') AS notes
       FROM tree_nodes tn
       LEFT JOIN tree_node_details tnd ON tnd.tree_node_id = tn.id
-      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id;
+      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL;
     `);
 
   const details = detailResult.recordset[0] ?? null;
@@ -175,7 +178,7 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       FROM tree_node_detail_files files
       INNER JOIN tree_node_details details ON details.tree_node_id = files.tree_node_id
       INNER JOIN tree_nodes tn ON tn.id = details.tree_node_id
-      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id
+      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL
       ORDER BY files.created_at DESC, files.id DESC;
     `);
 
@@ -216,7 +219,7 @@ async function queryTreeSummary(treeInstanceId, transaction = null) {
     .query(`
       SELECT TOP 1 COALESCE(NULLIF(display_name, ''), CONCAT('Tree ', id)) AS treeName
       FROM tree_instance
-      WHERE id = @tree_instance_id;
+      WHERE id = @tree_instance_id AND deleted_at IS NULL;
     `);
 
   return {
@@ -262,6 +265,7 @@ async function getTreeCreateContext(treeInstanceId, parentId, transaction = null
         0 AS depth
       FROM tree_nodes
       WHERE tree_instance_id = @tree_instance_id
+        AND deleted_at IS NULL
         AND parent_id IS NULL
       UNION ALL
       SELECT
@@ -271,6 +275,7 @@ async function getTreeCreateContext(treeInstanceId, parentId, transaction = null
       FROM tree_nodes t
       INNER JOIN RecursiveTree rt ON t.parent_id = rt.id
       WHERE t.tree_instance_id = @tree_instance_id
+        AND t.deleted_at IS NULL
     )
     SELECT
       parent_node.is_leaf_node AS isLeafNode,
@@ -285,6 +290,7 @@ async function getTreeCreateContext(treeInstanceId, parentId, transaction = null
         AND setting_key = 'nodes.max_depth'
     ) setting_row
     WHERE parent_node.tree_instance_id = @tree_instance_id
+      AND parent_node.deleted_at IS NULL
       AND parent_node.id = @parent_id;`;
 
   const result = await createSqlRequest(transaction)
@@ -551,12 +557,12 @@ async function createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeaf
     ? `
       SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
       FROM tree_nodes
-      WHERE tree_instance_id = @tree_instance_id AND parent_id IS NULL
+      WHERE tree_instance_id = @tree_instance_id AND parent_id IS NULL AND deleted_at IS NULL
     `
     : `
       SELECT ISNULL(MAX(sort_order), -1) + 1 AS nextSortOrder
       FROM tree_nodes
-      WHERE tree_instance_id = @tree_instance_id AND parent_id = @parent_id
+      WHERE tree_instance_id = @tree_instance_id AND parent_id = @parent_id AND deleted_at IS NULL
     `;
 
   const sortOrderRequest = createSqlRequest(transaction)
@@ -600,7 +606,7 @@ async function createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeaf
         WITH Ancestors AS (
           SELECT id, parent_id, is_leaf_node
           FROM tree_nodes
-          WHERE tree_instance_id = @tree_instance_id AND id = @parent_id
+          WHERE tree_instance_id = @tree_instance_id AND id = @parent_id AND deleted_at IS NULL
 
           UNION ALL
 
@@ -608,6 +614,7 @@ async function createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeaf
           FROM tree_nodes parent
           INNER JOIN Ancestors child ON child.parent_id = parent.id
           WHERE parent.tree_instance_id = @tree_instance_id
+            AND parent.deleted_at IS NULL
         )
         UPDATE tree_nodes
         SET is_expanded = 1
@@ -647,7 +654,7 @@ async function getNodeGenerationContext(treeInstanceId, nodeId, transaction = nu
           is_leaf_node,
           0 AS distance_from_selected
         FROM tree_nodes
-        WHERE tree_instance_id = @tree_instance_id AND id = @id
+        WHERE tree_instance_id = @tree_instance_id AND id = @id AND deleted_at IS NULL
 
         UNION ALL
 
@@ -660,6 +667,7 @@ async function getNodeGenerationContext(treeInstanceId, nodeId, transaction = nu
         FROM tree_nodes parent
         INNER JOIN SelectedPath child ON child.parent_id = parent.id
         WHERE parent.tree_instance_id = @tree_instance_id
+          AND parent.deleted_at IS NULL
       )
       SELECT
         CAST(id AS VARCHAR(10)) AS id,
@@ -670,6 +678,7 @@ async function getNodeGenerationContext(treeInstanceId, nodeId, transaction = nu
           SELECT TOP 1 COALESCE(NULLIF(ti.display_name, ''), CONCAT('Tree ', ti.id))
           FROM tree_instance ti
           WHERE ti.id = @tree_instance_id
+            AND ti.deleted_at IS NULL
         ) AS treeName
       FROM SelectedPath
       ORDER BY distance_from_selected DESC;
@@ -745,14 +754,57 @@ async function CreateGeneratedChildNodes({ treeInstanceId, parentId, children })
 
 async function DeleteTreeNode({ id, treeInstanceId }) {
   return withSqlConnection(async () => {
+    const deletedAt = new Date();
     const deleteResult = await new sql.Request()
       .input('id', sql.Int, id)
       .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('deleted_at', sql.DateTime2, deletedAt)
       .query(`
         WITH Descendants AS (
           SELECT id
           FROM tree_nodes
-          WHERE id = @id AND tree_instance_id = @tree_instance_id
+          WHERE id = @id AND tree_instance_id = @tree_instance_id AND deleted_at IS NULL
+
+          UNION ALL
+
+          SELECT child.id
+          FROM tree_nodes child
+          INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
+          WHERE child.tree_instance_id = @tree_instance_id
+            AND child.deleted_at IS NULL
+        )
+        UPDATE tree_nodes
+        SET deleted_at = COALESCE(tree_nodes.deleted_at, @deleted_at),
+            updated_at = @deleted_at
+        FROM tree_nodes
+        INNER JOIN Descendants ON Descendants.id = tree_nodes.id
+        WHERE tree_nodes.tree_instance_id = @tree_instance_id;
+      `);
+
+    if (!deleteResult.rowsAffected.some((count) => count > 0)) {
+      throw new Error('Node was not found for the selected tree');
+    }
+
+    return queryTreeData(treeInstanceId);
+  });
+}
+
+async function PurgeTreeNode({ id, treeInstanceId }) {
+  return withSqlConnection(async () => {
+    const purgeResult = await new sql.Request()
+      .input('id', sql.Int, id)
+      .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .query(`
+        WITH Descendants AS (
+          SELECT tn.id
+          FROM tree_nodes tn
+          INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+          INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+          WHERE tn.id = @id
+            AND tn.tree_instance_id = @tree_instance_id
+            AND (tn.deleted_at IS NOT NULL OR ti.deleted_at IS NOT NULL)
+            AND ai.app_identifier = @application_identifier
 
           UNION ALL
 
@@ -767,8 +819,8 @@ async function DeleteTreeNode({ id, treeInstanceId }) {
         WHERE tree_nodes.tree_instance_id = @tree_instance_id;
       `);
 
-    if (!deleteResult.rowsAffected.some((count) => count > 0)) {
-      throw new Error('Node was not found for the selected tree');
+    if (!purgeResult.rowsAffected.some((count) => count > 0)) {
+      throw new Error('Node must be exposed as deleted before it can be purged');
     }
 
     return queryTreeData(treeInstanceId);
@@ -1121,7 +1173,7 @@ async function deleteAttachmentMetadataRecord(treeInstanceId, attachmentId) {
         files.blob_name AS blobName
       FROM tree_node_detail_files files
       INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      WHERE tn.tree_instance_id = @tree_instance_id AND files.id = @attachment_id;
+      WHERE tn.tree_instance_id = @tree_instance_id AND tn.deleted_at IS NULL AND files.id = @attachment_id;
     `);
 
   const attachment = attachmentResult.recordset[0] ?? null;
@@ -1138,19 +1190,27 @@ async function deleteAttachmentMetadataRecord(treeInstanceId, attachmentId) {
   return queryNodeDetails(treeInstanceId, attachment.treeNodeId);
 }
 
-async function getDescendantAttachmentBlobs(treeInstanceId, nodeId) {
+async function getDescendantAttachmentBlobs(treeInstanceId, nodeId, { includeDeleted = false } = {}) {
   const result = await new sql.Request()
     .input('tree_instance_id', sql.Int, treeInstanceId)
     .input('id', sql.Int, nodeId)
+    .input('include_deleted', sql.Bit, includeDeleted ? 1 : 0)
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
     .query(`WITH Descendants AS (
-        SELECT id
-        FROM tree_nodes
-        WHERE id = @id AND tree_instance_id = @tree_instance_id
+        SELECT tn.id
+        FROM tree_nodes tn
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE tn.id = @id
+          AND tn.tree_instance_id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier
+          AND (@include_deleted = 1 OR tn.deleted_at IS NULL)
         UNION ALL
         SELECT t.id
         FROM tree_nodes t
         INNER JOIN Descendants d ON t.parent_id = d.id
         WHERE t.tree_instance_id = @tree_instance_id
+          AND (@include_deleted = 1 OR t.deleted_at IS NULL)
       )
       SELECT files.blob_name AS blobName
       FROM Descendants d
@@ -1403,9 +1463,11 @@ export async function PATCH(request) {
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
+    const principal = parseClientPrincipal(request);
     const idParam = searchParams.get('id');
     const treeIdParam = searchParams.get('treeId');
     const attachmentIdParam = searchParams.get('attachmentId');
+    const shouldPurge = String(searchParams.get('purge') ?? '').trim().toLowerCase() === 'true';
 
     if (attachmentIdParam) {
       if (!treeIdParam) {
@@ -1423,15 +1485,26 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Invalid request, id and treeId are required' }, { status: 400 });
     }
 
-    await assertWritableTreeForRequest(request, treeIdParam);
+    if (!shouldPurge) {
+      await assertWritableTreeForRequest(request, treeIdParam);
+    } else if (!hasClientPrincipalRole(principal, 'mdsadmin')) {
+      return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
+    }
 
     return NextResponse.json(await withSqlConnection(async () => {
       const treeInstanceId = parseInt(treeIdParam, 10);
       const nodeId = parseInt(idParam, 10);
-      const attachments = await getDescendantAttachmentBlobs(treeInstanceId, nodeId);
 
-      for (const attachment of attachments) {
-        await deleteNodeAttachmentBlobIfExists(attachment.blobName);
+      if (shouldPurge) {
+        const attachments = await getDescendantAttachmentBlobs(treeInstanceId, nodeId, {
+          includeDeleted: true,
+        });
+
+        for (const attachment of attachments) {
+          await deleteNodeAttachmentBlobIfExists(attachment.blobName);
+        }
+
+        return PurgeTreeNode({ id: nodeId, treeInstanceId });
       }
 
       return DeleteTreeNode({ id: nodeId, treeInstanceId });

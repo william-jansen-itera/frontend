@@ -15,6 +15,34 @@
     {
       "route": "/chat*",
         "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/admin*",
+      "allowedRoles": ["mdsadmin"]
+    },
+    {
+      "route": "/api/attachments/*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/api/chat*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/api/notes*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/api/search*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/api/trees*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/api/admin/*",
+      "allowedRoles": ["mdsadmin"]
     }
   ],
   "responseOverrides": {

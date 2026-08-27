@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { generateTreeDescriptionDraft, publishStoredTreeDescriptions } from '@/server/utils/chatService';
 import { parseClientPrincipal } from '@/server/utils/auth';
+import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import {
   createTree,
   deleteTree,
   getTreeList,
+  purgeTree,
   updateTreeDescription,
   updateTreeTitle,
   updateTreeVisibility,
@@ -29,12 +31,27 @@ function getPayloadVisibility(payload) {
   return String(payload?.visibility ?? '').trim() || 'public';
 }
 
+function isAdminPrincipal(principal) {
+  return hasClientPrincipalRole(principal, 'mdsadmin');
+}
+
 export async function GET(request) {
   try {
+    const principal = parseClientPrincipal(request);
+    const { searchParams } = new URL(request.url);
+    const includeDeleted = String(searchParams.get('includeDeleted') ?? '').trim().toLowerCase() === 'true';
+    const deletedOnly = String(searchParams.get('deletedOnly') ?? '').trim().toLowerCase() === 'true';
+
+    if ((includeDeleted || deletedOnly) && !isAdminPrincipal(principal)) {
+      return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
+    }
+
     return NextResponse.json(await getTreeList({
-      principal: parseClientPrincipal(request),
+      principal,
       visibility: getVisibilityFilter(request),
-      enforceAccess: true,
+      enforceAccess: deletedOnly ? false : true,
+      includeDeleted,
+      deletedOnly,
     }));
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -192,9 +209,24 @@ export async function DELETE(request) {
     const principal = parseClientPrincipal(request);
     const parsedTreeId = parseTreeId(searchParams.get('treeId'));
     const visibility = searchParams.get('visibility') ?? 'public';
+    const shouldPurge = String(searchParams.get('purge') ?? '').trim().toLowerCase() === 'true';
 
     if (!parsedTreeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
+    }
+
+    if (shouldPurge) {
+      if (!isAdminPrincipal(principal)) {
+        return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
+      }
+
+      await purgeTree({ treeId: parsedTreeId, principal, enforceAccess: false });
+
+      return NextResponse.json({
+        success: true,
+        purged: true,
+        trees: await getTreeList({ principal, visibility, enforceAccess: true }),
+      });
     }
 
     await deleteTree({ treeId: parsedTreeId, principal, enforceAccess: true });
