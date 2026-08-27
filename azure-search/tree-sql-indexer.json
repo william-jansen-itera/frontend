@@ -2,6 +2,9 @@
   "name": "tree-sql-indexer",
   "dataSourceName": "tree-sql-datasource",
   "targetIndexName": "<search-index-name>",
+  "schedule": {
+    "interval": "PT5M"
+  },
   "fieldMappings": [
     { "sourceFieldName": "id", "targetFieldName": "id" },
     { "sourceFieldName": "sourceType", "targetFieldName": "sourceType" },
