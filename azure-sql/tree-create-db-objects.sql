@@ -289,7 +289,7 @@ ALTER TABLE [dbo].[tree_node_details] ADD  CONSTRAINT [DF_tree_node_details_upda
 GO
 ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_is_leaf_node]  DEFAULT ((0)) FOR [is_leaf_node]
 GO
-ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_is_expanded]  DEFAULT ((0)) FOR [is_expanded]
+ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_is_expanded]  DEFAULT ((1)) FOR [is_expanded]
 GO
 ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_draggable]  DEFAULT ((1)) FOR [draggable]
 GO

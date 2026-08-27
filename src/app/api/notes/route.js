@@ -120,8 +120,8 @@ async function queryTreeNode(treeInstanceId, nodeId, transaction = null) {
   return result.recordset[0] ?? null;
 }
 
-async function queryNodeDetails(treeInstanceId, nodeId, transaction = null) {
-  const node = await queryTreeNode(treeInstanceId, nodeId, transaction);
+async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, knownNode = null) {
+  const node = knownNode ?? await queryTreeNode(treeInstanceId, nodeId, transaction);
   if (!node) {
     return null;
   }
@@ -574,7 +574,7 @@ async function createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeaf
     .input('parent_id', sql.Int, isRootInsert ? null : parentId)
     .input('text', sql.NVarChar, name)
     .input('is_leaf_node', sql.Bit, isLeafNode ? 1 : 0)
-    .input('is_expanded', sql.Bit, 0)
+    .input('is_expanded', sql.Bit, isLeafNode ? 0 : 1)
     .input('draggable', sql.Bit, 1)
     .input('sort_order', sql.Int, nextSortOrder)
     .query(`
@@ -590,6 +590,31 @@ async function createTreeNodeRecord({ parentId, treeInstanceId, name, ensureLeaf
 
   if (ensureLeafDetails && isLeafNode) {
     await ensureTreeNodeDetailsRow(createdNodeId, transaction);
+  }
+
+  if (!isRootInsert) {
+    await createSqlRequest(transaction)
+      .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('parent_id', sql.Int, parentId)
+      .query(`
+        WITH Ancestors AS (
+          SELECT id, parent_id, is_leaf_node
+          FROM tree_nodes
+          WHERE tree_instance_id = @tree_instance_id AND id = @parent_id
+
+          UNION ALL
+
+          SELECT parent.id, parent.parent_id, parent.is_leaf_node
+          FROM tree_nodes parent
+          INNER JOIN Ancestors child ON child.parent_id = parent.id
+          WHERE parent.tree_instance_id = @tree_instance_id
+        )
+        UPDATE tree_nodes
+        SET is_expanded = 1
+        WHERE tree_instance_id = @tree_instance_id
+          AND is_leaf_node = 0
+          AND id IN (SELECT id FROM Ancestors);
+      `);
   }
 
   return {
@@ -832,7 +857,7 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
 
     return {
       flatData: await queryTreeData(treeInstanceId),
-      details: await queryNodeDetails(treeInstanceId, nodeId),
+      details: await queryNodeDetails(treeInstanceId, nodeId, null, treeNode),
     };
   });
 }
