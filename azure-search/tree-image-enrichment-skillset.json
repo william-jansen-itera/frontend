@@ -2,7 +2,10 @@
   "name": "tree-image-enrichment-skillset",
   "description": "Extract OCR text and image descriptions from image attachments and embedded document images.",
   "cognitiveServices": {
-    "@odata.type": "#Microsoft.Azure.Search.DefaultCognitiveServices"
+    "@odata.type": "#Microsoft.Azure.Search.AIServicesByKey",
+    "description": "Foundry resource for Azure AI Search enrichment billing.",
+    "subdomainUrl": "https://mds-foundry-20260810.services.ai.azure.com",
+    "key": "<foundry-resource-key>"
   },
   "skills": [
     {

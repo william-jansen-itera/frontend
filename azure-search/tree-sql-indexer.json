@@ -3,7 +3,7 @@
   "dataSourceName": "tree-sql-datasource",
   "targetIndexName": "<search-index-name>",
   "schedule": {
-    "interval": "PT30M"
+    "interval": "PT12H"
   },
   "fieldMappings": [
     { "sourceFieldName": "id", "targetFieldName": "id" },
