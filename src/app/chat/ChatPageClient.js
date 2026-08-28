@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import styles from "./page.module.css";
 
-const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer";
+const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
 
 function buildFollowUpSubmissionMessage(optionId, fallbackLabel) {
@@ -94,10 +94,163 @@ function buildHistoryFromTurns(turns) {
 }
 
 function formatTimestamp(value) {
+  if (!value) {
+    return "n/a";
+  }
+
+  const dateValue = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(dateValue.getTime())) {
+    return "n/a";
+  }
+
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
-  }).format(value);
+    second: "2-digit",
+  }).format(dateValue);
+}
+
+function formatDuration(value) {
+  const durationMs = Number(value);
+
+  if (!Number.isFinite(durationMs)) {
+    return "n/a";
+  }
+
+  if (durationMs < 1000) {
+    return `${durationMs} ms`;
+  }
+
+  return `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+function formatTimingLabel(value) {
+  if (!value) {
+    return "timing";
+  }
+
+  const normalizedValue = String(value).trim();
+
+  if (normalizedValue === "initial_response") {
+    return "plan tools";
+  }
+
+  if (normalizedValue === "tool_round_synthesis") {
+    return "synthesize round";
+  }
+
+  if (normalizedValue === "citationAssembly") {
+    return "citation assembly";
+  }
+
+  if (normalizedValue === "responseShaping") {
+    return "response shaping";
+  }
+
+  return normalizedValue
+    .replaceAll(/([A-Z])/g, " $1")
+    .replaceAll("_", " ")
+    .trim()
+    .toLowerCase();
+}
+
+function buildTimingDebugEntries({ timings, toolCalls }) {
+  if (!timings || typeof timings !== "object") {
+    return [];
+  }
+
+  const modelCalls = Array.isArray(timings.modelCalls) ? timings.modelCalls : [];
+  const executedToolCalls = Array.isArray(toolCalls) ? toolCalls : [];
+  const broaderAnswerReview = timings.broaderAnswerReview && typeof timings.broaderAnswerReview === "object"
+    ? timings.broaderAnswerReview
+    : null;
+  const phaseEntries = timings.phases && typeof timings.phases === "object"
+    ? Object.entries(timings.phases)
+    : [];
+
+  return [
+    ...modelCalls.map((modelCall) => ({
+      key: `${modelCall.phase || "model_call"}-${Number(modelCall.round ?? 0)}-${modelCall.startedAt || ""}`,
+      label: formatTimingLabel(modelCall.phase || "model_call"),
+      headerLabel: formatTimingLabel(modelCall.phase || "model_call"),
+      objectName: formatTimingLabel(modelCall.phase || "model_call") === "synthesize round"
+        ? `synthesize round ${Number(modelCall.round ?? 0)}`
+        : formatTimingLabel(modelCall.phase || "model_call"),
+      durationMs: modelCall.durationMs,
+      startedAt: modelCall.startedAt,
+      completedAt: modelCall.completedAt,
+      details: {
+        round: modelCall.round ?? null,
+        responseId: modelCall.responseId ?? null,
+        status: modelCall.status ?? null,
+      },
+    })),
+    ...executedToolCalls.map((toolCall, index) => ({
+      key: `run-tools-${toolCall.callId || toolCall.toolName || "tool-call"}-${index}`,
+      label: `run tools: ${toolCall.toolName || "tool call"}`,
+      headerLabel: "run tools",
+      objectName: `run tools ${index + 1}`,
+      durationMs: toolCall.durationMs,
+      startedAt: toolCall.startedAt,
+      completedAt: toolCall.completedAt,
+      details: {
+        round: toolCall.round,
+        toolName: toolCall.toolName,
+        callId: toolCall.callId,
+        error: toolCall.error ?? null,
+      },
+    })),
+    ...(broaderAnswerReview?.executed ? [{
+      key: `review-broader-answer-permission-${broaderAnswerReview.startedAt || ""}`,
+      label: "review broader-answer permission",
+      headerLabel: "review broader-answer permission",
+      objectName: "review broader-answer permission",
+      durationMs: broaderAnswerReview.durationMs,
+      startedAt: broaderAnswerReview.startedAt,
+      completedAt: broaderAnswerReview.completedAt,
+      details: {
+        executed: broaderAnswerReview.executed ?? true,
+      },
+    }] : []),
+    ...phaseEntries.map(([phaseName, phaseTiming], index) => ({
+      key: `${phaseName}-${phaseTiming?.startedAt || ""}-${index}`,
+      label: formatTimingLabel(phaseName),
+      headerLabel: formatTimingLabel(phaseName),
+      objectName: formatTimingLabel(phaseName),
+      durationMs: phaseTiming?.durationMs,
+      startedAt: phaseTiming?.startedAt,
+      completedAt: phaseTiming?.completedAt,
+      details: null,
+    })),
+  ].sort((left, right) => {
+    const leftTime = Date.parse(left.startedAt || "") || 0;
+    const rightTime = Date.parse(right.startedAt || "") || 0;
+    return leftTime - rightTime;
+  });
+}
+
+function buildTimingDebugJson({ timings, toolCalls, orderedEntries }) {
+  const timingEntries = orderedEntries.reduce((result, entry) => {
+    result[entry.objectName] = {
+      startedAt: entry.startedAt,
+      completedAt: entry.completedAt,
+      durationMs: entry.durationMs,
+      ...(entry.details && typeof entry.details === "object"
+        ? Object.fromEntries(Object.entries(entry.details).filter(([, value]) => value !== null && value !== undefined))
+        : {}),
+    };
+    return result;
+  }, {});
+
+  return {
+    request: {
+      startedAt: timings?.requestStartedAt ?? null,
+      completedAt: timings?.requestCompletedAt ?? null,
+      durationMs: timings?.totalDurationMs ?? null,
+    },
+    ...timingEntries,
+  };
 }
 
 function formatJson(value) {
@@ -238,6 +391,47 @@ function ToolSearchExecutionSummary({ searches, tokenCoverageFilter }) {
   );
 }
 
+function ExecutionTimingSummary({ timings, toolCalls }) {
+  if (!timings || typeof timings !== "object") {
+    return <p className={styles.sectionEmpty}>No timing data was recorded for this turn.</p>;
+  }
+
+  const orderedEntries = buildTimingDebugEntries({ timings, toolCalls });
+  const timingDebugJson = buildTimingDebugJson({ timings, toolCalls, orderedEntries });
+
+  return (
+    <div className={styles.searchExecutionList}>
+      <div className={styles.searchExecutionCard}>
+        <div className={styles.searchExecutionHeader}>
+          <span className={styles.searchExecutionKind}>request</span>
+          <span className={styles.searchExecutionMeta}>total {formatDuration(timings.totalDurationMs)}</span>
+        </div>
+        <p className={styles.searchExecutionQuery}>
+          {formatTimestamp(timings.requestStartedAt)} to {formatTimestamp(timings.requestCompletedAt)}
+        </p>
+      </div>
+
+      {orderedEntries.map((entry) => (
+        <div key={entry.key} className={styles.searchExecutionCard}>
+          <div className={styles.searchExecutionHeader}>
+            <span className={styles.searchExecutionKind}>{entry.label}</span>
+            <span className={styles.searchExecutionMeta}>{formatDuration(entry.durationMs)}</span>
+          </div>
+          <p className={styles.searchExecutionQuery}>
+            {formatTimestamp(entry.startedAt)} to {formatTimestamp(entry.completedAt)}
+            {entry.meta ? ` · ${entry.meta}` : ""}
+          </p>
+        </div>
+      ))}
+
+      <details className={styles.debugDetail}>
+        <summary>Raw timing JSON</summary>
+        <pre className={styles.jsonBlock}>{formatJson(timingDebugJson)}</pre>
+      </details>
+    </div>
+  );
+}
+
 function getTurnToolBadgeState(turn) {
   const toolInvocations = Array.isArray(turn?.toolInvocations) ? turn.toolInvocations : [];
   const priorToolInvocations = Array.isArray(turn?.priorToolInvocations) ? turn.priorToolInvocations : [];
@@ -320,12 +514,17 @@ function TurnDebugPanel({ turn }) {
   }
 
   const toolCalls = Array.isArray(turn.debug.toolCalls) ? turn.debug.toolCalls : [];
-  const debugUserQuery = {
-    turnType: String(turn?.turnType ?? "default").trim() || "default",
-    ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
-  };
+  const timings = turn?.debug?.timings;
   const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
   const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
+  const turnType = String(turn?.turnType ?? "default").trim() || "default";
+  const debugUserQuery = {
+    turnType,
+    ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
+    ...(turnType === TURN_TYPE_NO_RESULT_OFFER && permissionToBroadenSource
+      ? { source: permissionToBroadenSource }
+      : {}),
+  };
 
   return (
     <div className={styles.debugSections}>
@@ -339,7 +538,15 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">2. Tool Calls</p>
+          <p className="appSectionEyebrow">2. Execution Timing</p>
+          <h2 className={styles.sectionTitle}>Where the time went</h2>
+        </div>
+        <ExecutionTimingSummary timings={timings} toolCalls={toolCalls} />
+      </section>
+
+      <section className={styles.debugSection}>
+        <div className={styles.sectionHeader}>
+          <p className="appSectionEyebrow">3. Tool Calls</p>
           <h2 className={styles.sectionTitle}>{toolCalls.length} invocation{toolCalls.length === 1 ? "" : "s"}</h2>
         </div>
         {toolCalls.length === 0 ? (
@@ -352,6 +559,9 @@ function TurnDebugPanel({ turn }) {
                   <div>
                     <p className={styles.toolLabel}>Tool cycle {toolCall.round}</p>
                     <h3 className={styles.toolName}>{toolCall.toolName || "Tool call"}</h3>
+                    <p className={styles.debugMetaText}>
+                      {formatTimestamp(toolCall.startedAt)} to {formatTimestamp(toolCall.completedAt)} · {formatDuration(toolCall.durationMs)}
+                    </p>
                   </div>
                   {toolCall.error ? <span className={styles.toolErrorBadge}>Error</span> : null}
                 </div>
@@ -396,7 +606,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">3. Curated Agent Input</p>
+          <p className="appSectionEyebrow">4. Curated Agent Input</p>
           <h2 className={styles.sectionTitle}>Messages passed back to the model</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.curatedAgentInput)}</pre>
@@ -404,7 +614,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">4. Agent Output</p>
+          <p className="appSectionEyebrow">5. Agent Output</p>
           <h2 className={styles.sectionTitle}>Model response and answer</h2>
         </div>
         {permissionToBroadenSource ? (

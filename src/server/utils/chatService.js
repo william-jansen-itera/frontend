@@ -41,11 +41,10 @@ const CHAT_LEAF_ANCHOR_SELECTION_SCHEMA = {
   additionalProperties: false,
 };
 const TURN_TYPE_DEFAULT = 'default';
-const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer';
+const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer_broadening';
 const TURN_TYPE_BROADER_ANSWER = 'broader_answer';
 const FOLLOW_UP_OPTION_BROADER_ANSWER = 'broader_answer';
 const ENABLE_PERMISSION_TO_BROADER_MODEL_REVIEW = true;
-const ENABLE_PERMISSION_TO_BROADER_DETECTION = true;
 
 let cachedProjectClient;
 
@@ -1792,81 +1791,90 @@ function hasToolResults(toolInvocations) {
     && toolInvocations.some((invocation) => Number(invocation?.output?.count ?? 0) > 0);
 }
 
-function matchesPermissionToBroadenAnswerRegex(answer) {
-  if (!ENABLE_PERMISSION_TO_BROADER_DETECTION) {
-    return false;
-  }
+const BROADENING_PATTERNS = [
+  // === Model / background / parametric knowledge ===
+  /\b(?:background|prior|pre[- ]existing|preexisting|pretrained|pre[- ]trained|training|trained|parametric|internal|built[- ]in|innate|world|common|general|public|publicly available)\s+(?:background\s+)?(?:knowledge|information|understanding|explanation|answer|references?|sources?|data)\b/,
+  /\b(?:my|the model's|the model(?:'s)?)\s+(?:own\s+)?(?:knowledge|training(?: data)?|trained knowledge|internal knowledge|parametric knowledge|model weights)\b/,
+  /\b(?:from|using|use|rely on|relying on|draw on|drawing on|fall back to|fallback to|switch to|answer from|answering from|based on)\s+(?:my\s+)?(?:own\s+)?(?:background|general|prior|training|pretrained|pre[- ]trained|internal|parametric|world|common)\s+(?:knowledge|understanding|information|data)\b/,
+  /\bwhat I (?:already know|was trained on|learned during training|know generally)\b/,
+  /\b(?:from|in) my (?:training data|memory|model weights)\b/,
+  /\bwithout (?:using |relying on )?(?:the )?(?:provided|retrieved|available|current)\s+(?:context|documents?|sources?|materials?|tools?|knowledge base)\b/,
+  /\b(?:beyond|outside|look beyond|go beyond|outside of)\s+(?:the )?(?:provided|retrieved|available|current|given)\s+(?:context|documents?|sources?|materials?|tools?|knowledge base|corpus)\b/,
+  /\banswer without (?:the )?(?:retrieved |provided )?(?:sources?|documents?|context|tools?)\b/,
 
-  const normalizedAnswer = normalizeWhitespace(answer).toLowerCase();
+  // === Broader / wider / expanded / external search ===
+  /\b(?:broad(?:er)?|wide(?:r)?|expand(?:ed|ing)?|widen(?:ed|ing)?|extensive|comprehensive|unrestricted|open[- ]ended)\s+(?:search|scope|answer|query|information|resources?)\b/,
+  /\b(?:broaden|widen|expand|relax)\s+(?:the\s+)?(?:search|scope|query|constraints?)\b/,
+  /\b(?:search|look|answer|check|consult)\s+more\s+(?:broadly|widely|extensively|comprehensively)\b/,
+  /\b(?:search|look(?: this up)?|check)\s+(?:the\s+)?(?:web|internet|online)\b/,
+  /\b(?:web|internet|online)\s+search\b/,
+  /\b(?:external|public|outside|third[- ]party|open(?:\s+web)?)\s+(?:knowledge|sources?|resources?|information|references?|tools?)\b/,
+  /\b(?:consult|use|include|check|look at|look up)\s+(?:external|public|broader|wider|additional|outside)\s+(?:sources?|resources?|knowledge|information|references?)\b/,
+  /\blook beyond the current tools\b/,
+  /\boutside the available tools\b/,
+  /\bcast a wider net\b/,
+  /\bswitch to broader knowledge\b/,
+].map((pattern) => new RegExp(pattern, "i"));
 
-  if (!normalizedAnswer) {
-    return false;
-  }
+function mentionsBroadening(answer) {
+  const normalizedAnswer = normalizeWhitespace(answer);
+  if (!normalizedAnswer) return false;
+  return BROADENING_PATTERNS.some((pattern) => pattern.test(normalizedAnswer));
+}
 
-  const asksPermission = [
-    /do you want/,
-    /would you like/,
-    /would you prefer/,
-    /should i/,
-    /shall i/,
-    /if you want/,
-    /if you need more detail/,
-    /if you would like/,
-    /let me know if you'd like/,
-    /let me know whether you'd like/,
-    /let me know if you want/,
-    /please let me know/,
-  ].some((pattern) => pattern.test(normalizedAnswer));
-  const mentionsBroadening = [
-    /broader search/,
-    /broader answer/,
-    /background knowledge/,
-    /general background answer/,
-    /background answer/,
-    /broaden(?: the)? search/,
-    /broaden(?: your)? search scope/,
-    /broaden(?: the)? scope/,
-    /broaden the search to sources outside/,
-    /search more broadly/,
-    /answer more broadly/,
-    /expand(?: the)? search/,
-    /expand(?: the)? scope/,
-    /sources outside/,
-    /outside (?:the|this) .* domain/,
-    /outside .* domain/,
-    /switch to background knowledge/,
-    /switch to a general background explanation/,
-    /provide a general background explanation/,
-  ].some((pattern) => pattern.test(normalizedAnswer));
-  const mentionsNoGroundedMatch = [
-    /no tool applies/,
-    /no applicable tool(?: is)? available/,
-    /no applicable tool/,
-    /no suitable tool/,
-    /no matching tool/,
-    /no grounded tool(?: path)?(?: is| was)? available/,
-    /no grounded tool(?: path)?(?: is| was)? established/,
-    /no relevant result(?: was found)?/,
-    /no evidence(?: about| of| on| for)?/,
-    /no evidence in the available resources/,
-    /no specific mention(?: of)?/,
-    /no mention(?: of)?/,
-    /does not mention/,
-    /is not mentioned/,
-    /not covered(?: here| in the available)?/,
-    /no information(?: about| on| for)?/,
-    /no details?(?: about| on| for)?/,
-    /no direct information(?: about| on| for)?/,
-    /nothing relevant(?: was found)?/,
-    /not enough information(?: was found)?/,
-    /available .* material/,
-    /could not find/,
-    /couldn't find/,
-    /did not find/,
-    /no tool found/,
-  ].some((pattern) => pattern.test(normalizedAnswer));
+const CONSENT_ASK_PATTERNS = [
+  // Direct questions to the user
+  /\bshould I\b/,
+  /\bshall I\b/,
+  /\bmay I\b/,
+  /\bcan I\b/,
+  /\bcould I\b/,
+  /\bdo you want(?: me to)?\b/,
+  /\bwould you like(?: me to)?\b/,
+  /\bwould you prefer(?: (?:me|that I) to)?\b/,
+  /\bwant me to\b/,
+  /\bwould you rather I\b/,
+  /\bdo you want me to (?:go ahead|proceed|continue)\b/,
 
-  return asksPermission && mentionsBroadening && (mentionsNoGroundedMatch || mentionsBroadening);
+  // Explicit permission / confirmation
+  /\bis it okay if I\b/,
+  /\bis that okay\b/,
+  /\bis that alright\b/,
+  /\bare you okay with\b/,
+  /\bare you alright with\b/,
+  /\bdo I have your (?:permission|consent|go[- ]ahead)\b/,
+  /\bwith your (?:permission|consent|approval|go[- ]ahead)\b/,
+  /\bif you (?:consent|approve|agree|allow it|give the go[- ]ahead)\b/,
+  /\bif that(?:'s| is) (?:okay|alright|all right|fine|acceptable)\b/,
+  /\bplease confirm\b/,
+  /\bplease (?:let me know|tell me) (?:if|whether)\b/,
+  /\bok(?:ay)? to proceed\b/,
+  /\bokay if I\b/,
+  /\bmind if I\b/,
+
+  // Soft opt-in / "tell me whether to do it"
+  /\blet me know if\b/,
+  /\blet me know whether\b/,
+  /\btell me if\b/,
+  /\btell me whether\b/,
+  /\bif you(?:'d| would)? like\b/,
+  /\bif you want\b/,
+  /\bif you'd prefer\b/,
+  /\bif you need me to\b/,
+  /\bjust say the word\b/,
+  /\bsay the word\b/,
+  /\bgive me the go[- ]ahead\b/,
+  /\bhappy to .{0,80}\bif you(?:'d| would)? like\b/,
+  /\bI can .{0,80}\bif you(?:'d| would)? like\b/,
+  /\bI could .{0,80}\bif you(?:'d| would)? like\b/,
+  /\bwould that be (?:okay|alright|helpful|useful)\b/,
+  /\bshall I (?:proceed|continue|go ahead)\b/,
+].map((pattern) => new RegExp(pattern, "i"));
+
+function mentionsPermission(answer) {
+  const normalizedAnswer = normalizeWhitespace(answer);
+  if (!normalizedAnswer) return false;
+  return CONSENT_ASK_PATTERNS.some((pattern) => pattern.test(normalizedAnswer));
 }
 
 async function isPermissionToBroadenAnswer({
@@ -1876,33 +1884,60 @@ async function isPermissionToBroadenAnswer({
   openAIClient,
   userMessage,
   groundedResponseReviewSteps,
+  debugTiming = null,
 }) {
-  if (Array.isArray(toolInvocations) && toolInvocations.length > 0 && !hasToolResults(toolInvocations)) {
+  const hasAnyToolInvocations = Array.isArray(toolInvocations) && toolInvocations.length > 0;
+  const hasAnyToolResults = hasToolResults(toolInvocations);
+  const shouldOfferBroaderAnswerFromEmptyToolResults = hasAnyToolInvocations && !hasAnyToolResults;
+
+  if (shouldOfferBroaderAnswerFromEmptyToolResults) {
     return {
       matches: true,
       source: 'result_count',
     };
   }
 
-  if (matchesPermissionToBroadenAnswerRegex(answer)) {
-    return {
-      matches: true,
-      source: 'regex',
-    };
-  }
+  const answerMentionsBroadening = mentionsBroadening(answer);
 
-  if (!ENABLE_PERMISSION_TO_BROADER_MODEL_REVIEW || !answer) {
+  if (!answerMentionsBroadening) {
     return {
       matches: false,
       source: null,
     };
   }
 
+  const answerMentionsPermission = mentionsPermission(answer);
+
+  if (answerMentionsPermission) {
+    return {
+      matches: true,
+      source: 'regex',
+    };
+  }
+
+  const shouldRunModelReview = ENABLE_PERMISSION_TO_BROADER_MODEL_REVIEW && Boolean(answer);
+
+  if (!shouldRunModelReview) {
+    return {
+      matches: false,
+      source: null,
+    };
+  }
+
+  const reviewStartedAt = new Date().toISOString();
+  const reviewStartedAtMs = Date.now();
   const groundedResponseReview = await reviewGroundedResponse({
     openAIClient,
     userMessage,
     assistantAnswer: answer,
   });
+
+  if (debugTiming && typeof debugTiming === 'object') {
+    debugTiming.startedAt = reviewStartedAt;
+    debugTiming.completedAt = new Date().toISOString();
+    debugTiming.durationMs = Date.now() - reviewStartedAtMs;
+    debugTiming.executed = true;
+  }
 
   if (Array.isArray(groundedResponseReviewSteps)) {
     groundedResponseReviewSteps.push(groundedResponseReview.raw);
@@ -1975,6 +2010,27 @@ function attachDebugToError(error, debug) {
   const wrappedError = new Error(String(error ?? 'Agent request failed'));
   wrappedError.debug = normalizedDebug;
   return wrappedError;
+}
+
+function createDebugTimingEntry(overrides = {}) {
+  return {
+    startedAt: null,
+    completedAt: null,
+    durationMs: null,
+    ...overrides,
+  };
+}
+
+async function captureTimingEntry(timingEntry, action) {
+  timingEntry.startedAt = new Date().toISOString();
+  const startedAtMs = Date.now();
+
+  try {
+    return await action();
+  } finally {
+    timingEntry.completedAt = new Date().toISOString();
+    timingEntry.durationMs = Date.now() - startedAtMs;
+  }
 }
 
 function isNotFoundError(error) {
@@ -2326,6 +2382,7 @@ async function createAgentResponse(openAIClient, agentName, payload) {
 
 async function runToolLoop({ response, openAIClient, agentName, handlerMap, debugRounds }) {
   const toolInvocations = [];
+  const modelCalls = [];
   let currentResponse = response;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
@@ -2337,6 +2394,7 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
       return {
         response: currentResponse,
         toolInvocations,
+        modelCalls,
       };
     }
 
@@ -2346,6 +2404,8 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
     for (const functionCall of functionCalls) {
       const toolName = functionCall.name;
       const handler = handlerMap.get(toolName);
+      const toolStartedAt = new Date().toISOString();
+      const toolStartedAtMs = Date.now();
       let parsedArguments = null;
       let output;
       let toolDebug = {
@@ -2388,6 +2448,9 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
         round: round + 1,
         callId: functionCall.call_id ?? null,
         toolName,
+        startedAt: toolStartedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - toolStartedAtMs,
         parsedArguments: serializeDebugValue(parsedArguments),
         searchResult: serializeDebugValue(toolDebug.searchResult),
         toolOutput: serializeDebugValue(output),
@@ -2397,9 +2460,20 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
       functionOutputs.push(functionCallOutput);
     }
 
+    const modelCallStartedAt = new Date().toISOString();
+    const modelCallStartedAtMs = Date.now();
     currentResponse = await createAgentResponse(openAIClient, agentName, {
       input: functionOutputs,
       previous_response_id: currentResponse.id,
+    });
+    modelCalls.push({
+      phase: 'tool_round_synthesis',
+      round: round + 1,
+      startedAt: modelCallStartedAt,
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - modelCallStartedAtMs,
+      responseId: currentResponse?.id ?? null,
+      status: currentResponse?.status ?? null,
     });
     debugRounds.push(...roundDebug);
   }
@@ -2451,20 +2525,44 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       toolMessages: [],
     },
     agentOutput: null,
+    timings: {
+      requestStartedAt: new Date().toISOString(),
+      requestCompletedAt: null,
+      totalDurationMs: null,
+      modelCalls: [],
+      broaderAnswerReview: createDebugTimingEntry({ executed: false }),
+      phases: {
+        citationAssembly: createDebugTimingEntry(),
+        responseShaping: createDebugTimingEntry(),
+      },
+    },
   };
+  const requestStartedAtMs = Date.now();
 
   try {
+    const initialModelCallStartedAt = new Date().toISOString();
+    const initialModelCallStartedAtMs = Date.now();
     const initialResponse = await createAgentResponse(openAIClient, agent.name, {
       input: initialInput,
     });
+    debug.timings.modelCalls.push({
+      phase: 'initial_response',
+      round: 0,
+      startedAt: initialModelCallStartedAt,
+      completedAt: new Date().toISOString(),
+      durationMs: Date.now() - initialModelCallStartedAtMs,
+      responseId: initialResponse?.id ?? null,
+      status: initialResponse?.status ?? null,
+    });
 
-    const { response, toolInvocations } = await runToolLoop({
+    const { response, toolInvocations, modelCalls } = await runToolLoop({
       response: initialResponse,
       openAIClient,
       agentName: agent.name,
       handlerMap,
       debugRounds: debug.toolCalls,
     });
+    debug.timings.modelCalls.push(...modelCalls);
     let finalResponse = response;
     let finalToolInvocations = [...toolInvocations];
     const answer = extractAnswerText(finalResponse);
@@ -2476,44 +2574,62 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       openAIClient,
       userMessage: normalizedMessage,
       groundedResponseReviewSteps,
+      debugTiming: debug.timings.broaderAnswerReview,
     });
 
-    const citations = dedupeCitations(
-      finalToolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
+    const citations = await captureTimingEntry(
+      debug.timings.phases.citationAssembly,
+      async () => dedupeCitations(
+        finalToolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
+      ),
     );
-    const followUpOptions = permissionToBroadenDetection.matches
-      ? buildBroaderAnswerOption()
-      : [];
-    const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations);
-    const priorToolInvocations = buildPriorToolInvocations(normalizedFollowUpSelection);
-    const staysInBroaderLane = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
-      && responseToolInvocations.length === 0;
-    const turnType = staysInBroaderLane
-      ? TURN_TYPE_BROADER_ANSWER
-      : followUpOptions.length > 0
-        ? TURN_TYPE_NO_RESULT_OFFER
-        : TURN_TYPE_DEFAULT;
+    const shapedResponse = await captureTimingEntry(
+      debug.timings.phases.responseShaping,
+      async () => {
+        const followUpOptions = permissionToBroadenDetection.matches
+          ? buildBroaderAnswerOption()
+          : [];
+        const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations);
+        const priorToolInvocations = buildPriorToolInvocations(normalizedFollowUpSelection);
+        const staysInBroaderLane = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
+          && responseToolInvocations.length === 0;
+        const turnType = staysInBroaderLane
+          ? TURN_TYPE_BROADER_ANSWER
+          : followUpOptions.length > 0
+            ? TURN_TYPE_NO_RESULT_OFFER
+            : TURN_TYPE_DEFAULT;
 
-    debug.curatedAgentInput.toolMessages = serializeDebugValue(
-      debug.toolCalls.map((toolCall) => ({
-        type: 'function_call_output',
-        call_id: toolCall.callId ?? null,
-        output: `See step 2 Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
-      })),
-    );
-    debug.agentOutput = {
-      agent: {
-        id: agent.id,
-        name: agent.name,
-        version: agent.version ?? null,
+        debug.curatedAgentInput.toolMessages = serializeDebugValue(
+          debug.toolCalls.map((toolCall) => ({
+            type: 'function_call_output',
+            call_id: toolCall.callId ?? null,
+            output: `See step 2 Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
+          })),
+        );
+        debug.agentOutput = {
+          agent: {
+            id: agent.id,
+            name: agent.name,
+            version: agent.version ?? null,
+          },
+          response: buildResponseDebugSnapshot(finalResponse),
+          answer,
+          citations: serializeDebugValue(citations),
+          permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
+          groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
+          error: finalResponse?.error ?? null,
+        };
+
+        return {
+          followUpOptions,
+          responseToolInvocations,
+          priorToolInvocations,
+          turnType,
+        };
       },
-      response: buildResponseDebugSnapshot(finalResponse),
-      answer,
-      citations: serializeDebugValue(citations),
-      permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
-      groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
-      error: finalResponse?.error ?? null,
-    };
+    );
+    debug.timings.requestCompletedAt = new Date().toISOString();
+    debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
 
     return {
       answer,
@@ -2522,11 +2638,11 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
         name: agent.name,
         version: agent.version ?? null,
       },
-      toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
-      toolInvocations: responseToolInvocations,
-      priorToolInvocations,
-      turnType,
-      followUpOptions,
+      toolsUsed: Array.from(new Set(shapedResponse.responseToolInvocations.map((invocation) => invocation.toolName))),
+      toolInvocations: shapedResponse.responseToolInvocations,
+      priorToolInvocations: shapedResponse.priorToolInvocations,
+      turnType: shapedResponse.turnType,
+      followUpOptions: shapedResponse.followUpOptions,
       citations,
       principal: principal
         ? {
@@ -2537,6 +2653,8 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       debug,
     };
   } catch (error) {
+    debug.timings.requestCompletedAt = new Date().toISOString();
+    debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
     throw attachDebugToError(error, debug);
   }
 }

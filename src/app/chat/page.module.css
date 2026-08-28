@@ -650,6 +650,13 @@
   font-size: 1rem;
 }
 
+.debugMetaText {
+  margin: 0.35rem 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .debugDetail {
   margin-top: 0.75rem;
 }
