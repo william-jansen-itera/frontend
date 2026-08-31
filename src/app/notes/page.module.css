@@ -7,7 +7,7 @@
 .panelGrid {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: start;
   max-width: var(--page-content-width);
   margin: 0 auto;

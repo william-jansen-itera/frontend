@@ -1,6 +1,10 @@
 
 import { NextResponse } from 'next/server';
-import { deleteNodeAttachmentBlobIfExists, uploadNodeAttachment } from '@/server/utils/blobStorage';
+import {
+  deleteNodeAttachmentBlobIfExists,
+  restoreNodeAttachmentBlobIfDeleted,
+  uploadNodeAttachment,
+} from '@/server/utils/blobStorage';
 import {
   generateChatLeafPathPlan,
   generateChildTitlesFromBreadcrumb,
@@ -9,7 +13,12 @@ import {
   selectChatLeafAnchorCandidate,
 } from '@/server/utils/chatService';
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { requestTreeSqlIndexerRun } from '@/server/utils/azureSearch';
+import {
+  buildAttachmentSearchDocumentId,
+  buildTreeNodeSearchDocumentId,
+  deleteSearchDocumentsById,
+  requestTreeSqlIndexerRun,
+} from '@/server/utils/azureSearch';
 import { logException, logTrace } from '@/server/utils/logging';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
@@ -199,7 +208,7 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       FROM tree_node_detail_files files
       INNER JOIN tree_node_details details ON details.tree_node_id = files.tree_node_id
       INNER JOIN tree_nodes tn ON tn.id = details.tree_node_id
-      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL
+      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL AND files.deleted_at IS NULL
       ORDER BY files.created_at DESC, files.id DESC;
     `);
 
@@ -775,6 +784,18 @@ async function CreateGeneratedChildNodes({ treeInstanceId, parentId, children })
 
 async function DeleteTreeNode({ id, treeInstanceId }) {
   return withSqlConnection(async () => {
+    const attachments = await getDescendantAttachmentBlobs(treeInstanceId, id);
+    const deletedBlobNames = [];
+
+    try {
+      for (const attachment of attachments) {
+        const deleted = await deleteNodeAttachmentBlobIfExists(attachment.blobName);
+
+        if (deleted) {
+          deletedBlobNames.push(attachment.blobName);
+        }
+      }
+
     const deletedAt = new Date();
     const deleteResult = await new sql.Request()
       .input('id', sql.Int, id)
@@ -800,6 +821,26 @@ async function DeleteTreeNode({ id, treeInstanceId }) {
         FROM tree_nodes
         INNER JOIN Descendants ON Descendants.id = tree_nodes.id
         WHERE tree_nodes.tree_instance_id = @tree_instance_id;
+
+        WITH Descendants AS (
+          SELECT id
+          FROM tree_nodes
+          WHERE id = @id AND tree_instance_id = @tree_instance_id AND deleted_at = @deleted_at
+
+          UNION ALL
+
+          SELECT child.id
+          FROM tree_nodes child
+          INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
+          WHERE child.tree_instance_id = @tree_instance_id
+            AND child.deleted_at = @deleted_at
+        )
+        UPDATE files
+        SET deleted_at = COALESCE(files.deleted_at, @deleted_at),
+            updated_at = @deleted_at
+        FROM tree_node_detail_files files
+        INNER JOIN Descendants ON Descendants.id = files.tree_node_id
+        WHERE files.deleted_at IS NULL;
       `);
 
     if (!deleteResult.rowsAffected.some((count) => count > 0)) {
@@ -807,6 +848,13 @@ async function DeleteTreeNode({ id, treeInstanceId }) {
     }
 
     return queryTreeData(treeInstanceId);
+    } catch (error) {
+      for (const blobName of deletedBlobNames) {
+        await restoreNodeAttachmentBlobIfDeleted(blobName);
+      }
+
+      throw error;
+    }
   });
 }
 
@@ -1227,7 +1275,7 @@ async function deleteAttachmentMetadataRecord(treeInstanceId, attachmentId) {
         files.blob_name AS blobName
       FROM tree_node_detail_files files
       INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      WHERE tn.tree_instance_id = @tree_instance_id AND tn.deleted_at IS NULL AND files.id = @attachment_id;
+      WHERE tn.tree_instance_id = @tree_instance_id AND tn.deleted_at IS NULL AND files.deleted_at IS NULL AND files.id = @attachment_id;
     `);
 
   const attachment = attachmentResult.recordset[0] ?? null;
@@ -1235,11 +1283,31 @@ async function deleteAttachmentMetadataRecord(treeInstanceId, attachmentId) {
     throw new Error('Attachment was not found for the selected tree');
   }
 
-  await deleteNodeAttachmentBlobIfExists(attachment.blobName);
+  const deletedBlob = await deleteNodeAttachmentBlobIfExists(attachment.blobName);
 
-  await new sql.Request()
-    .input('attachment_id', sql.Int, attachmentId)
-    .query('DELETE FROM tree_node_detail_files WHERE id = @attachment_id;');
+  try {
+    const deletedAt = new Date();
+    const deleteResult = await new sql.Request()
+      .input('attachment_id', sql.Int, attachmentId)
+      .input('deleted_at', sql.DateTime2, deletedAt)
+      .query(`
+        UPDATE tree_node_detail_files
+        SET deleted_at = @deleted_at,
+            updated_at = @deleted_at
+        WHERE id = @attachment_id
+          AND deleted_at IS NULL;
+      `);
+
+    if (!deleteResult.rowsAffected[0]) {
+      throw new Error('Attachment was not found for the selected tree');
+    }
+  } catch (error) {
+    if (deletedBlob) {
+      await restoreNodeAttachmentBlobIfDeleted(attachment.blobName);
+    }
+
+    throw error;
+  }
 
   return queryNodeDetails(treeInstanceId, attachment.treeNodeId);
 }
@@ -1266,9 +1334,44 @@ async function getDescendantAttachmentBlobs(treeInstanceId, nodeId, { includeDel
         WHERE t.tree_instance_id = @tree_instance_id
           AND (@include_deleted = 1 OR t.deleted_at IS NULL)
       )
-      SELECT files.blob_name AS blobName
+      SELECT
+        CAST(files.id AS VARCHAR(10)) AS id,
+        CAST(files.tree_node_id AS VARCHAR(10)) AS treeNodeId,
+        files.blob_name AS blobName,
+        files.blob_url AS blobUrl,
+        files.deleted_at AS deletedAt
       FROM Descendants d
-      INNER JOIN tree_node_detail_files files ON files.tree_node_id = d.id;
+      INNER JOIN tree_node_detail_files files ON files.tree_node_id = d.id
+      WHERE @include_deleted = 1 OR files.deleted_at IS NULL;
+    `);
+
+  return result.recordset;
+}
+
+async function getDescendantNodeIds(treeInstanceId, nodeId, { includeDeleted = false } = {}) {
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .input('id', sql.Int, nodeId)
+    .input('include_deleted', sql.Bit, includeDeleted ? 1 : 0)
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`WITH Descendants AS (
+        SELECT tn.id
+        FROM tree_nodes tn
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE tn.id = @id
+          AND tn.tree_instance_id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier
+          AND (@include_deleted = 1 OR tn.deleted_at IS NULL)
+        UNION ALL
+        SELECT t.id
+        FROM tree_nodes t
+        INNER JOIN Descendants d ON t.parent_id = d.id
+        WHERE t.tree_instance_id = @tree_instance_id
+          AND (@include_deleted = 1 OR t.deleted_at IS NULL)
+      )
+      SELECT CAST(id AS VARCHAR(10)) AS id
+      FROM Descendants;
     `);
 
   return result.recordset;
@@ -1559,9 +1662,20 @@ export async function DELETE(request) {
       const nodeId = parseInt(idParam, 10);
 
       if (shouldPurge) {
+        const nodes = await getDescendantNodeIds(treeInstanceId, nodeId, {
+          includeDeleted: true,
+        });
         const attachments = await getDescendantAttachmentBlobs(treeInstanceId, nodeId, {
           includeDeleted: true,
         });
+        const searchDocumentIds = [
+          ...nodes.map((node) => buildTreeNodeSearchDocumentId(treeInstanceId, node.id)),
+          ...attachments
+            .map((attachment) => buildAttachmentSearchDocumentId(attachment.blobUrl))
+            .filter(Boolean),
+        ];
+
+        await deleteSearchDocumentsById(searchDocumentIds);
 
         for (const attachment of attachments) {
           await deleteNodeAttachmentBlobIfExists(attachment.blobName);

@@ -190,6 +190,7 @@ CREATE TABLE [dbo].[tree_node_detail_files](
 	[byte_size] [bigint] NOT NULL,
 	[blob_name] [nvarchar](1024) NOT NULL,
 	[blob_url] [nvarchar](2048) NOT NULL,
+	[deleted_at] [datetime2](7) NULL,
 	[created_at] [datetime2](7) NOT NULL,
 	[updated_at] [datetime2](7) NOT NULL,
  CONSTRAINT [PK_tree_node_detail_files] PRIMARY KEY CLUSTERED 

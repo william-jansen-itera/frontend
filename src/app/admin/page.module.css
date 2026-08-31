@@ -4,8 +4,7 @@
   box-sizing: border-box;
 }
 
-.heroCard,
-.panel {
+.heroCard {
   max-width: var(--page-content-width);
   margin: 0 auto 1.5rem;
 }
@@ -41,9 +40,21 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+  align-items: start;
+}
+
+.column {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  min-width: 0;
 }
 
 .panel {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  max-width: none;
   overflow: hidden;
 }
 

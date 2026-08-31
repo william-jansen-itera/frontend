@@ -4,7 +4,10 @@
   "credentials": {
     "connectionString": "DefaultEndpointsProtocol=https;AccountName=<storage-account>;AccountKey=<account-key>;EndpointSuffix=core.windows.net"
   },
+  "dataDeletionDetectionPolicy": {
+    "@odata.type": "#Microsoft.Azure.Search.NativeBlobSoftDeleteDeletionDetectionPolicy"
+  },
   "container": {
-    "name": "<container-name>"
+    "name": "node-attachments"
   }
 }

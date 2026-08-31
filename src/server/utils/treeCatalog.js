@@ -1,5 +1,13 @@
 import { randomUUID } from 'crypto';
-import { deleteNodeAttachmentBlobIfExists } from '@/server/utils/blobStorage';
+import {
+  deleteNodeAttachmentBlobIfExists,
+  restoreNodeAttachmentBlobIfDeleted,
+} from '@/server/utils/blobStorage';
+import {
+  buildAttachmentSearchDocumentId,
+  buildTreeNodeSearchDocumentId,
+  deleteSearchDocumentsById,
+} from '@/server/utils/azureSearch';
 import { normalizeClientPrincipal } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 
@@ -267,7 +275,9 @@ async function getScopedTreeAttachmentBlobs(treeId) {
     .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
     .input('include_deleted', sql.Bit, 0)
     .query(`
-      SELECT files.blob_name AS blobName
+      SELECT
+        files.blob_name AS blobName,
+        files.blob_url AS blobUrl
       FROM tree_node_detail_files files
       INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
       INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
@@ -275,7 +285,24 @@ async function getScopedTreeAttachmentBlobs(treeId) {
       WHERE ti.id = @tree_instance_id
         AND ai.app_identifier = @application_identifier
         AND (@include_deleted = 1 OR ti.deleted_at IS NULL)
-        AND (@include_deleted = 1 OR tn.deleted_at IS NULL);
+        AND (@include_deleted = 1 OR tn.deleted_at IS NULL)
+        AND (@include_deleted = 1 OR files.deleted_at IS NULL);
+    `);
+
+  return result.recordset;
+}
+
+async function getScopedTreeNodeIds(treeId) {
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`
+      SELECT CAST(tn.id AS VARCHAR(10)) AS id
+      FROM tree_nodes tn
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ti.id = @tree_instance_id
+        AND ai.app_identifier = @application_identifier;
     `);
 
   return result.recordset;
@@ -676,6 +703,18 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
       enforceAccess,
     });
 
+    const attachments = await getScopedTreeAttachmentBlobs(treeId);
+    const deletedBlobNames = [];
+
+    try {
+      for (const attachment of attachments) {
+        const deleted = await deleteNodeAttachmentBlobIfExists(attachment.blobName);
+
+        if (deleted) {
+          deletedBlobNames.push(attachment.blobName);
+        }
+      }
+
     const deletedAt = new Date();
     const deleteResult = await new sql.Request()
       .input('tree_instance_id', sql.Int, Number(treeId))
@@ -690,6 +729,17 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
         WHERE ti.id = @tree_instance_id
           AND ai.app_identifier = @application_identifier
           AND ti.deleted_at IS NULL;
+
+        UPDATE files
+        SET deleted_at = COALESCE(files.deleted_at, @deleted_at),
+            updated_at = @deleted_at
+        FROM tree_node_detail_files files
+        INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier
+          AND files.deleted_at IS NULL;
       `);
 
     if (!deleteResult.rowsAffected[0]) {
@@ -697,6 +747,13 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
     }
 
     return { success: true };
+    } catch (error) {
+      for (const blobName of deletedBlobNames) {
+        await restoreNodeAttachmentBlobIfDeleted(blobName);
+      }
+
+      throw error;
+    }
   });
 }
 
@@ -713,18 +770,31 @@ export async function purgeTree({ treeId, principal = null, enforceAccess = fals
       throw new Error('Tree must be soft-deleted before it can be purged');
     }
 
-    const attachments = await new sql.Request()
-      .input('tree_instance_id', sql.Int, Number(treeId))
-      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-      .query(`
-        SELECT files.blob_name AS blobName
-        FROM tree_node_detail_files files
-        INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-        WHERE ti.id = @tree_instance_id
-          AND ai.app_identifier = @application_identifier;
-      `);
+    const [nodes, attachments] = await Promise.all([
+      getScopedTreeNodeIds(treeId),
+      new sql.Request()
+        .input('tree_instance_id', sql.Int, Number(treeId))
+        .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+        .query(`
+          SELECT
+            files.blob_name AS blobName,
+            files.blob_url AS blobUrl
+          FROM tree_node_detail_files files
+          INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+          INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+          INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+          WHERE ti.id = @tree_instance_id
+            AND ai.app_identifier = @application_identifier;
+        `),
+    ]);
+    const searchDocumentIds = [
+      ...nodes.map((node) => buildTreeNodeSearchDocumentId(treeId, node.id)),
+      ...attachments.recordset
+        .map((attachment) => buildAttachmentSearchDocumentId(attachment.blobUrl))
+        .filter(Boolean),
+    ];
+
+    await deleteSearchDocumentsById(searchDocumentIds);
 
     for (const attachment of attachments.recordset) {
       await deleteNodeAttachmentBlobIfExists(attachment.blobName);
@@ -900,6 +970,7 @@ export async function getTreeRoutingProfiles(options = {}) {
       files.created_at AS createdAt
     FROM RecursiveTree rt
     INNER JOIN tree_node_detail_files files ON files.tree_node_id = rt.id
+    WHERE files.deleted_at IS NULL
     ORDER BY rt.tree_id, rt.path, files.created_at DESC, files.id DESC;`;
 
   function uniqueByValue(values, maxItems) {

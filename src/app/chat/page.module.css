@@ -176,7 +176,7 @@
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(340px, 0.88fr);
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: start;
 }
 

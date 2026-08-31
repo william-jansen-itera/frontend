@@ -8,6 +8,7 @@ BEGIN
     byte_size BIGINT NOT NULL,
     blob_name NVARCHAR(1024) NOT NULL,
     blob_url NVARCHAR(2048) NOT NULL,
+    deleted_at DATETIME2(7) NULL,
     created_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_detail_files_created_at DEFAULT SYSUTCDATETIME(),
     updated_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_detail_files_updated_at DEFAULT SYSUTCDATETIME(),
     CONSTRAINT PK_tree_node_detail_files PRIMARY KEY CLUSTERED (id),

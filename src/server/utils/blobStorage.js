@@ -27,6 +27,11 @@ function getContainerClient() {
     .getContainerClient(blobContainerName);
 }
 
+function getBlobClient(blobName) {
+  const containerClient = getContainerClient();
+  return containerClient.getBlobClient(blobName);
+}
+
 function sanitizeFileNameSegment(value) {
   return value.replace(/[^a-zA-Z0-9._-]/g, '-');
 }
@@ -82,8 +87,7 @@ export async function deleteNodeAttachmentBlob(blobName) {
     return;
   }
 
-  const containerClient = getContainerClient();
-  const blobClient = containerClient.getBlobClient(blobName);
+  const blobClient = getBlobClient(blobName);
 
   await blobClient.delete({
     deleteSnapshots: 'include',
@@ -95,8 +99,7 @@ export async function deleteNodeAttachmentBlobIfExists(blobName) {
     return false;
   }
 
-  const containerClient = getContainerClient();
-  const blobClient = containerClient.getBlobClient(blobName);
+  const blobClient = getBlobClient(blobName);
   const response = await blobClient.deleteIfExists({
     deleteSnapshots: 'include',
   });
@@ -104,13 +107,38 @@ export async function deleteNodeAttachmentBlobIfExists(blobName) {
   return response.succeeded;
 }
 
+export async function restoreNodeAttachmentBlobIfDeleted(blobName) {
+  if (!blobName) {
+    return false;
+  }
+
+  const blobClient = getBlobClient(blobName);
+
+  try {
+    await blobClient.undelete();
+
+    // Azure AI Search blob indexers rely on LastModified for change detection.
+    // Undelete restores the blob without bumping that timestamp, so resave the
+    // existing metadata to force the blob indexer to pick the document up again.
+    const properties = await blobClient.getProperties();
+    await blobClient.setMetadata(properties.metadata || {});
+
+    return true;
+  } catch (error) {
+    if (error?.statusCode === 404 || error?.details?.errorCode === 'BlobNotFound') {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 export async function downloadNodeAttachmentBlob(blobName) {
   if (!blobName) {
     throw new Error('Blob name is required');
   }
 
-  const containerClient = getContainerClient();
-  const blobClient = containerClient.getBlobClient(blobName);
+  const blobClient = getBlobClient(blobName);
   const properties = await blobClient.getProperties();
   const metadata = properties.metadata || {};
 

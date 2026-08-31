@@ -53,6 +53,7 @@ AttachmentSummary AS (
 		MAX(files.updated_at) AS latest_attachment_updated_at,
 		MAX(files.created_at) AS latest_attachment_created_at
 	FROM dbo.tree_node_detail_files files
+	WHERE files.deleted_at IS NULL
 	GROUP BY files.tree_node_id
 )
 SELECT
@@ -90,6 +91,7 @@ SELECT
 			files.updated_at AS updatedAt
 		FROM dbo.tree_node_detail_files files
 		WHERE files.tree_node_id = th.id
+		  AND files.deleted_at IS NULL
 		ORDER BY files.created_at DESC, files.id DESC
 		FOR JSON PATH
 	) AS NVARCHAR(MAX)) AS attachmentMetadataJson,

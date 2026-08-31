@@ -32,6 +32,7 @@ export default function AdminPage() {
   const isAdmin = hasClientPrincipalRole(user, "mdsadmin");
   const [deletedTrees, setDeletedTrees] = useState([]);
   const [deletedNodes, setDeletedNodes] = useState([]);
+  const [deletedAttachments, setDeletedAttachments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -48,6 +49,7 @@ export default function AdminPage() {
     if (!isAdmin) {
       setDeletedTrees([]);
       setDeletedNodes([]);
+      setDeletedAttachments([]);
       setIsLoading(false);
       return;
     }
@@ -64,10 +66,12 @@ export default function AdminPage() {
 
       setDeletedTrees(Array.isArray(data?.deletedTrees) ? data.deletedTrees : []);
       setDeletedNodes(Array.isArray(data?.deletedNodes) ? data.deletedNodes : []);
+      setDeletedAttachments(Array.isArray(data?.deletedAttachments) ? data.deletedAttachments : []);
       setErrorMessage("");
     } catch (error) {
       setDeletedTrees([]);
       setDeletedNodes([]);
+      setDeletedAttachments([]);
       setErrorMessage(getErrorMessage(error, "Deleted items could not be loaded"));
     } finally {
       setIsLoading(false);
@@ -98,6 +102,7 @@ export default function AdminPage() {
 
         setDeletedTrees(Array.isArray(data?.deletedTrees) ? data.deletedTrees : []);
         setDeletedNodes(Array.isArray(data?.deletedNodes) ? data.deletedNodes : []);
+        setDeletedAttachments(Array.isArray(data?.deletedAttachments) ? data.deletedAttachments : []);
         setErrorMessage("");
       } catch (error) {
         if (!isMounted) {
@@ -106,6 +111,7 @@ export default function AdminPage() {
 
         setDeletedTrees([]);
         setDeletedNodes([]);
+        setDeletedAttachments([]);
         setErrorMessage(getErrorMessage(error, "Deleted items could not be loaded"));
       } finally {
         if (isMounted) {
@@ -319,6 +325,73 @@ export default function AdminPage() {
     }
   };
 
+  const handleUndeleteAttachment = async (attachment) => {
+    const treeId = String(attachment.treeId);
+    const attachmentId = String(attachment.id);
+
+    setPending(`undelete-attachment:${attachmentId}`, true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/deleted", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "undelete-attachment", treeId, attachmentId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Attachment could not be undeleted");
+      }
+
+      setStatusMessage(`Attachment ${attachmentId} in tree ${treeId} was undeleted.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Attachment could not be undeleted"));
+    } finally {
+      setPending(`undelete-attachment:${attachmentId}`, false);
+    }
+  };
+
+  const handlePurgeAttachment = async (attachment) => {
+    const treeId = String(attachment.treeId);
+    const attachmentId = String(attachment.id);
+    const confirmed = window.confirm(`Purge attachment "${attachment.fileName}" from tree "${attachment.treeDisplayName}" permanently? This cannot be undone.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPending(`purge-attachment:${attachmentId}`, true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/deleted", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "purge-attachment", treeId, attachmentId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Attachment could not be purged");
+      }
+
+      setStatusMessage(`Attachment ${attachmentId} in tree ${treeId} was purged.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Attachment could not be purged"));
+    } finally {
+      setPending(`purge-attachment:${attachmentId}`, false);
+    }
+  };
+
   if (!user) {
     return (
       <main className={`${styles.pageShell} appPageShell`}>
@@ -366,71 +439,132 @@ export default function AdminPage() {
       </section>
 
       <section className={styles.grid}>
-        <article className={`appTopLevelPanel ${styles.panel}`}>
-          <div className={`appPanelTopBar ${styles.panelToolbar}`}>
-            <div className={styles.panelHeaderGroup}>
-              <span className={styles.panelHeading}>Deleted Trees</span>
-              <span className={styles.countLabel}>{deletedTrees.length}</span>
-            </div>
-            <button
-              type="button"
-              onClick={handlePurgeAllTrees}
-              disabled={isLoading || deletedTrees.length === 0 || Boolean(pendingItems["bulk:trees"])}
-              className="appCompactActionButton appCompactActionButtonDanger"
-            >
-              {pendingItems["bulk:trees"] ? "Purging..." : "Purge All"}
-            </button>
-          </div>
-          <div className={styles.panelBody}>
-            {isLoading ? (
-              <div className={styles.emptyState}>Loading deleted trees...</div>
-            ) : deletedTrees.length === 0 ? (
-              <div className={styles.emptyState}>No deleted trees are waiting for purge.</div>
-            ) : (
-              <div className={styles.list}>
-                {deletedTrees.map((tree) => {
-                  const pendingKey = `tree:${tree.id}`;
-                  const undeletePendingKey = `undelete-tree:${tree.id}`;
-
-                  return (
-                    <article key={tree.id} className={styles.listItem}>
-                      <div className={styles.itemMeta}>
-                        <div className={styles.itemHeader}>
-                          <span className={styles.badge}>Tree {tree.id}</span>
-                          <span className={styles.badgeMuted}>{tree.isPrivate ? "Private" : "Public"}</span>
-                        </div>
-                        <h2 className={styles.itemTitle}>{tree.name}</h2>
-                        <p className={styles.itemDetail}>Deleted at: {formatTimestamp(tree.deletedAt)}</p>
-                        {tree.ownerDisplayName || tree.ownerUserDetails ? (
-                          <p className={styles.itemDetail}>Owner: {tree.ownerDisplayName || tree.ownerUserDetails}</p>
-                        ) : null}
-                      </div>
-                      <div className={styles.actionGroup}>
-                        <button
-                          type="button"
-                          onClick={() => handleUndeleteTree(tree)}
-                          disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[pendingKey])}
-                          className="appCompactActionButton appCompactActionButtonNeutral"
-                        >
-                          {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handlePurgeTree(tree)}
-                          disabled={Boolean(pendingItems[pendingKey]) || Boolean(pendingItems[undeletePendingKey])}
-                          className="appCompactActionButton appCompactActionButtonDanger"
-                        >
-                          {pendingItems[pendingKey] ? "Purging..." : "Purge"}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+        <div className={styles.column}>
+          <article className={`appTopLevelPanel ${styles.panel}`}>
+            <div className={`appPanelTopBar ${styles.panelToolbar}`}>
+              <div className={styles.panelHeaderGroup}>
+                <span className={styles.panelHeading}>Deleted Trees</span>
+                <span className={styles.countLabel}>{deletedTrees.length}</span>
               </div>
-            )}
-          </div>
-        </article>
+              <button
+                type="button"
+                onClick={handlePurgeAllTrees}
+                disabled={isLoading || deletedTrees.length === 0 || Boolean(pendingItems["bulk:trees"])}
+                className="appCompactActionButton appCompactActionButtonDanger"
+              >
+                {pendingItems["bulk:trees"] ? "Purging..." : "Purge All"}
+              </button>
+            </div>
+            <div className={styles.panelBody}>
+              {isLoading ? (
+                <div className={styles.emptyState}>Loading deleted trees...</div>
+              ) : deletedTrees.length === 0 ? (
+                <div className={styles.emptyState}>No deleted trees are waiting for undelete or purge.</div>
+              ) : (
+                <div className={styles.list}>
+                  {deletedTrees.map((tree) => {
+                    const pendingKey = `tree:${tree.id}`;
+                    const undeletePendingKey = `undelete-tree:${tree.id}`;
 
+                    return (
+                      <article key={tree.id} className={styles.listItem}>
+                        <div className={styles.itemMeta}>
+                          <div className={styles.itemHeader}>
+                            <span className={styles.badge}>Tree {tree.id}</span>
+                            <span className={styles.badgeMuted}>{tree.isPrivate ? "Private" : "Public"}</span>
+                          </div>
+                          <h2 className={styles.itemTitle}>{tree.name}</h2>
+                          <p className={styles.itemDetail}>Deleted at: {formatTimestamp(tree.deletedAt)}</p>
+                          {tree.ownerDisplayName || tree.ownerUserDetails ? (
+                            <p className={styles.itemDetail}>Owner: {tree.ownerDisplayName || tree.ownerUserDetails}</p>
+                          ) : null}
+                        </div>
+                        <div className={styles.actionGroup}>
+                          <button
+                            type="button"
+                            onClick={() => handleUndeleteTree(tree)}
+                            disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[pendingKey])}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePurgeTree(tree)}
+                            disabled={Boolean(pendingItems[pendingKey]) || Boolean(pendingItems[undeletePendingKey])}
+                            className="appCompactActionButton appCompactActionButtonDanger"
+                          >
+                            {pendingItems[pendingKey] ? "Purging..." : "Purge"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </article>
+
+          <article className={`appTopLevelPanel ${styles.panel}`}>
+            <div className={`appPanelTopBar ${styles.panelToolbar}`}>
+              <div className={styles.panelHeaderGroup}>
+                <span className={styles.panelHeading}>Deleted Attachments</span>
+                <span className={styles.countLabel}>{deletedAttachments.length}</span>
+              </div>
+            </div>
+            <div className={styles.panelBody}>
+              {isLoading ? (
+                <div className={styles.emptyState}>Loading deleted attachments...</div>
+              ) : deletedAttachments.length === 0 ? (
+                <div className={styles.emptyState}>No individually deleted attachments are currently waiting for undelete or purge.</div>
+              ) : (
+                <div className={styles.list}>
+                  {deletedAttachments.map((attachment) => {
+                    const undeletePendingKey = `undelete-attachment:${attachment.id}`;
+                    const purgePendingKey = `purge-attachment:${attachment.id}`;
+
+                    return (
+                      <article key={attachment.id} className={styles.listItem}>
+                        <div className={styles.itemMeta}>
+                          <div className={styles.itemHeader}>
+                            <span className={styles.badge}>Tree {attachment.treeId}</span>
+                            <span className={styles.badge}>Node {attachment.nodeId}</span>
+                            <span className={styles.badgeMuted}>Attachment {attachment.id}</span>
+                          </div>
+                          <h2 className={styles.itemTitle}>{attachment.fileName}</h2>
+                          <p className={styles.itemDetail}>Tree: {attachment.treeDisplayName}</p>
+                          <p className={styles.itemDetail}>Node: {attachment.nodeTitle}</p>
+                          <p className={styles.itemDetail}>{attachment.breadcrumb || "No breadcrumb available."}</p>
+                          <p className={styles.itemDetail}>Deleted at: {formatTimestamp(attachment.deletedAt)}</p>
+                        </div>
+                        <div className={styles.actionGroup}>
+                          <button
+                            type="button"
+                            onClick={() => handleUndeleteAttachment(attachment)}
+                            disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[purgePendingKey])}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePurgeAttachment(attachment)}
+                            disabled={Boolean(pendingItems[purgePendingKey]) || Boolean(pendingItems[undeletePendingKey])}
+                            className="appCompactActionButton appCompactActionButtonDanger"
+                          >
+                            {pendingItems[purgePendingKey] ? "Purging..." : "Purge"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+
+        <div className={styles.column}>
         <article className={`appTopLevelPanel ${styles.panel}`}>
           <div className={`appPanelTopBar ${styles.panelToolbar}`}>
             <div className={styles.panelHeaderGroup}>
@@ -498,6 +632,7 @@ export default function AdminPage() {
             )}
           </div>
         </article>
+        </div>
       </section>
     </main>
   );
