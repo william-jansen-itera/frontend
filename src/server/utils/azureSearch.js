@@ -3,6 +3,7 @@ const searchIndexName = process.env.AZURE_SEARCH_INDEX_NAME;
 const searchQueryKey = process.env.AZURE_SEARCH_QUERY_KEY || process.env.AZURE_SEARCH_ADMIN_KEY;
 const searchAdminKey = process.env.AZURE_SEARCH_ADMIN_KEY;
 const searchSqlIndexerName = process.env.AZURE_SEARCH_SQL_INDEXER_NAME || 'tree-sql-indexer';
+const searchBlobIndexerName = process.env.AZURE_SEARCH_BLOB_INDEXER_NAME || 'tree-blob-indexer';
 const applicationIdentifier = process.env.APPLICATION_IDENTIFIER;
 const SEARCH_API_VERSION = '2024-07-01';
 const DEFAULT_SEARCH_PAGE_TOP = 25;
@@ -75,7 +76,7 @@ function getRequiredSearchConfig() {
   };
 }
 
-function getSearchIndexerRunConfig() {
+function getSearchIndexerConfig(indexerName) {
   if (!searchEndpoint) {
     return { isConfigured: false, reason: 'Azure Search endpoint env var is not configured' };
   }
@@ -84,7 +85,7 @@ function getSearchIndexerRunConfig() {
     return { isConfigured: false, reason: 'Azure Search admin key env var is not configured' };
   }
 
-  if (!searchSqlIndexerName) {
+  if (!indexerName) {
     return { isConfigured: false, reason: 'Azure Search indexer name env var is not configured' };
   }
 
@@ -92,7 +93,7 @@ function getSearchIndexerRunConfig() {
     isConfigured: true,
     endpoint: searchEndpoint.replace(/\/$/, ''),
     adminKey: searchAdminKey,
-    indexerName: searchSqlIndexerName,
+    indexerName,
   };
 }
 
@@ -248,8 +249,8 @@ export async function deleteSearchDocumentsById(documentIds) {
   };
 }
 
-export async function requestTreeSqlIndexerRun() {
-  const config = getSearchIndexerRunConfig();
+async function requestSearchIndexerOperation(indexerName, operationName) {
+  const config = getSearchIndexerConfig(indexerName);
 
   if (!config.isConfigured) {
     return {
@@ -259,7 +260,7 @@ export async function requestTreeSqlIndexerRun() {
   }
 
   const response = await fetch(
-    `${config.endpoint}/indexers/${encodeURIComponent(config.indexerName)}/run?api-version=${SEARCH_API_VERSION}`,
+    `${config.endpoint}/indexers/${encodeURIComponent(config.indexerName)}/${operationName}?api-version=${SEARCH_API_VERSION}`,
     {
       method: 'POST',
       headers: {
@@ -272,6 +273,7 @@ export async function requestTreeSqlIndexerRun() {
   if (response.ok) {
     return {
       status: 'requested',
+      operation: operationName,
       indexerName: config.indexerName,
     };
   }
@@ -281,12 +283,29 @@ export async function requestTreeSqlIndexerRun() {
   if (response.status === 409) {
     return {
       status: 'already-running',
+      operation: operationName,
       indexerName: config.indexerName,
       message: errorText || 'Azure Search reported that the indexer is already running.',
     };
   }
 
-  throw new Error(`Azure Search indexer run failed (${response.status}): ${errorText || 'No error details were returned.'}`);
+  throw new Error(`Azure Search indexer ${operationName} failed (${response.status}): ${errorText || 'No error details were returned.'}`);
+}
+
+export async function requestSearchIndexerRun(indexerName) {
+  return requestSearchIndexerOperation(indexerName, 'run');
+}
+
+export async function requestSearchIndexerReset(indexerName) {
+  return requestSearchIndexerOperation(indexerName, 'reset');
+}
+
+export async function requestTreeSqlIndexerRun() {
+  return requestSearchIndexerRun(searchSqlIndexerName);
+}
+
+export async function requestTreeBlobIndexerRun() {
+  return requestSearchIndexerRun(searchBlobIndexerName);
 }
 
 function escapeODataString(value) {

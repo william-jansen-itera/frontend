@@ -5,6 +5,17 @@ import { useAuth } from "@/app/useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import styles from "./page.module.css";
 
+const INDEXING_COLUMNS = [
+  { key: "incremental", label: "incremental" },
+  { key: "full", label: "full" },
+];
+
+const INDEXING_ROWS = [
+  { key: "node-data", label: "node data" },
+  { key: "blob-content", label: "attachment content" },
+  { key: "all", label: "all" },
+];
+
 function getErrorMessage(error, fallbackMessage) {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -25,6 +36,39 @@ function formatTimestamp(value) {
   }
 
   return parsedValue.toLocaleString();
+}
+
+function formatIndexingResultMessage(result) {
+  const targetLabel = INDEXING_ROWS.find((row) => row.key === result?.target)?.label || "indexing";
+  const modeLabel = result?.mode === "full" ? "Full" : "Incremental";
+  const operations = Array.isArray(result?.operations) ? result.operations : [];
+
+  if (operations.length === 0) {
+    return `${modeLabel} ${targetLabel} indexing request was accepted.`;
+  }
+
+  const summary = operations
+    .map((operation) => `${operation.operation} ${operation.indexerName} (${operation.status})`)
+    .join(", ");
+
+  return `${modeLabel} ${targetLabel} indexing started: ${summary}.`;
+}
+
+function formatIndexingErrorMessage(result, fallbackMessage) {
+  const baseMessage = String(result?.error || fallbackMessage || "Indexing request failed").trim();
+  const operations = Array.isArray(result?.operations) ? result.operations : [];
+  const failedOperations = Array.isArray(result?.failedOperations) ? result.failedOperations : [];
+  const detailParts = [];
+
+  if (operations.length > 0) {
+    detailParts.push(`completed ${operations.map((operation) => `${operation.operation} ${operation.indexerName} (${operation.status})`).join(", ")}`);
+  }
+
+  if (failedOperations.length > 0) {
+    detailParts.push(`failed ${failedOperations.map((operation) => `${operation.operation} ${operation.indexerName}${operation.error ? `: ${operation.error}` : ""}`).join(", ")}`);
+  }
+
+  return detailParts.length > 0 ? `${baseMessage} (${detailParts.join("; ")})` : baseMessage;
 }
 
 export default function AdminPage() {
@@ -392,13 +436,42 @@ export default function AdminPage() {
     }
   };
 
+  const handleIndexingAction = async (target, mode) => {
+    const pendingKey = `indexing:${mode}:${target}`;
+
+    setPending(pendingKey, true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/indexing", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ target, mode }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(formatIndexingErrorMessage(data, "Indexing request failed"));
+      }
+
+      setStatusMessage(formatIndexingResultMessage(data));
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Indexing request failed"));
+    } finally {
+      setPending(pendingKey, false);
+    }
+  };
+
   if (!user) {
     return (
       <main className={`${styles.pageShell} appPageShell`}>
         <section className={`appTopLevelPanel ${styles.heroCard}`}>
           <p className="appEyebrow">Admin</p>
-          <h1 className="appPageTitle">Admin purge workspace</h1>
-          <p className="appPageDescription">Sign in with a user that has the mdsadmin role to view deleted trees and deleted nodes.</p>
+          <h1 className="appPageTitle">Admin operations</h1>
+          <p className="appPageDescription">Sign in with a user that has the mdsadmin role to manage search indexing and deletions.</p>
         </section>
       </main>
     );
@@ -409,7 +482,7 @@ export default function AdminPage() {
       <main className={`${styles.pageShell} appPageShell`}>
         <section className={`appTopLevelPanel ${styles.heroCard}`}>
           <p className="appEyebrow">Admin</p>
-          <h1 className="appPageTitle">Admin purge workspace</h1>
+          <h1 className="appPageTitle">Admin operations</h1>
           <p className="appPageDescription">This page requires the mdsadmin role.</p>
         </section>
       </main>
@@ -422,8 +495,11 @@ export default function AdminPage() {
         <div className={styles.heroHeader}>
           <div className="appHeroCopy">
             <p className="appEyebrow">Admin</p>
-            <h1 className="appPageTitle">Purge deleted content</h1>
-            <p className="appPageDescription">Review soft-deleted trees and deleted nodes from the SQL search view, then purge them permanently when retention is no longer needed.</p>
+            <h1 className="appPageTitle">Admin operations</h1>
+            <div className={styles.heroDescriptionStack}>
+              <p className="appPageDescription">Review soft-deleted trees, nodes, and attachments, then undelete or purge them when retention is no longer needed.</p>
+              <p className="appPageDescription">Start Azure AI Search indexing actions for node data and blob content, with incremental run or full reset-and-run options.</p>
+            </div>
           </div>
           <button
             type="button"
@@ -633,6 +709,55 @@ export default function AdminPage() {
           </div>
         </article>
         </div>
+      </section>
+
+      <section className={styles.sectionStack}>
+        <article className={`appTopLevelPanel ${styles.panel}`}>
+          <div className={`appPanelTopBar ${styles.panelToolbar}`}>
+            <div className={styles.panelHeaderGroup}>
+              <span className={styles.panelHeading}>Search indexing</span>
+            </div>
+          </div>
+          <div className={styles.panelBody}>
+            <p className={styles.sectionDescription}>Incremental starts the selected indexer run. Full resets the selected indexer and then starts it. All targets both the SQL node-data indexer and the blob-content indexer.</p>
+            <div className={styles.indexingTableWrapper}>
+              <table className={styles.indexingTable}>
+                <thead>
+                  <tr>
+                    <th scope="col" className={styles.indexingCornerCell}>scope</th>
+                    {INDEXING_COLUMNS.map((column) => (
+                      <th key={column.key} scope="col" className={styles.indexingColumnHeader}>{column.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {INDEXING_ROWS.map((row) => (
+                    <tr key={row.key}>
+                      <th scope="row" className={styles.indexingRowHeader}>{row.label}</th>
+                      {INDEXING_COLUMNS.map((column) => {
+                        const pendingKey = `indexing:${column.key}:${row.key}`;
+
+                        return (
+                          <td key={`${row.key}:${column.key}`} className={styles.indexingActionCell}>
+                            <button
+                              type="button"
+                              onClick={() => handleIndexingAction(row.key, column.key)}
+                              disabled={Boolean(pendingItems[pendingKey])}
+                              className="appCompactActionButton appCompactActionButtonNeutral"
+                              aria-label={`Start ${column.label} indexing for ${row.label}`}
+                            >
+                              {pendingItems[pendingKey] ? "Starting..." : "Start"}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </article>
       </section>
     </main>
   );

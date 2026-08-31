@@ -22,6 +22,7 @@ Optional Azure AI Search settings:
 - `AZURE_SEARCH_QUERY_KEY` for search/query requests
 - `AZURE_SEARCH_ADMIN_KEY` for server-side indexer run requests
 - `AZURE_SEARCH_SQL_INDEXER_NAME` defaults to `tree-sql-indexer`
+- `AZURE_SEARCH_BLOB_INDEXER_NAME` defaults to `tree-blob-indexer`
 
 `APPLICATION_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `false`.
 
@@ -138,6 +139,17 @@ Use this checklist when validating attachment soft delete, restore, indexing, an
 3. Verify chat and search still return expected tree-scoped results.
 4. Verify deleted attachments no longer appear in node detail payloads.
 5. Verify deleted attachments no longer contribute to attachment metadata in `dbo.vw_tree_search_nodes`.
+
+## Admin Search Indexing
+
+The Admin page now separates `Search indexing` from `Deletions`.
+
+- `Search indexing` can start Azure AI Search indexer operations for `node data`, `blob content`, or `all`.
+- `incremental` means the app calls `run` on the selected indexer or indexers.
+- `full` means the app calls `reset` and then `run` on the selected indexer or indexers.
+- `node data` targets the SQL indexer configured by `AZURE_SEARCH_SQL_INDEXER_NAME`.
+- `blob content` targets the blob indexer configured by `AZURE_SEARCH_BLOB_INDEXER_NAME`.
+- `all` starts both indexers in the selected mode.
 
 ## Security
 
