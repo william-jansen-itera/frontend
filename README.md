@@ -62,9 +62,6 @@ In short, normal delete and undelete are reversible, index cleanup for attachmen
 Use this checklist when validating attachment soft delete, restore, indexing, and purge behavior.
 
 ### Preconditions
-
-1. Apply the SQL migration that adds `tree_node_detail_files.deleted_at`.
-2. Update the Azure AI Search blob datasource from `azure-search/tree-blob-datasource.json`.
 3. Confirm Blob Storage soft delete is enabled on the storage account.
 4. Confirm blob versioning is disabled on the storage account.
 5. Confirm `AZURE_SEARCH_ADMIN_KEY` is configured in the app environment used for purge testing.
