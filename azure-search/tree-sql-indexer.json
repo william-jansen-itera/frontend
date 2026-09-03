@@ -1,9 +1,9 @@
 {
   "name": "tree-sql-indexer",
   "dataSourceName": "tree-sql-datasource",
-  "targetIndexName": "<search-index-name>",
+  "targetIndexName": "tree-content-index",
   "schedule": {
-    "interval": "PT12H"
+    "interval": "P1D"
   },
   "fieldMappings": [
     { "sourceFieldName": "id", "targetFieldName": "id" },
@@ -27,6 +27,8 @@
     { "sourceFieldName": "attachmentCount", "targetFieldName": "attachmentCount" },
     { "sourceFieldName": "hasAttachments", "targetFieldName": "hasAttachments" },
     { "sourceFieldName": "attachmentMetadataJson", "targetFieldName": "attachmentMetadataJson" },
+    { "sourceFieldName": "updatedByObjectId", "targetFieldName": "updatedByObjectId" },
+    { "sourceFieldName": "updatedByUserDetails", "targetFieldName": "updatedByUserDetails" },
     { "sourceFieldName": "updatedAt", "targetFieldName": "updatedAt" },
     { "sourceFieldName": "createdAt", "targetFieldName": "createdAt" }
   ],

@@ -88,13 +88,17 @@ SELECT
 			files.blob_name AS blobName,
 			files.blob_url AS blobUrl,
 			files.created_at AS createdAt,
-			files.updated_at AS updatedAt
+			files.updated_at AS updatedAt,
+			files.updated_by_object_id AS updatedByObjectId,
+			files.updated_by_user_details AS updatedByUserDetails
 		FROM dbo.tree_node_detail_files files
 		WHERE files.tree_node_id = th.id
 		  AND files.deleted_at IS NULL
 		ORDER BY files.created_at DESC, files.id DESC
 		FOR JSON PATH
 	) AS NVARCHAR(MAX)) AS attachmentMetadataJson,
+	CAST(details.updated_by_object_id AS NVARCHAR(100)) AS updatedByObjectId,
+	CAST(details.updated_by_user_details AS NVARCHAR(320)) AS updatedByUserDetails,
 	CAST(CASE
 		WHEN attachments.latest_attachment_updated_at IS NULL AND details.updated_at IS NULL THEN
 			CASE WHEN ti.updated_at >= th.path_updated_at THEN ti.updated_at ELSE th.path_updated_at END

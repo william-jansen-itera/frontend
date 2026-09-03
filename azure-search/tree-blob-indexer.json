@@ -1,5 +1,8 @@
 {
   "name": "tree-blob-indexer",
+  "schedule": {
+    "interval": "P1D"
+  },
   "dataSourceName": "tree-blob-datasource",
   "targetIndexName": "tree-content-index",
   "skillsetName": "tree-image-enrichment-skillset",
@@ -38,6 +41,14 @@
     {
       "sourceFieldName": "metadata_storage_path",
       "targetFieldName": "blobUrl"
+    },
+    {
+      "sourceFieldName": "updatedbyobjectid",
+      "targetFieldName": "updatedByObjectId"
+    },
+    {
+      "sourceFieldName": "updatedbyuserdetails",
+      "targetFieldName": "updatedByUserDetails"
     },
     {
       "sourceFieldName": "content",

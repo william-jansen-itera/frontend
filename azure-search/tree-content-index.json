@@ -255,6 +255,24 @@
       "facetable": false
     },
     {
+      "name": "updatedByObjectId",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
+      "name": "updatedByUserDetails",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": true,
+      "facetable": false
+    },
+    {
       "name": "updatedAt",
       "type": "Edm.DateTimeOffset",
       "searchable": false,

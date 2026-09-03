@@ -52,6 +52,8 @@ const SEARCH_SELECT_FIELDS = [
   'attachmentFileName',
   'blobName',
   'blobUrl',
+  'updatedByObjectId',
+  'updatedByUserDetails',
   'updatedAt',
   'createdAt',
 ];
@@ -877,6 +879,10 @@ function finalizeGroupedResults(groups) {
           fileName: attachmentDocument.attachmentFileName || 'Attachment',
           blobName: attachmentDocument.blobName || null,
           blobUrl: attachmentDocument.blobUrl || null,
+          updatedByObjectId: attachmentDocument.updatedByObjectId || null,
+          updatedByUserDetails: attachmentDocument.updatedByUserDetails || null,
+          updatedAt: attachmentDocument.updatedAt || null,
+          createdAt: attachmentDocument.createdAt || null,
           matchSource: attachmentHighlight.source || 'content',
           score: attachmentDocument.score ?? null,
           summary: attachmentHighlight.text
@@ -903,6 +909,8 @@ function finalizeGroupedResults(groups) {
         || preferredDocument?.treeDisplayName
         || `Tree ${group.treeId}`,
       nodeIdPath: preferredDocument?.nodeIdPath || null,
+      updatedByObjectId: preferredDocument?.updatedByObjectId || null,
+      updatedByUserDetails: preferredDocument?.updatedByUserDetails || null,
       updatedAt: preferredDocument?.updatedAt || null,
       nodeScore: matchedNodeDocument?.score ?? 0,
       nodeDocument,

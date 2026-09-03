@@ -57,6 +57,26 @@ function formatUpdatedAt(value) {
   }).format(parsedDate);
 }
 
+function buildAuditLabel(userDetails, timestamp, defaultLabel = null) {
+  const parts = [];
+  const normalizedUserDetails = String(userDetails ?? "").trim();
+  const formattedTimestamp = formatUpdatedAt(timestamp);
+
+  if (normalizedUserDetails) {
+    parts.push(normalizedUserDetails);
+  }
+
+  if (formattedTimestamp) {
+    parts.push(`Updated ${formattedTimestamp}`);
+  }
+
+  if (parts.length === 0) {
+    return defaultLabel;
+  }
+
+  return parts.join(" • ");
+}
+
 function getBreadcrumbParts(result) {
   const breadcrumb = String(result.breadcrumb || "").trim();
 
@@ -556,6 +576,11 @@ function SearchPageContent() {
                               </span>
                             </div>
                             <p className={`${styles.attachmentSummaryText} ${styles.resultSnippetCode}`}>{renderHighlightedText(attachmentSummary.summary, `${attachmentSummary.id}-attachment-summary`)}</p>
+                            {buildAuditLabel(attachmentSummary.updatedByUserDetails, attachmentSummary.updatedAt ?? attachmentSummary.createdAt) ? (
+                              <p className={styles.resultAuditText}>
+                                {buildAuditLabel(attachmentSummary.updatedByUserDetails, attachmentSummary.updatedAt ?? attachmentSummary.createdAt)}
+                              </p>
+                            ) : null}
                             {getAttachmentContentUrl(attachmentSummary) ? (
                               <div className={styles.attachmentPreviewRow}>
                                 <div className={styles.attachmentPreviewDetails}>
@@ -591,7 +616,9 @@ function SearchPageContent() {
                   ) : null}
                   <div className={styles.resultFooter}>
                     <div className={styles.resultFacts}>
-                      {formatUpdatedAt(result.updatedAt) ? <span>Updated {formatUpdatedAt(result.updatedAt)}</span> : null}
+                      {buildAuditLabel(result.updatedByUserDetails, result.updatedAt) ? (
+                        <span>{buildAuditLabel(result.updatedByUserDetails, result.updatedAt)}</span>
+                      ) : null}
                     </div>
                   </div>
                 </article>
