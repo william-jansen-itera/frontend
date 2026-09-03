@@ -8,6 +8,8 @@ BEGIN
     byte_size BIGINT NOT NULL,
     blob_name NVARCHAR(1024) NOT NULL,
     blob_url NVARCHAR(2048) NOT NULL,
+    updated_by_object_id NVARCHAR(100) NULL,
+    updated_by_user_details NVARCHAR(320) NULL,
     deleted_at DATETIME2(7) NULL,
     created_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_detail_files_created_at DEFAULT SYSUTCDATETIME(),
     updated_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_detail_files_updated_at DEFAULT SYSUTCDATETIME(),
@@ -20,6 +22,18 @@ BEGIN
 
   CREATE INDEX IX_tree_node_detail_files_tree_node_id_created_at
     ON dbo.tree_node_detail_files (tree_node_id, created_at DESC, id DESC);
+END;
+
+IF COL_LENGTH('dbo.tree_node_detail_files', 'updated_by_object_id') IS NULL
+BEGIN
+  ALTER TABLE dbo.tree_node_detail_files
+  ADD updated_by_object_id NVARCHAR(100) NULL;
+END;
+
+IF COL_LENGTH('dbo.tree_node_detail_files', 'updated_by_user_details') IS NULL
+BEGIN
+  ALTER TABLE dbo.tree_node_detail_files
+  ADD updated_by_user_details NVARCHAR(320) NULL;
 END;
 
 IF OBJECT_ID('dbo.TR_tree_node_detail_files_set_updated_at', 'TR') IS NULL

@@ -63,6 +63,43 @@ function getNodeAttachmentContentUrl(attachment) {
   return `/api/attachments/content?blobName=${encodeURIComponent(attachment.blobName)}`;
 }
 
+function formatAuditTimestamp(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function buildAuditLabel(userDetails, timestamp, defaultLabel) {
+  const parts = [];
+  const normalizedUserDetails = String(userDetails ?? "").trim();
+  const formattedTimestamp = formatAuditTimestamp(timestamp);
+
+  if (normalizedUserDetails) {
+    parts.push(normalizedUserDetails);
+  }
+
+  if (formattedTimestamp) {
+    parts.push(formattedTimestamp);
+  }
+
+  if (parts.length === 0) {
+    return defaultLabel;
+  }
+
+  return parts.join(" • ");
+}
+
 function countVisibleNodes(nodes, expandedState) {
   return nodes.reduce((total, node) => {
     const childCount = Array.isArray(node.children) && expandedState?.[String(node.id)]
@@ -1082,6 +1119,13 @@ function NotesPage() {
                   <>
                     <div className={styles.formField}>
                       <span className="appFieldLabel">Notes</span>
+                      <span className={styles.auditText}>
+                        {buildAuditLabel(
+                          nodeEditorState.updatedByUserDetails,
+                          nodeEditorState.updatedAt,
+                          "Not yet updated",
+                        )}
+                      </span>
                       <NotesEditor
                         value={nodeEditorState.notes}
                         onChange={(nextValue) => handleNodeEditorChange("notes", nextValue)}
@@ -1148,6 +1192,13 @@ function NotesPage() {
                                 <span className={styles.attachmentHint}>
                                   {formatAttachmentSize(attachment.byteSize)}
                                   {attachment.contentType ? ` • ${attachment.contentType}` : ""}
+                                </span>
+                                <span className={styles.auditText}>
+                                  {buildAuditLabel(
+                                    attachment.updatedByUserDetails,
+                                    attachment.updatedAt ?? attachment.createdAt,
+                                    "Uploader unknown",
+                                  )}
                                 </span>
                               </div>
                               <div className={styles.attachmentActions}>

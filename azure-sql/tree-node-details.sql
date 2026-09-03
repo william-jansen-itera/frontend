@@ -3,6 +3,8 @@ BEGIN
   CREATE TABLE dbo.tree_node_details (
     tree_node_id INT NOT NULL,
     notes NVARCHAR(MAX) NULL,
+    updated_by_object_id NVARCHAR(100) NULL,
+    updated_by_user_details NVARCHAR(320) NULL,
     created_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_details_created_at DEFAULT SYSUTCDATETIME(),
     updated_at DATETIME2(7) NOT NULL CONSTRAINT DF_tree_node_details_updated_at DEFAULT SYSUTCDATETIME(),
     CONSTRAINT PK_tree_node_details PRIMARY KEY CLUSTERED (tree_node_id),
@@ -10,6 +12,18 @@ BEGIN
       REFERENCES dbo.tree_nodes (id)
       ON DELETE CASCADE
   );
+END;
+
+IF COL_LENGTH('dbo.tree_node_details', 'updated_by_object_id') IS NULL
+BEGIN
+  ALTER TABLE dbo.tree_node_details
+  ADD updated_by_object_id NVARCHAR(100) NULL;
+END;
+
+IF COL_LENGTH('dbo.tree_node_details', 'updated_by_user_details') IS NULL
+BEGIN
+  ALTER TABLE dbo.tree_node_details
+  ADD updated_by_user_details NVARCHAR(320) NULL;
 END;
 
 IF OBJECT_ID('dbo.TR_tree_node_details_set_updated_at', 'TR') IS NULL

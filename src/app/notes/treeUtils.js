@@ -169,6 +169,8 @@ export function buildNodeEditorState(nodeDetails = null) {
   return {
     name: nodeDetails?.name ?? "",
     notes: nodeDetails?.notes ?? "",
+    updatedAt: nodeDetails?.updatedAt ?? null,
+    updatedByUserDetails: nodeDetails?.updatedByUserDetails ?? null,
     attachments: Array.isArray(nodeDetails?.attachments) ? nodeDetails.attachments : [],
   };
 }

@@ -78,6 +78,15 @@ function getOwnerMetadata(principal) {
   };
 }
 
+export function getAuditMetadata(principal) {
+  const ownerMetadata = getOwnerMetadata(principal);
+
+  return {
+    updatedByObjectId: ownerMetadata.ownerObjectId,
+    updatedByUserDetails: ownerMetadata.ownerUserDetails,
+  };
+}
+
 function normalizeVisibilityFilter(value, defaultValue = TREE_VISIBILITY_BOTH) {
   const normalizedValue = String(value ?? '').trim().toLowerCase();
 

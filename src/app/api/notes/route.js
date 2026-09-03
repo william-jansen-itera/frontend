@@ -22,7 +22,7 @@ import {
 import { logException, logTrace } from '@/server/utils/logging';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
-import { assertTreeAccess, getTreeList } from '@/server/utils/treeCatalog';
+import { assertTreeAccess, getAuditMetadata, getTreeList } from '@/server/utils/treeCatalog';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
@@ -164,6 +164,8 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       id: node.id,
       name: node.name,
       notes: '',
+      updatedAt: null,
+      updatedByUserDetails: null,
       attachments: [],
       isLeafNode: false,
     };
@@ -176,7 +178,9 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       SELECT
         CAST(tn.id AS VARCHAR(10)) AS id,
         tn.text AS name,
-        ISNULL(tnd.notes, '') AS notes
+        ISNULL(tnd.notes, '') AS notes,
+        tnd.updated_at AS updatedAt,
+        tnd.updated_by_user_details AS updatedByUserDetails
       FROM tree_nodes tn
       LEFT JOIN tree_node_details tnd ON tnd.tree_node_id = tn.id
       WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL;
@@ -188,6 +192,8 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       id: node.id,
       name: node.name,
       notes: '',
+      updatedAt: null,
+      updatedByUserDetails: null,
       attachments: [],
       isLeafNode: true,
     };
@@ -204,7 +210,9 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
         files.byte_size AS byteSize,
         files.blob_name AS blobName,
         files.blob_url AS blobUrl,
-        files.created_at AS createdAt
+        files.created_at AS createdAt,
+        files.updated_at AS updatedAt,
+        files.updated_by_user_details AS updatedByUserDetails
       FROM tree_node_detail_files files
       INNER JOIN tree_node_details details ON details.tree_node_id = files.tree_node_id
       INNER JOIN tree_nodes tn ON tn.id = details.tree_node_id
@@ -954,7 +962,16 @@ async function UpdateTreeNodeOpenStates(treeInstanceId, nodeIds, isExpanded) {
   });
 }
 
-async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
+function normalizeUpdatedByMetadata(principal) {
+  const auditMetadata = getAuditMetadata(principal);
+
+  return {
+    updatedByObjectId: auditMetadata.updatedByObjectId,
+    updatedByUserDetails: auditMetadata.updatedByUserDetails,
+  };
+}
+
+async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes, updatedBy = null }) {
   return withSqlConnection(async () => {
     const trimmedName = name.trim();
     const treeNode = await queryTreeNode(treeInstanceId, nodeId);
@@ -993,6 +1010,8 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
     await new sql.Request()
       .input('tree_node_id', sql.Int, nodeId)
       .input('notes', sql.NVarChar(sql.MAX), notes ?? '')
+      .input('updated_by_object_id', sql.NVarChar(100), updatedBy?.updatedByObjectId ?? null)
+      .input('updated_by_user_details', sql.NVarChar(320), updatedBy?.updatedByUserDetails ?? null)
       .query(`
         MERGE tree_node_details AS target
         USING (SELECT @tree_node_id AS tree_node_id) AS source
@@ -1000,10 +1019,12 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
         WHEN MATCHED THEN
           UPDATE SET
             notes = @notes,
+            updated_by_object_id = @updated_by_object_id,
+            updated_by_user_details = @updated_by_user_details,
             updated_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN
-          INSERT (tree_node_id, notes, created_at, updated_at)
-          VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME());
+          INSERT (tree_node_id, notes, created_at, updated_at, updated_by_object_id, updated_by_user_details)
+          VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME(), @updated_by_object_id, @updated_by_user_details);
       `);
 
     return {
@@ -1013,7 +1034,7 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes }) {
   });
 }
 
-async function updateTreeNodeDetailsRecord({ treeInstanceId, nodeId, name, notes, transaction }) {
+async function updateTreeNodeDetailsRecord({ treeInstanceId, nodeId, name, notes, updatedBy = null, transaction }) {
   const trimmedName = String(name ?? '').trim();
 
   if (!trimmedName) {
@@ -1043,6 +1064,8 @@ async function updateTreeNodeDetailsRecord({ treeInstanceId, nodeId, name, notes
   await createSqlRequest(transaction)
     .input('tree_node_id', sql.Int, nodeId)
     .input('notes', sql.NVarChar(sql.MAX), notes ?? '')
+    .input('updated_by_object_id', sql.NVarChar(100), updatedBy?.updatedByObjectId ?? null)
+    .input('updated_by_user_details', sql.NVarChar(320), updatedBy?.updatedByUserDetails ?? null)
     .query(`
       MERGE tree_node_details AS target
       USING (SELECT @tree_node_id AS tree_node_id) AS source
@@ -1050,15 +1073,18 @@ async function updateTreeNodeDetailsRecord({ treeInstanceId, nodeId, name, notes
       WHEN MATCHED THEN
         UPDATE SET
           notes = @notes,
+          updated_by_object_id = @updated_by_object_id,
+          updated_by_user_details = @updated_by_user_details,
           updated_at = SYSUTCDATETIME()
       WHEN NOT MATCHED THEN
-        INSERT (tree_node_id, notes, created_at, updated_at)
-        VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME());
+        INSERT (tree_node_id, notes, created_at, updated_at, updated_by_object_id, updated_by_user_details)
+        VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME(), @updated_by_object_id, @updated_by_user_details);
     `);
 }
 
 async function CreateLeafNodeFromChat({
   treeInstanceId,
+  principal,
   toolName,
   originalQuestion,
   broaderAnswer,
@@ -1119,6 +1145,7 @@ async function CreateLeafNodeFromChat({
         nodeId: parseInt(placementResult.createdLeafNode.createdNodeId, 10),
         name: resolvedPlacement.generatedLeafTitle,
         notes: generatedNotes.notes,
+        updatedBy: normalizeUpdatedByMetadata(principal),
         transaction,
       });
 
@@ -1203,6 +1230,8 @@ async function createAttachmentMetadataRecord(treeNodeId, attachment) {
     .input('byte_size', sql.BigInt, attachment.byteSize)
     .input('blob_name', sql.NVarChar(1024), attachment.blobName)
     .input('blob_url', sql.NVarChar(2048), attachment.blobUrl)
+    .input('updated_by_object_id', sql.NVarChar(100), attachment.updatedByObjectId ?? null)
+    .input('updated_by_user_details', sql.NVarChar(320), attachment.updatedByUserDetails ?? null)
     .query(`
       INSERT INTO tree_node_detail_files (
         tree_node_id,
@@ -1210,7 +1239,9 @@ async function createAttachmentMetadataRecord(treeNodeId, attachment) {
         content_type,
         byte_size,
         blob_name,
-        blob_url
+        blob_url,
+        updated_by_object_id,
+        updated_by_user_details
       )
       VALUES (
         @tree_node_id,
@@ -1218,14 +1249,16 @@ async function createAttachmentMetadataRecord(treeNodeId, attachment) {
         @content_type,
         @byte_size,
         @blob_name,
-        @blob_url
+        @blob_url,
+        @updated_by_object_id,
+        @updated_by_user_details
       );
     `);
 
   return insertResult.rowsAffected[0] > 0;
 }
 
-async function CreateTreeNodeAttachment({ treeInstanceId, nodeId, files }) {
+async function CreateTreeNodeAttachment({ treeInstanceId, nodeId, files, updatedBy = null }) {
   return withSqlConnection(async () => {
     await assertLeafNode(treeInstanceId, nodeId);
 
@@ -1241,6 +1274,7 @@ async function CreateTreeNodeAttachment({ treeInstanceId, nodeId, files }) {
           treeId: treeInstanceId,
           nodeId,
           file,
+          updatedBy,
         });
 
         uploadedBlobNames.push(uploadedFile.blobName);
@@ -1251,6 +1285,8 @@ async function CreateTreeNodeAttachment({ treeInstanceId, nodeId, files }) {
           byteSize: uploadedFile.byteSize,
           blobName: uploadedFile.blobName,
           blobUrl: uploadedFile.blobUrl,
+          updatedByObjectId: updatedBy?.updatedByObjectId ?? null,
+          updatedByUserDetails: updatedBy?.updatedByUserDetails ?? null,
         });
       }
     } catch (error) {
@@ -1265,7 +1301,7 @@ async function CreateTreeNodeAttachment({ treeInstanceId, nodeId, files }) {
   });
 }
 
-async function deleteAttachmentMetadataRecord(treeInstanceId, attachmentId) {
+async function deleteAttachmentMetadataRecord(treeInstanceId, attachmentId, updatedBy = null) {
   const attachmentResult = await new sql.Request()
     .input('tree_instance_id', sql.Int, treeInstanceId)
     .input('attachment_id', sql.Int, attachmentId)
@@ -1290,9 +1326,13 @@ async function deleteAttachmentMetadataRecord(treeInstanceId, attachmentId) {
     const deleteResult = await new sql.Request()
       .input('attachment_id', sql.Int, attachmentId)
       .input('deleted_at', sql.DateTime2, deletedAt)
+      .input('updated_by_object_id', sql.NVarChar(100), updatedBy?.updatedByObjectId ?? null)
+      .input('updated_by_user_details', sql.NVarChar(320), updatedBy?.updatedByUserDetails ?? null)
       .query(`
         UPDATE tree_node_detail_files
         SET deleted_at = @deleted_at,
+            updated_by_object_id = @updated_by_object_id,
+            updated_by_user_details = @updated_by_user_details,
             updated_at = @deleted_at
         WHERE id = @attachment_id
           AND deleted_at IS NULL;
@@ -1420,6 +1460,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
+    const principal = parseClientPrincipal(request);
     const contentType = request.headers.get('content-type') || '';
 
     if (contentType.includes('multipart/form-data')) {
@@ -1440,6 +1481,7 @@ export async function POST(request) {
         treeInstanceId: parseInt(String(treeId), 10),
         nodeId: parseInt(String(nodeId), 10),
         files,
+        updatedBy: normalizeUpdatedByMetadata(principal),
       }));
     }
 
@@ -1471,6 +1513,7 @@ export async function POST(request) {
 
       return NextResponse.json(await CreateLeafNodeFromChat({
         treeInstanceId: parseInt(resolvedTreeId, 10),
+        principal,
         toolName,
         originalQuestion,
         broaderAnswer,
@@ -1591,6 +1634,7 @@ export async function PUT(request) {
 
 export async function PATCH(request) {
   try {
+    const principal = parseClientPrincipal(request);
     const { id, treeId, isExpanded, expandedNodeIds, name, notes } = await request.json();
 
     if (!treeId) {
@@ -1620,6 +1664,7 @@ export async function PATCH(request) {
     return NextResponse.json(await UpdateTreeNodeDetails(parseInt(treeId), parseInt(id), {
       name,
       notes: typeof notes === 'string' ? notes : '',
+      updatedBy: normalizeUpdatedByMetadata(principal),
     }));
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -1643,7 +1688,11 @@ export async function DELETE(request) {
       await assertWritableTreeForRequest(request, treeIdParam);
 
       return NextResponse.json(await withSqlConnection(async () => {
-        return deleteAttachmentMetadataRecord(parseInt(treeIdParam, 10), parseInt(attachmentIdParam, 10));
+        return deleteAttachmentMetadataRecord(
+          parseInt(treeIdParam, 10),
+          parseInt(attachmentIdParam, 10),
+          normalizeUpdatedByMetadata(principal),
+        );
       }));
     }
 

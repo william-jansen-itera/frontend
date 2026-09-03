@@ -45,7 +45,7 @@ function buildBlobName({ treeId, nodeId, fileName }) {
   return `notes/${treeId}/${nodeId}/${randomUUID()}-${safeBaseName}${safeExtension}`;
 }
 
-function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName }) {
+function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName, updatedBy }) {
   const metadata = {
     treeid: String(treeId),
     nodeid: String(nodeId),
@@ -54,6 +54,14 @@ function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName }) {
     originalfilename: String(originalFileName),
   };
 
+  if (updatedBy?.updatedByObjectId) {
+    metadata.updatedbyobjectid = String(updatedBy.updatedByObjectId);
+  }
+
+  if (updatedBy?.updatedByUserDetails) {
+    metadata.updatedbyuserdetails = String(updatedBy.updatedByUserDetails);
+  }
+
   if (applicationIdentifier) {
     metadata.applicationidentifier = applicationIdentifier;
   }
@@ -61,7 +69,7 @@ function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName }) {
   return metadata;
 }
 
-export async function uploadNodeAttachment({ treeId, nodeId, file }) {
+export async function uploadNodeAttachment({ treeId, nodeId, file, updatedBy = null }) {
   const arrayBuffer = await file.arrayBuffer();
   const blobName = buildBlobName({ treeId, nodeId, fileName: file.name });
   const containerClient = getContainerClient();
@@ -71,7 +79,7 @@ export async function uploadNodeAttachment({ treeId, nodeId, file }) {
     blobHTTPHeaders: {
       blobContentType: file.type || 'application/octet-stream',
     },
-    metadata: buildBlobMetadata({ treeId, nodeId, blobName, originalFileName: file.name }),
+    metadata: buildBlobMetadata({ treeId, nodeId, blobName, originalFileName: file.name, updatedBy }),
   });
 
   return {
