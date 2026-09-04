@@ -60,7 +60,7 @@ export default function About() {
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Runtime split</p>
           <h2 className={styles.cardTitle}>Different surfaces, different defaults</h2>
-          <p className={styles.cardText}>Notes handles maintenance, Search supports evidence inspection, and Ask focuses on grounded synthesis. Those surfaces share the same indexed corpus, but they do not have identical retrieval defaults because human browsing and model-facing tool execution benefit from different result counts and presentation tradeoffs.</p>
+          <p className={styles.cardText}>Notes handles maintenance, Search supports evidence inspection, and Agent focuses on grounded synthesis. Those surfaces share the same indexed corpus, but they do not have identical retrieval defaults because human browsing and model-facing tool execution benefit from different result counts and presentation tradeoffs.</p>
         </article>
       </section>
 
@@ -72,7 +72,7 @@ export default function About() {
         <div className={styles.ctaLinks}>
           <Link href="/notes" className={styles.ctaLink}>Open Notes</Link>
           <Link href="/search" className={styles.ctaLinkSecondary}>Open Search</Link>
-          <Link href="/chat" className={styles.ctaLinkSecondary}>Open Ask</Link>
+          <Link href="/chat" className={styles.ctaLinkSecondary}>Open Agent</Link>
         </div>
       </section>
     </main>

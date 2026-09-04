@@ -38,6 +38,26 @@ function formatTimestamp(value) {
   return parsedValue.toLocaleString();
 }
 
+function buildAuditLabel(userDetails, timestamp, defaultLabel = null) {
+  const parts = [];
+  const normalizedUserDetails = String(userDetails ?? "").trim();
+  const formattedTimestamp = timestamp ? formatTimestamp(timestamp) : null;
+
+  if (normalizedUserDetails) {
+    parts.push(normalizedUserDetails);
+  }
+
+  if (formattedTimestamp && formattedTimestamp !== "Unknown time") {
+    parts.push(`Updated ${formattedTimestamp}`);
+  }
+
+  if (parts.length === 0) {
+    return defaultLabel;
+  }
+
+  return parts.join(" • ");
+}
+
 function formatIndexingResultMessage(result) {
   const targetLabel = INDEXING_ROWS.find((row) => row.key === result?.target)?.label || "indexing";
   const modeLabel = result?.mode === "full" ? "Full" : "Incremental";
@@ -678,7 +698,9 @@ export default function AdminPage() {
                         <h2 className={styles.itemTitle}>{node.title}</h2>
                         <p className={styles.itemDetail}>Tree: {node.treeDisplayName}</p>
                         <p className={styles.itemDetail}>{node.breadcrumb || "No breadcrumb available."}</p>
-                        <p className={styles.itemDetail}>Search-view delete marker timestamp: {formatTimestamp(node.updatedAt)}</p>
+                        {buildAuditLabel(node.updatedByUserDetails, node.updatedAt) ? (
+                          <p className={styles.itemDetail}>{buildAuditLabel(node.updatedByUserDetails, node.updatedAt)}</p>
+                        ) : null}
                         {!node.canUndelete ? <p className={styles.itemDetail}>Undelete is unavailable while the parent tree is still deleted.</p> : null}
                       </div>
                       <div className={styles.actionGroup}>
