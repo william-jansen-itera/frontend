@@ -36,6 +36,13 @@ function sanitizeFileNameSegment(value) {
   return value.replace(/[^a-zA-Z0-9._-]/g, '-');
 }
 
+function sanitizeMetadataValue(value) {
+  return String(value ?? '')
+    .replace(/[^\x20-\x7E]/g, ' ')
+    .trim()
+    .slice(0, 1024);
+}
+
 function buildBlobName({ treeId, nodeId, fileName }) {
   const extension = path.extname(fileName);
   const baseName = path.basename(fileName, extension) || 'file';
@@ -47,23 +54,23 @@ function buildBlobName({ treeId, nodeId, fileName }) {
 
 function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName, updatedBy }) {
   const metadata = {
-    treeid: String(treeId),
-    nodeid: String(nodeId),
+    treeid: sanitizeMetadataValue(treeId),
+    nodeid: sanitizeMetadataValue(nodeId),
     sourcetype: 'attachment',
-    blobname: blobName,
-    originalfilename: String(originalFileName),
+    blobname: sanitizeMetadataValue(blobName),
+    originalfilename: sanitizeMetadataValue(originalFileName),
   };
 
   if (updatedBy?.updatedByObjectId) {
-    metadata.updatedbyobjectid = String(updatedBy.updatedByObjectId);
+    metadata.updatedbyobjectid = sanitizeMetadataValue(updatedBy.updatedByObjectId);
   }
 
   if (updatedBy?.updatedByUserDetails) {
-    metadata.updatedbyuserdetails = String(updatedBy.updatedByUserDetails);
+    metadata.updatedbyuserdetails = sanitizeMetadataValue(updatedBy.updatedByUserDetails);
   }
 
   if (applicationIdentifier) {
-    metadata.applicationidentifier = applicationIdentifier;
+    metadata.applicationidentifier = sanitizeMetadataValue(applicationIdentifier);
   }
 
   return metadata;
