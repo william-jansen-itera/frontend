@@ -411,6 +411,81 @@ export default function TreesPage() {
     }
   };
 
+  const handleUnpublishDescription = async (tree) => {
+    const treeId = String(tree.id);
+    const hasSavedDescription = Boolean(normalizeComparableValue(tree.description));
+    const isDescriptionPublished = Boolean(tree.isDescriptionPublished);
+
+    if (!hasSavedDescription && !isDescriptionPublished) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Clear tree "${tree.name}"? This clears the saved description and unpublishes the tree from the agent before republishing the remaining tools.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setTreePendingState(treeId, "save", true);
+    setTreePendingState(treeId, "sync", true);
+    setErrorMessage("");
+    updateRowFeedback(treeId, {
+      infoMessage: "",
+      populateError: "",
+      populateMessage: "",
+      saveError: "",
+      syncError: "",
+      syncMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "unpublish-description",
+          treeId,
+          visibility: visibilityFilter,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Description could not be cleared");
+      }
+
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : [], {
+        resetDescriptionTreeIds: [treeId],
+      });
+      setDescriptionEditing(treeId, false);
+
+      const syncStatus = data?.syncStatus ?? null;
+      const syncError = formatSyncError(syncStatus);
+
+      updateRowFeedback(treeId, {
+        infoMessage: syncError
+          ? "Description was cleared, but the hosted-agent publish step did not complete."
+          : "Description was cleared and removed from the agent.",
+        populateError: "",
+        populateMessage: "",
+        saveError: "",
+        syncError,
+        syncMessage: "",
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        saveError: getErrorMessage(error, "Description could not be cleared"),
+      });
+    } finally {
+      setTreePendingState(treeId, "save", false);
+      setTreePendingState(treeId, "sync", false);
+    }
+  };
+
   const handleCancelDescriptionDraft = (tree) => {
     const treeId = String(tree.id);
     const storedDescription = String(tree.description ?? "");
@@ -773,6 +848,14 @@ export default function TreesPage() {
                             className="appCompactActionButton appCompactActionButtonPrimary"
                           >
                             {rowPendingState.save ? "Saving..." : rowPendingState.sync ? "Syncing..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUnpublishDescription(tree)}
+                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || (!hasSavedDescription && !isDescriptionPublished)}
+                            className="appCompactActionButton appCompactActionButtonNeutral"
+                          >
+                            {rowPendingState.save ? "Working..." : "Clear"}
                           </button>
                           <button
                             type="button"

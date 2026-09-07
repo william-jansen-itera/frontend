@@ -145,6 +145,68 @@ export async function POST(request) {
       }
     }
 
+    if (action === 'unpublish-description') {
+      const parsedTreeId = parseTreeId(payload?.treeId);
+
+      if (!parsedTreeId) {
+        return NextResponse.json(
+          { error: 'Invalid request, treeId is required' },
+          { status: 400 },
+        );
+      }
+
+      const updatedTree = await updateTreeDescription({
+        treeId: parsedTreeId,
+        description: '',
+        principal,
+        enforceAccess: true,
+      });
+
+      try {
+        const syncResult = await publishStoredTreeDescriptions();
+        const trees = await getTreeList({ principal, visibility: getPayloadVisibility(payload), enforceAccess: true });
+        const syncedTree = trees.find((tree) => String(tree.id) === String(parsedTreeId)) ?? updatedTree;
+
+        return NextResponse.json({
+          updatedTree: syncedTree,
+          trees,
+          saveStatus: {
+            status: 'success',
+            message: 'Description was cleared.',
+          },
+          syncStatus: {
+            status: 'success',
+            message: 'Stored descriptions were published to the agent.',
+            mode: syncResult.syncMode,
+            excludedTreeCount: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees.length : 0,
+            excludedTrees: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees : [],
+            agent: {
+              id: syncResult.agent.id,
+              name: syncResult.agent.name,
+              version: syncResult.agent.version ?? null,
+            },
+          },
+        });
+      } catch (error) {
+        const trees = await getTreeList({ principal, visibility: getPayloadVisibility(payload), enforceAccess: true });
+
+        return NextResponse.json({
+          updatedTree,
+          trees,
+          saveStatus: {
+            status: 'success',
+            message: 'Description was cleared.',
+          },
+          syncStatus: {
+            status: 'failed',
+            message: error instanceof Error ? error.message : 'Stored-description sync failed.',
+            code: error?.code ?? null,
+            missingTrees: Array.isArray(error?.missingTrees) ? error.missingTrees : [],
+          },
+        }, { status: 207 });
+      }
+    }
+
     const { name } = payload;
 
     if (typeof name !== 'string' || !name.trim()) {
