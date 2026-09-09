@@ -56,7 +56,7 @@ export default function Home() {
         <div className={styles.statusRow}>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>How it works</p>
-            <p className={styles.statusValue}>Notes and documents grow the tree. Search inspects it. Agent talks from it — and shows how the answer is grounded.</p>
+            <p className={styles.statusValue}>Notes grow the tree. Search inspects it. Agent talks from it — and shows how the answer is grounded.</p>
           </div>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>System status</p>
