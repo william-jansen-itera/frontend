@@ -62,7 +62,7 @@ export default function Home() {
           </div>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>Primary workflow</p>
-            <p className={styles.statusValue}>Curate in Notes, validate in Search, answer in Agent.</p>
+            <p className={styles.statusValue}>Notes grow the tree. Search inspects the material. Agent talks from the domain.</p>
           </div>
         </div>
       </section>
@@ -78,14 +78,14 @@ export default function Home() {
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Search</p>
           <h2 className={styles.cardTitle}>Inspect the material</h2>
-          <p className={styles.cardDescription}>Search across notes and attachments, review highlights, and jump into the exact node path that produced a match.</p>
+          <p className={styles.cardDescription}>Look through notes and attachments, see the highlights, and jump to the branch and leaf they came from.</p>
           <Link href="/search" className={styles.cardLink}>Open Search</Link>
         </article>
 
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Agent</p>
           <h2 className={styles.cardTitle}>Talk to the tree</h2>
-          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its notes and material - with the evidence attached.</p>
+          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its notes and material — with the evidence attached.</p>
           <Link href="/chat" className={styles.cardLink}>Open Agent</Link>
         </article>
       </section>

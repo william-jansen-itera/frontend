@@ -2,7 +2,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
@@ -144,6 +144,10 @@ function LayoutContentWithVisibility({ children, user, signIn, signOut }) {
 export default function RootLayout({ children }) {
   const { user, signIn, signOut } = useAuth();
   const pathname = usePathname();
+
+  useEffect(() => {
+    document.title = "MDS";
+  }, []);
 
   return (
     <html lang="en">
