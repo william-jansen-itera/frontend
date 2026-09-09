@@ -47,9 +47,9 @@ export default function Home() {
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
           <p className="appEyebrow">Knowledge App</p>
-          <h1 className={`${styles.title} appPageTitle`}>Work with trees, notes, search, and grounded answers in one place.</h1>
+          <h1 className={`${styles.title} appPageTitle`}>Grow a tree of knowledge. Start talking to it.</h1>
           <p className="appPageDescription">
-            Use Notes to curate the tree structure, Search to inspect indexed content, and Agent to see how the agent grounds an answer in the underlying material.
+            Notes shape the tree. Search inspects the material. Agent talks from a domain — and shows how the answer is grounded.
           </p>
         </div>
 
@@ -70,22 +70,22 @@ export default function Home() {
       <section className={styles.routeGrid}>
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Notes</p>
-          <h2 className={styles.cardTitle}>Manage the source structure</h2>
-          <p className={styles.cardDescription}>Navigate trees, edit leaf details, and attach supporting material directly to the nodes that power search and chat.</p>
+          <h2 className={styles.cardTitle}>Grow the tree</h2>
+          <p className={styles.cardDescription}>Create or generate trees, branches, and leaves — notes and attachments live on the leaves. The structure and the material together power search and chat.</p>
           <Link href="/notes" className={styles.cardLink}>Open Notes</Link>
         </article>
 
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Search</p>
-          <h2 className={styles.cardTitle}>Inspect indexed evidence</h2>
+          <h2 className={styles.cardTitle}>Inspect the material</h2>
           <p className={styles.cardDescription}>Search across notes and attachments, review highlights, and jump into the exact node path that produced a match.</p>
           <Link href="/search" className={styles.cardLink}>Open Search</Link>
         </article>
 
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Agent</p>
-          <h2 className={styles.cardTitle}>Trace grounded responses</h2>
-          <p className={styles.cardDescription}>Send a question to the agent and inspect tool calls, curated input, and the final model response side by side.</p>
+          <h2 className={styles.cardTitle}>Talk to the tree</h2>
+          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its notes and material - with the evidence attached.</p>
           <Link href="/chat" className={styles.cardLink}>Open Agent</Link>
         </article>
       </section>

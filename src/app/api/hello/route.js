@@ -53,7 +53,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       level: 'ok',
-      message: `Next API ok. DB ok.`, //${databaseName}
+      message: `Ok.`, //${databaseName}
       userName,
     });
   } catch (err) {
@@ -62,7 +62,7 @@ export async function GET(request) {
     if (isLikelySleepingSqlError(err)) {
       return NextResponse.json({
         level: 'warning',
-        message: 'Next API ok. System is waking up, please check back in a minute.',
+        message: 'System is waking up, please check back in a minute.',
         userName,
       });
     }

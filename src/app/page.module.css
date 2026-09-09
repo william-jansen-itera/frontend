@@ -70,6 +70,8 @@
 
 .routeCard {
   display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  align-content: start;
   gap: 0.85rem;
   box-shadow: var(--surface-card-shadow-panel);
 }
@@ -83,12 +85,15 @@
 }
 
 .cardLink {
+  display: inline-flex;
+  align-items: center;
   justify-self: start;
   padding: 0.8rem 1rem;
   border-radius: 999px;
   background: linear-gradient(135deg, #0f766e, #0369a1);
   color: #ffffff;
   font-size: 0.94rem;
+  line-height: 1;
   font-weight: 700;
   text-decoration: none;
 }
