@@ -2,6 +2,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
+import { Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
@@ -66,16 +67,7 @@ function getNavAllowedVisibilityValues(href) {
   return ALL_VISIBILITY_VALUES;
 }
 
-export default function RootLayout({ children }) {
-  const { user, signIn, signOut } = useAuth();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const requestedVisibilityParam = searchParams.get("visibility");
-  const { visibility } = usePersistedVisibility({
-    requestedVisibility: requestedVisibilityParam,
-    allowedValues: ALL_VISIBILITY_VALUES,
-  });
-
+function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "public" }) {
   const buildNavHref = (href) => buildVisibilityHref(
     href,
     "",
@@ -84,48 +76,97 @@ export default function RootLayout({ children }) {
   );
 
   return (
+    <div className={getPageSurfaceClassName(pathname)}>
+      <header className="appChrome">
+        <nav className="appNav">
+          <div className="appNavBrandGroup">
+            <Link href={buildNavHref("/")} className="appBrandLink">Knowledge App</Link>
+            <div className="appNavLinks">
+              {navLinks.map((link) => {
+                if (link.requiresRole && !hasClientPrincipalRole(user, link.requiresRole)) {
+                  return null;
+                }
+
+                const isActive = pathname === link.href;
+
+                return (
+                  <Link
+                    key={link.href}
+                    href={buildNavHref(link.href)}
+                    className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="appAuthGroup">
+          {!user ? (
+              <button onClick={signIn} className="appAuthButton appAuthButtonPrimary">Sign In</button>
+          ) : (
+            <>
+                <span className="appAuthText">Welcome, {user.userDetails}!</span>
+                <button onClick={signOut} className="appAuthButton appAuthButtonSecondary">Sign Out</button>
+            </>
+          )}
+          </div>
+        </nav>
+      </header>
+      {children}
+    </div>
+  );
+}
+
+function LayoutContentWithVisibility({ children, user, signIn, signOut }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedVisibilityParam = searchParams.get("visibility");
+  const { visibility } = usePersistedVisibility({
+    requestedVisibility: requestedVisibilityParam,
+    allowedValues: ALL_VISIBILITY_VALUES,
+  });
+
+  return (
+    <LayoutContent
+      pathname={pathname}
+      user={user}
+      signIn={signIn}
+      signOut={signOut}
+      visibility={visibility}
+    >
+      {children}
+    </LayoutContent>
+  );
+}
+
+export default function RootLayout({ children }) {
+  const { user, signIn, signOut } = useAuth();
+  const pathname = usePathname();
+
+  return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <div className={getPageSurfaceClassName(pathname)}>
-          <header className="appChrome">
-            <nav className="appNav">
-              <div className="appNavBrandGroup">
-                <Link href={buildNavHref("/")} className="appBrandLink">Knowledge App</Link>
-                <div className="appNavLinks">
-                  {navLinks.map((link) => {
-                    if (link.requiresRole && !hasClientPrincipalRole(user, link.requiresRole)) {
-                      return null;
-                    }
-
-                    const isActive = pathname === link.href;
-
-                    return (
-                      <Link
-                        key={link.href}
-                        href={buildNavHref(link.href)}
-                        className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
-                      >
-                        {link.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="appAuthGroup">
-              {!user ? (
-                  <button onClick={signIn} className="appAuthButton appAuthButtonPrimary">Sign In</button>
-              ) : (
-                <>
-                    <span className="appAuthText">Welcome, {user.userDetails}!</span>
-                    <button onClick={signOut} className="appAuthButton appAuthButtonSecondary">Sign Out</button>
-                </>
-              )}
-              </div>
-            </nav>
-          </header>
-          {children}
-        </div>
+        <Suspense fallback={(
+          <LayoutContent
+            pathname={pathname}
+            user={user}
+            signIn={signIn}
+            signOut={signOut}
+          >
+            {children}
+          </LayoutContent>
+        )}
+        >
+          <LayoutContentWithVisibility
+            user={user}
+            signIn={signIn}
+            signOut={signOut}
+          >
+            {children}
+          </LayoutContentWithVisibility>
+        </Suspense>
       </body>
     </html>
   );

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import styles from "./page.module.css";
 import {
   PUBLIC_PRIVATE_VISIBILITY_VALUES,
@@ -99,7 +99,7 @@ function formatPublishOutcomeMessage(syncStatus, treeId) {
   return "Stored description was published to the agent.";
 }
 
-export default function TreesPage() {
+function TreesPageContent() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -930,5 +930,13 @@ export default function TreesPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function TreesPage() {
+  return (
+    <Suspense fallback={<main className="appPageShell">Loading...</main>}>
+      <TreesPageContent />
+    </Suspense>
   );
 }

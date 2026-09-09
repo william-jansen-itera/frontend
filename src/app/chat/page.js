@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import ChatPageClient from "./ChatPageClient";
 
 function parseBooleanSetting(value, fallbackValue = false) {
@@ -23,5 +24,9 @@ function parseBooleanSetting(value, fallbackValue = false) {
 export default function ChatPage() {
   const includeDebug = parseBooleanSetting(process.env.APPLICATION_DEBUG, false);
 
-  return <ChatPageClient includeDebug={includeDebug} />;
+  return (
+    <Suspense fallback={<main className="appPageShell">Loading...</main>}>
+      <ChatPageClient includeDebug={includeDebug} />
+    </Suspense>
+  );
 }
