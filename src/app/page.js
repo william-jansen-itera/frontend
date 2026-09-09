@@ -85,7 +85,7 @@ export default function Home() {
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Agent</p>
           <h2 className={styles.cardTitle}>Talk to the tree</h2>
-          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its notes and material — with the evidence attached.</p>
+          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its material — with the evidence attached.</p>
           <Link href="/chat" className={styles.cardLink}>Open Agent</Link>
         </article>
       </section>
