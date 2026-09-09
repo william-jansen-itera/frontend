@@ -110,6 +110,10 @@ function countVisibleNodes(nodes, expandedState) {
   }, 0);
 }
 
+function normalizeEditorComparableValue(value) {
+  return String(value ?? "");
+}
+
 export default function NotesPageWrapper() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -156,6 +160,8 @@ function NotesPage() {
   const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null;
   const isLoadingTrees = loadedVisibility !== visibilityParam;
   const resolvedTreeIdValue = treeIdParam ?? "";
+  const hasUnsavedNodeDetailChanges = normalizeEditorComparableValue(nodeEditorState.name) !== normalizeEditorComparableValue(savedNodeEditorState.name)
+    || normalizeEditorComparableValue(nodeEditorState.notes) !== normalizeEditorComparableValue(savedNodeEditorState.notes);
 
   const visibilityQueryParam = visibilityParam === "public"
     ? ""
@@ -1088,7 +1094,7 @@ function NotesPage() {
               <span className={styles.panelHeading}>Node Details</span>
               <button
                 onClick={handleSaveNodeDetails}
-                disabled={!selectedNode || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim()}
+                disabled={!selectedNode || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonPrimary"
               >
