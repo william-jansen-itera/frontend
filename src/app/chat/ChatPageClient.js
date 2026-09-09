@@ -1028,7 +1028,7 @@ export default function ChatPageClient({ includeDebug }) {
                   <textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
-                    placeholder="Ask about a tree, node, attachment, or topic"
+                    placeholder="Ask agent about a topic from a tree node or attachment"
                     className={styles.textArea}
                     rows={4}
                   />

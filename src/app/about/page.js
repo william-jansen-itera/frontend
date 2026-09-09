@@ -42,13 +42,13 @@ export default function About() {
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Traceability</p>
           <h2 className={styles.cardTitle}>Inspectable answer generation</h2>
-          <p className={styles.cardText}>The Ask surface can expose the original query, tool calls, curated agent input, and final model output for the latest turn. When evidence is used, citations can be rendered back into breadcrumb links so the response can be followed all the way to the originating node.</p>
+          <p className={styles.cardText}>The Agent surface can expose the original query, tool calls, curated agent input, and final model output for the latest turn. When evidence is used, citations can be rendered back into breadcrumb links so the response can be followed all the way to the originating node.</p>
         </article>
 
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Knowledge growth</p>
           <h2 className={styles.cardTitle}>Grounded locally, broadened deliberately</h2>
-          <p className={styles.cardText}>The Ask workflow distinguishes between answers grounded in local tree tools and answers produced from broader model knowledge. When a turn stays outside tool use, the application can keep that broader lane explicit; when a tool is invoked, the turn shifts back to grounded mode. That distinction is not only used for debugging. It also helps users turn broader answers into structured knowledge by adding refined leaf notes back into the correct tree, so external model knowledge can be reviewed, narrowed, and absorbed into a local domain over time.</p>
+          <p className={styles.cardText}>The Agent workflow distinguishes between answers grounded in local tree tools and answers produced from broader model knowledge. When a turn stays outside tool use, the application can keep that broader lane explicit; when a tool is invoked, the turn shifts back to grounded mode. That distinction is not only used for debugging. It also helps users turn broader answers into structured knowledge by adding refined leaf notes back into the correct tree, so external model knowledge can be reviewed, narrowed, and absorbed into a local domain over time.</p>
         </article>
 
         <article className={styles.infoCard}>
