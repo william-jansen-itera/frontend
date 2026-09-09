@@ -47,22 +47,22 @@ export default function Home() {
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
           <p className="appEyebrow">Material. Domain. Speak.</p>
-          <h1 className={`${styles.title} appPageTitle`}>Grow a tree of knowledge. Start talking to it.</h1>
-          <p className="appPageDescription">
-            Notes shape the tree. Search inspects the material. Agent talks from a domain — and shows how the answer is grounded.
-          </p>
+          <h1 className={`${styles.title} appPageTitle`}>
+            Grow a tree of knowledge.
+            <br />
+            Start talking to it.
+          </h1>
         </div>
-
         <div className={styles.statusRow}>
+          <div className={styles.statusCard}>
+            <p className={styles.statusLabel}>Primary workflow</p>
+            <p className={styles.statusValue}>Notes grow the tree. Search inspects the material. Agent talks from a domain — and shows how the answer is grounded.</p>
+          </div>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>System status</p>
             <p className={`${styles.statusValue} ${styles[`statusValue${applicationStatus.level.charAt(0).toUpperCase()}${applicationStatus.level.slice(1)}`] || ''}`.trim()}>
               {applicationStatus.message || 'Checking...'}
             </p>
-          </div>
-          <div className={styles.statusCard}>
-            <p className={styles.statusLabel}>Primary workflow</p>
-            <p className={styles.statusValue}>Notes grow the tree. Search inspects the material. Agent talks from the domain.</p>
           </div>
         </div>
       </section>
