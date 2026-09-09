@@ -5,6 +5,13 @@ import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
+import {
+  ALL_VISIBILITY_VALUES,
+  buildVisibilityHref,
+  PUBLIC_PRIVATE_VISIBILITY_VALUES,
+  setVisibilitySearchParam,
+  usePersistedVisibility,
+} from "../usePersistedVisibility";
 
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
 
@@ -97,17 +104,22 @@ function getBreadcrumbParts(result) {
 
 function getBreadcrumbItems(result, visibility = "public") {
   const breadcrumbParts = getBreadcrumbParts(result);
-  const visibilityQuery = visibility === "public" ? "" : `&visibility=${encodeURIComponent(visibility)}`;
-  const nodeHref = `/notes?treeId=${encodeURIComponent(result.treeId)}&nodeId=${encodeURIComponent(result.nodeId)}${visibilityQuery}`;
   const nodeIdPath = String(result.nodeIdPath || result.nodeDocument?.nodeIdPath || result.primaryDocument?.nodeIdPath || "").trim();
   const pathNodeIds = nodeIdPath
     ? nodeIdPath.split("/").map((part) => part.trim()).filter(Boolean)
     : [];
+  const buildNotesHref = (nodeId) => {
+    const notesSearchParams = new URLSearchParams();
+    notesSearchParams.set("treeId", String(result.treeId));
+    notesSearchParams.set("nodeId", String(nodeId));
+    return buildVisibilityHref("/notes", notesSearchParams.toString(), visibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
+  };
+  const nodeHref = buildNotesHref(result.nodeId);
 
   return breadcrumbParts.map((part, index) => ({
     label: part,
     href: pathNodeIds.length === breadcrumbParts.length
-      ? `/notes?treeId=${encodeURIComponent(result.treeId)}&nodeId=${encodeURIComponent(pathNodeIds[index])}${visibilityQuery}`
+      ? buildNotesHref(pathNodeIds[index])
       : nodeHref,
     isLeaf: index === breadcrumbParts.length - 1,
   }));
@@ -179,7 +191,15 @@ function SearchPageContent() {
   const searchParams = useSearchParams();
   const queryParam = searchParams.get("q") ?? "";
   const treeIdParam = searchParams.get("treeId") ?? "";
-  const visibilityParam = searchParams.get("visibility") ?? "public";
+  const requestedVisibilityParam = searchParams.get("visibility");
+  const {
+    visibility: visibilityParam,
+    isReady: isVisibilityReady,
+    setVisibility,
+  } = usePersistedVisibility({
+    requestedVisibility: requestedVisibilityParam,
+    allowedValues: ALL_VISIBILITY_VALUES,
+  });
   const queryInputRef = useRef(null);
   const [availableTrees, setAvailableTrees] = useState([]);
   const [isLoadingTrees, setIsLoadingTrees] = useState(true);
@@ -192,6 +212,29 @@ function SearchPageContent() {
   const [searchError, setSearchError] = useState(null);
 
   useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
+    if (!requestedVisibilityParam && visibilityParam === "public") {
+      return;
+    }
+
+    if (requestedVisibilityParam === visibilityParam) {
+      return;
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    setVisibilitySearchParam(nextSearchParams, visibilityParam, ALL_VISIBILITY_VALUES);
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, visibilityParam]);
+
+  useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
     let isCancelled = false;
 
     fetch(`/api/notes?visibility=${encodeURIComponent(visibilityParam)}`)
@@ -226,7 +269,7 @@ function SearchPageContent() {
     return () => {
       isCancelled = true;
     };
-  }, [visibilityParam]);
+  }, [isVisibilityReady, visibilityParam]);
 
   useEffect(() => {
     if (!treeIdParam) {
@@ -244,6 +287,10 @@ function SearchPageContent() {
   }, [availableTrees, pathname, router, searchParams, treeIdParam]);
 
   useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
     const trimmedQuery = queryParam.trim();
 
     if (!trimmedQuery) {
@@ -297,7 +344,7 @@ function SearchPageContent() {
     return () => {
       isCancelled = true;
     };
-  }, [queryParam, treeIdParam, visibilityParam]);
+  }, [isVisibilityReady, queryParam, treeIdParam, visibilityParam]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -319,11 +366,7 @@ function SearchPageContent() {
       nextSearchParams.delete("treeId");
     }
 
-    if (visibilityParam && visibilityParam !== "public") {
-      nextSearchParams.set("visibility", visibilityParam);
-    } else {
-      nextSearchParams.delete("visibility");
-    }
+    setVisibilitySearchParam(nextSearchParams, visibilityParam, ALL_VISIBILITY_VALUES);
 
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
@@ -343,11 +386,7 @@ function SearchPageContent() {
       nextSearchParams.delete("treeId");
     }
 
-    if (visibilityParam && visibilityParam !== "public") {
-      nextSearchParams.set("visibility", visibilityParam);
-    } else {
-      nextSearchParams.delete("visibility");
-    }
+    setVisibilitySearchParam(nextSearchParams, visibilityParam, ALL_VISIBILITY_VALUES);
 
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
@@ -355,7 +394,7 @@ function SearchPageContent() {
 
   const handleVisibilityChange = (event) => {
     const nextSearchParams = new URLSearchParams(searchParams.toString());
-    const nextVisibility = event.target.value;
+    const nextVisibility = setVisibility(event.target.value);
 
     setIsLoadingTrees(true);
 
@@ -363,11 +402,7 @@ function SearchPageContent() {
       setIsSearching(true);
     }
 
-    if (nextVisibility && nextVisibility !== "public") {
-      nextSearchParams.set("visibility", nextVisibility);
-    } else {
-      nextSearchParams.delete("visibility");
-    }
+    setVisibilitySearchParam(nextSearchParams, nextVisibility, ALL_VISIBILITY_VALUES);
 
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });

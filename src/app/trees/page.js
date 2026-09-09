@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import styles from "./page.module.css";
+import {
+  PUBLIC_PRIVATE_VISIBILITY_VALUES,
+  buildVisibilityHref,
+  setVisibilitySearchParam,
+  usePersistedVisibility,
+} from "../usePersistedVisibility";
 
 function getErrorMessage(error, fallbackMessage) {
   if (error instanceof Error && error.message) {
@@ -93,6 +100,18 @@ function formatPublishOutcomeMessage(syncStatus, treeId) {
 }
 
 export default function TreesPage() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedVisibilityParam = searchParams.get("visibility");
+  const {
+    visibility: visibilityFilter,
+    isReady: isVisibilityReady,
+    setVisibility: setPersistedVisibility,
+  } = usePersistedVisibility({
+    requestedVisibility: requestedVisibilityParam,
+    allowedValues: PUBLIC_PRIVATE_VISIBILITY_VALUES,
+  });
   const [trees, setTrees] = useState([]);
   const [draftNames, setDraftNames] = useState({});
   const [draftVisibility, setDraftVisibility] = useState({});
@@ -100,11 +119,37 @@ export default function TreesPage() {
   const [editingDescriptions, setEditingDescriptions] = useState({});
   const [newTreeName, setNewTreeName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [visibilityFilter, setVisibilityFilter] = useState("public");
   const [isCreating, setIsCreating] = useState(false);
   const [rowPendingStates, setRowPendingStates] = useState({});
   const [rowFeedback, setRowFeedback] = useState({});
   const [errorMessage, setErrorMessage] = useState("");
+
+  const handleVisibilityFilterChange = (event) => {
+    const nextVisibility = setPersistedVisibility(event.target.value);
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    setVisibilitySearchParam(nextSearchParams, nextVisibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
+    if (!requestedVisibilityParam && visibilityFilter === "public") {
+      return;
+    }
+
+    if (requestedVisibilityParam === visibilityFilter) {
+      return;
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    setVisibilitySearchParam(nextSearchParams, visibilityFilter, PUBLIC_PRIVATE_VISIBILITY_VALUES);
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, visibilityFilter]);
 
   const applyTreeList = (nextTrees, options = {}) => {
     const resetNameTreeIds = new Set((options.resetNameTreeIds ?? []).map((treeId) => String(treeId)));
@@ -153,6 +198,10 @@ export default function TreesPage() {
   };
 
   useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
     let isMounted = true;
 
     async function loadTrees() {
@@ -190,7 +239,7 @@ export default function TreesPage() {
     return () => {
       isMounted = false;
     };
-  }, [visibilityFilter]);
+  }, [isVisibilityReady, visibilityFilter]);
 
 
   const handleCreateTree = async (event) => {
@@ -647,7 +696,7 @@ export default function TreesPage() {
           <label className={styles.toolbarLabel}>
             <select
               value={visibilityFilter}
-              onChange={(event) => setVisibilityFilter(event.target.value)}
+              onChange={handleVisibilityFilterChange}
             >
               <option value="public">Public</option>
               <option value="private">Private</option>
@@ -741,7 +790,12 @@ export default function TreesPage() {
                             {rowPendingState.populate ? "Populating..." : "Populate"}
                           </button>
                           <Link
-                            href={`/notes?treeId=${encodeURIComponent(treeId)}${visibilityFilter === "public" ? "" : `&visibility=${encodeURIComponent(visibilityFilter)}`}`}
+                            href={buildVisibilityHref(
+                              "/notes",
+                              `treeId=${encodeURIComponent(treeId)}`,
+                              visibilityFilter,
+                              PUBLIC_PRIVATE_VISIBILITY_VALUES,
+                            )}
                             className={`appCompactActionButton ${styles.actionButtonLink}`}
                           >
                             Open

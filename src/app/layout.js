@@ -2,9 +2,15 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
+import {
+  ALL_VISIBILITY_VALUES,
+  buildVisibilityHref,
+  PUBLIC_PRIVATE_VISIBILITY_VALUES,
+  usePersistedVisibility,
+} from "./usePersistedVisibility";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -52,9 +58,30 @@ function getPageSurfaceClassName(pathname) {
   return "appPageSurface appPageSurfaceHome";
 }
 
+function getNavAllowedVisibilityValues(href) {
+  if (href === "/notes" || href === "/trees") {
+    return PUBLIC_PRIVATE_VISIBILITY_VALUES;
+  }
+
+  return ALL_VISIBILITY_VALUES;
+}
+
 export default function RootLayout({ children }) {
   const { user, signIn, signOut } = useAuth();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedVisibilityParam = searchParams.get("visibility");
+  const { visibility } = usePersistedVisibility({
+    requestedVisibility: requestedVisibilityParam,
+    allowedValues: ALL_VISIBILITY_VALUES,
+  });
+
+  const buildNavHref = (href) => buildVisibilityHref(
+    href,
+    "",
+    visibility,
+    getNavAllowedVisibilityValues(href),
+  );
 
   return (
     <html lang="en">
@@ -63,7 +90,7 @@ export default function RootLayout({ children }) {
           <header className="appChrome">
             <nav className="appNav">
               <div className="appNavBrandGroup">
-                <Link href="/" className="appBrandLink">Knowledge App</Link>
+                <Link href={buildNavHref("/")} className="appBrandLink">Knowledge App</Link>
                 <div className="appNavLinks">
                   {navLinks.map((link) => {
                     if (link.requiresRole && !hasClientPrincipalRole(user, link.requiresRole)) {
@@ -75,7 +102,7 @@ export default function RootLayout({ children }) {
                     return (
                       <Link
                         key={link.href}
-                        href={link.href}
+                        href={buildNavHref(link.href)}
                         className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
                       >
                         {link.label}

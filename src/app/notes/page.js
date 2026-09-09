@@ -8,6 +8,10 @@ import styles from "./page.module.css";
 import { NotesEditor } from "./NotesEditor";
 import { usePanelLayout } from "./usePanelLayout";
 import {
+  PUBLIC_PRIVATE_VISIBILITY_VALUES,
+  usePersistedVisibility,
+} from "../usePersistedVisibility";
+import {
   buildMovedFlatData,
   buildNestedTreeData,
   buildNodeEditorState,
@@ -129,7 +133,15 @@ function NotesPage() {
   const searchParams = useSearchParams();
   const treeIdParam = searchParams.get("treeId");
   const nodeIdParam = searchParams.get("nodeId");
-  const visibilityParam = searchParams.get("visibility") ?? "public";
+  const requestedVisibilityParam = searchParams.get("visibility");
+  const {
+    visibility: visibilityParam,
+    isReady: isVisibilityReady,
+    setVisibility,
+  } = usePersistedVisibility({
+    requestedVisibility: requestedVisibilityParam,
+    allowedValues: PUBLIC_PRIVATE_VISIBILITY_VALUES,
+  });
   const [availableTrees, setAvailableTrees] = useState([]);
   const [loadedVisibility, setLoadedVisibility] = useState(null);
   const [treeData, setTreeData] = useState([]);
@@ -158,7 +170,7 @@ function NotesPage() {
   const canEditLeafDetails = Boolean(selectedNode?.isLeafNode);
   const canGenerateNotes = Boolean(selectedNode?.isLeafNode);
   const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null;
-  const isLoadingTrees = loadedVisibility !== visibilityParam;
+  const isLoadingTrees = !isVisibilityReady || loadedVisibility !== visibilityParam;
   const resolvedTreeIdValue = treeIdParam ?? "";
   const hasUnsavedNodeDetailChanges = normalizeEditorComparableValue(nodeEditorState.name) !== normalizeEditorComparableValue(savedNodeEditorState.name)
     || normalizeEditorComparableValue(nodeEditorState.notes) !== normalizeEditorComparableValue(savedNodeEditorState.notes);
@@ -222,8 +234,31 @@ function NotesPage() {
     }
   };
 
+  useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
+    if (!requestedVisibilityParam && visibilityParam === "public") {
+      return;
+    }
+
+    if (requestedVisibilityParam === visibilityParam) {
+      return;
+    }
+
+    navigateToSelectionHref(
+      getTreeSelectionHref(pathname, searchParams.toString(), treeIdParam, visibilityParam),
+      { replace: true },
+    );
+  }, [isVisibilityReady, pathname, requestedVisibilityParam, searchParams, treeIdParam, visibilityParam]);
+
   // Fetch the list of available trees on mount
   useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
     let isCancelled = false;
 
     fetch(`/api/notes?visibility=${encodeURIComponent(visibilityParam)}`)
@@ -281,7 +316,7 @@ function NotesPage() {
     return () => {
       isCancelled = true;
     };
-  }, [visibilityParam]);
+  }, [isVisibilityReady, visibilityParam]);
 
   // Ensure the selected treeId is valid and update the URL if not to the first available treeId
   useEffect(() => {
@@ -933,7 +968,8 @@ function NotesPage() {
                   onChange={(event) => {
                     setError(null);
                     resetTreeSelectionState();
-                    navigateToSelectionHref(getTreeSelectionHref(pathname, searchParams.toString(), null, event.target.value));
+                    const nextVisibility = setVisibility(event.target.value);
+                    navigateToSelectionHref(getTreeSelectionHref(pathname, searchParams.toString(), null, nextVisibility));
                   }}
                 >
                   <option value="public">Public</option>
@@ -942,7 +978,7 @@ function NotesPage() {
               </label>
               <button
                 onClick={() => {
-                  router.push("/trees");
+                  router.push(visibilityParam === "public" ? "/trees" : `/trees?visibility=${encodeURIComponent(visibilityParam)}`);
                 }}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"

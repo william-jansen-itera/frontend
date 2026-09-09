@@ -1,8 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import styles from "./page.module.css";
+import {
+  ALL_VISIBILITY_VALUES,
+  buildVisibilityHref,
+  PUBLIC_PRIVATE_VISIBILITY_VALUES,
+  setVisibilitySearchParam,
+  usePersistedVisibility,
+} from "../usePersistedVisibility";
 
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
@@ -281,17 +289,22 @@ function getCitationBreadcrumbParts(citation) {
 
 function getCitationBreadcrumbItems(citation, visibility = "public") {
   const breadcrumbParts = getCitationBreadcrumbParts(citation);
-  const visibilityQuery = visibility === "public" ? "" : `&visibility=${encodeURIComponent(visibility)}`;
-  const nodeHref = `/notes?treeId=${encodeURIComponent(citation.treeId)}&nodeId=${encodeURIComponent(citation.nodeId)}${visibilityQuery}`;
   const nodeIdPath = String(citation?.nodeIdPath || "").trim();
   const pathNodeIds = nodeIdPath
     ? nodeIdPath.split("/").map((part) => part.trim()).filter(Boolean)
     : [];
+  const buildNotesHref = (nodeId) => {
+    const notesSearchParams = new URLSearchParams();
+    notesSearchParams.set("treeId", String(citation.treeId));
+    notesSearchParams.set("nodeId", String(nodeId));
+    return buildVisibilityHref("/notes", notesSearchParams.toString(), visibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
+  };
+  const nodeHref = buildNotesHref(citation.nodeId);
 
   return breadcrumbParts.map((part, index) => ({
     label: part,
     href: pathNodeIds.length === breadcrumbParts.length
-      ? `/notes?treeId=${encodeURIComponent(citation.treeId)}&nodeId=${encodeURIComponent(pathNodeIds[index])}${visibilityQuery}`
+      ? buildNotesHref(pathNodeIds[index])
       : nodeHref,
     isLeaf: index === breadcrumbParts.length - 1,
   }));
@@ -652,8 +665,19 @@ function getLatestNoResultOfferTurn(turns, dismissedTurnId) {
 }
 
 export default function ChatPageClient({ includeDebug }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedVisibilityParam = searchParams.get("visibility");
+  const {
+    visibility,
+    isReady: isVisibilityReady,
+    setVisibility,
+  } = usePersistedVisibility({
+    requestedVisibility: requestedVisibilityParam,
+    allowedValues: ALL_VISIBILITY_VALUES,
+  });
   const [prompt, setPrompt] = useState("");
-  const [visibility, setVisibility] = useState("public");
   const [turns, setTurns] = useState([]);
   const [selectedTurnId, setSelectedTurnId] = useState(null);
   const [dismissedFollowUpTurnId, setDismissedFollowUpTurnId] = useState(null);
@@ -673,6 +697,33 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugPending = includeDebug && Boolean(selectedTurn?.isPending);
   const isDebugEmpty = includeDebug && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
+
+  const handleVisibilityChange = (event) => {
+    const nextVisibility = setVisibility(event.target.value);
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    setVisibilitySearchParam(nextSearchParams, nextVisibility, ALL_VISIBILITY_VALUES);
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
+    if (!requestedVisibilityParam && visibility === "public") {
+      return;
+    }
+
+    if (requestedVisibilityParam === visibility) {
+      return;
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    setVisibilitySearchParam(nextSearchParams, visibility, ALL_VISIBILITY_VALUES);
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, visibility]);
 
   async function submitTurn({ question, message, followUpSelection = null }) {
     const turnId = `${Date.now()}`;
@@ -784,7 +835,7 @@ export default function ChatPageClient({ includeDebug }) {
       message,
     );
 
-    if (!message || isSubmitting || isPromptInOptionMode) {
+    if (!message || isSubmitting || isPromptInOptionMode || !isVisibilityReady) {
       return;
     }
 
@@ -957,7 +1008,10 @@ export default function ChatPageClient({ includeDebug }) {
           : `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb}.${indexerMessage}`,
       });
 
-      const notesHref = `/notes?treeId=${encodeURIComponent(payload.treeId)}&nodeId=${encodeURIComponent(payload.createdNodeId)}${visibility === "public" ? "" : `&visibility=${encodeURIComponent(visibility)}`}`;
+      const notesSearchParams = new URLSearchParams();
+      notesSearchParams.set("treeId", String(payload.treeId));
+      notesSearchParams.set("nodeId", String(payload.createdNodeId));
+      const notesHref = buildVisibilityHref("/notes", notesSearchParams.toString(), visibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
       window.open(notesHref, "_blank", "noopener,noreferrer");
     } catch (error) {
       setAddActionState({
@@ -979,8 +1033,8 @@ export default function ChatPageClient({ includeDebug }) {
               <label className={styles.toolbarLabel}>
                 <select
                   value={visibility}
-                  onChange={(event) => setVisibility(event.target.value)}
-                  disabled={isSubmitting}
+                  onChange={handleVisibilityChange}
+                  disabled={isSubmitting || !isVisibilityReady}
                 >
                   <option value="public">Public</option>
                   <option value="private">Private</option>
@@ -992,7 +1046,7 @@ export default function ChatPageClient({ includeDebug }) {
                   type="submit"
                   form="chat-prompt-form"
                   className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
-                  disabled={isSubmitting || !prompt.trim()}
+                  disabled={isSubmitting || !prompt.trim() || !isVisibilityReady}
                 >
                   {isSubmitting ? "Thinking..." : "Send"}
                 </button>
