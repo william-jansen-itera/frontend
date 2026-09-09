@@ -80,7 +80,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
       <header className="appChrome">
         <nav className="appNav">
           <div className="appNavBrandGroup">
-            <Link href={buildNavHref("/")} className="appBrandLink">Knowledge App</Link>
+            <Link href={buildNavHref("/")} className="appBrandLink">MDS</Link>
             <div className="appNavLinks">
               {navLinks.map((link) => {
                 if (link.requiresRole && !hasClientPrincipalRole(user, link.requiresRole)) {

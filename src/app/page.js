@@ -46,7 +46,7 @@ export default function Home() {
     <main className={`${styles.pageShell} appPageShell`}>
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
-          <p className="appEyebrow">Knowledge App</p>
+          <p className="appEyebrow">Material. Domain. Speak.</p>
           <h1 className={`${styles.title} appPageTitle`}>Grow a tree of knowledge. Start talking to it.</h1>
           <p className="appPageDescription">
             Notes shape the tree. Search inspects the material. Agent talks from a domain — and shows how the answer is grounded.
