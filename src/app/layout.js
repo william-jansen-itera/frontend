@@ -24,11 +24,12 @@ const geistMono = Geist_Mono({
 });
 
 const navLinks = [
-  { href: "/about", label: "About" },
   { href: "/notes", label: "Notes", requiresRole: "mdsusers" },
   { href: "/search", label: "Search", requiresRole: "mdsusers" },
   { href: "/chat", label: "Agent", requiresRole: "mdsusers" },
   { href: "/admin", label: "Admin", requiresRole: "mdsadmin" },
+  { href: "/about", label: "About" },
+  { href: "/architecture", label: "Architecture", requiresRole: "mdsadmin" },
 ];
 
 function getPageSurfaceClassName(pathname) {
@@ -49,6 +50,10 @@ function getPageSurfaceClassName(pathname) {
   }
 
   if (pathname === "/about") {
+    return "appPageSurface appPageSurfaceAbout";
+  }
+
+  if (pathname === "/architecture") {
     return "appPageSurface appPageSurfaceAbout";
   }
 

@@ -17,6 +17,10 @@
         "allowedRoles": ["mdsusers"]
     },
     {
+      "route": "/architecture*",
+      "allowedRoles": ["mdsadmin"]
+    },
+    {
       "route": "/admin*",
       "allowedRoles": ["mdsadmin"]
     },
