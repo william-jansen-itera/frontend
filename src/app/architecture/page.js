@@ -28,6 +28,12 @@ export default function Architecture() {
         </article>
 
         <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Security</p>
+          <h2 className={styles.cardTitle}>Tree-scoped security over mixed sources</h2>
+          <p className={styles.cardText}>Because the security boundary in this system is the application-defined tree rather than a single underlying repository, the app derives allowed trees, applies that scope to search across SQL-backed nodes and blob-backed attachments, and rechecks returned documents before further shaping.</p>
+        </article>
+
+        <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Retrieval</p>
           <h2 className={styles.cardTitle}>Layered evidence gathering</h2>
           <p className={styles.cardText}>Azure Search indexes node text, attachment content, OCR output, and filtered image descriptions. The search experience can stay broad for inspection, while tool-backed retrieval intentionally uses a smaller top window so the agent receives denser evidence with less post-processing.</p>
@@ -61,6 +67,18 @@ export default function Architecture() {
           <p className={styles.cardEyebrow}>Runtime split</p>
           <h2 className={styles.cardTitle}>Different surfaces, different defaults</h2>
           <p className={styles.cardText}>Notes handles maintenance, Search supports evidence inspection, and Agent focuses on grounded synthesis. Those surfaces share the same indexed corpus, but they do not have identical retrieval defaults because human browsing and model-facing tool execution benefit from different result counts and presentation tradeoffs.</p>
+        </article>
+
+        <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Deletion</p>
+          <h2 className={styles.cardTitle}>Soft delete before final purge</h2>
+          <p className={styles.cardText}>Trees, nodes, and attachments are first marked deleted and removed from active surfaces instead of being hard-deleted immediately. That creates a 7-day restore window as the first step, while admin purge is the second step that permanently removes the corresponding database rows, blobs, and search documents.</p>
+        </article>
+
+        <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Index maintenance</p>
+          <h2 className={styles.cardTitle}>Indexers for normal sync, purge for immediate cleanup</h2>
+          <p className={styles.cardText}>Normal search index maintenance runs through the SQL and blob indexers, which can be triggered from the admin surface in incremental or full modes. Separately, purge can remove search documents directly before the next indexing cycle, either through the current manual admin flow or through a retention job if that automation is added later.</p>
         </article>
 
         <article className={styles.infoCard}>

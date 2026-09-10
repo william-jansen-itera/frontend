@@ -314,10 +314,45 @@ function escapeODataString(value) {
   return String(value).replace(/'/g, "''");
 }
 
-function buildAllowedTreeFilter(treeId, allowedTreeIds) {
-  const normalizedAllowedTreeIds = Array.isArray(allowedTreeIds)
-    ? allowedTreeIds.map((value) => String(value)).filter(Boolean)
+function normalizeAllowedTreeIds(allowedTreeIds) {
+  return Array.isArray(allowedTreeIds)
+    ? allowedTreeIds.map((value) => String(value ?? '').trim()).filter(Boolean)
     : [];
+}
+
+function buildAllowedTreeIdSet(allowedTreeIds) {
+  return new Set(normalizeAllowedTreeIds(allowedTreeIds));
+}
+
+function createAllowedTreeInvariantError({ queryKind, treeId, itemId, itemType = 'document' }) {
+  const normalizedQueryKind = String(queryKind ?? 'unknown_query').trim() || 'unknown_query';
+  const normalizedTreeId = String(treeId ?? '').trim() || '<missing-tree-id>';
+  const normalizedItemId = String(itemId ?? '').trim();
+
+  return new Error(
+    `Authorization invariant failed for ${normalizedQueryKind}: ${itemType} belongs to unauthorized treeId ${normalizedTreeId}${normalizedItemId ? ` (id: ${normalizedItemId})` : ''}`,
+  );
+}
+
+function assertItemsWithinAllowedTrees({ items, allowedTreeIdSet, queryKind, itemType = 'document' }) {
+  const normalizedItems = Array.isArray(items) ? items : [];
+
+  for (const item of normalizedItems) {
+    const normalizedTreeId = String(item?.treeId ?? '').trim();
+
+    if (!normalizedTreeId || !allowedTreeIdSet.has(normalizedTreeId)) {
+      throw createAllowedTreeInvariantError({
+        queryKind,
+        treeId: normalizedTreeId,
+        itemId: item?.id ?? null,
+        itemType,
+      });
+    }
+  }
+}
+
+function buildAllowedTreeFilter(treeId, allowedTreeIds) {
+  const normalizedAllowedTreeIds = normalizeAllowedTreeIds(allowedTreeIds);
 
   if (normalizedAllowedTreeIds.length === 0) {
     return "treeId eq '__no_tree_access__'";
@@ -807,7 +842,14 @@ function groupResultsByNode(results) {
   });
 }
 
-async function fetchNodeDocumentsForGroups({ endpoint, indexName, queryKey, groups }) {
+async function fetchNodeDocumentsForGroups({ endpoint, indexName, queryKey, groups, allowedTreeIdSet }) {
+  assertItemsWithinAllowedTrees({
+    items: groups,
+    allowedTreeIdSet,
+    queryKind: 'node_enrichment_groups',
+    itemType: 'group',
+  });
+
   const missingNodeGroups = groups.filter((group) => {
     return !group.nodeDocument && group.treeId && group.nodeId;
   });
@@ -855,6 +897,12 @@ async function fetchNodeDocumentsForGroups({ endpoint, indexName, queryKey, grou
   const nodeDocuments = Array.isArray(payload.value)
     ? payload.value.map(normalizeSearchDocument)
     : [];
+
+  assertItemsWithinAllowedTrees({
+    items: nodeDocuments,
+    allowedTreeIdSet,
+    queryKind: 'node_enrichment',
+  });
 
   return new Map(
     nodeDocuments.map((document) => [`${document.treeId}::${document.nodeId}`, document]),
@@ -944,7 +992,9 @@ export async function searchTreeContent({
 
   const { endpoint, indexName, queryKey } = getRequiredSearchConfig();
   const normalizedTopValue = normalizeTop(top, defaultTop);
-  const baseFilter = buildFilter({ treeId, allowedTreeIds });
+  const normalizedAllowedTreeIds = normalizeAllowedTreeIds(allowedTreeIds);
+  const allowedTreeIdSet = buildAllowedTreeIdSet(normalizedAllowedTreeIds);
+  const baseFilter = buildFilter({ treeId, allowedTreeIds: normalizedAllowedTreeIds });
   const attachmentFileNameRegexQuery = buildAttachmentFileNameRegexQuery(trimmedSearchText);
   const [nodeResults, attachmentResults, attachmentFileNameResults] = await Promise.all([
     executeSearchQuery({
@@ -981,6 +1031,21 @@ export async function searchTreeContent({
       })
       : Promise.resolve([]),
   ]);
+  assertItemsWithinAllowedTrees({
+    items: nodeResults,
+    allowedTreeIdSet,
+    queryKind: 'node_content',
+  });
+  assertItemsWithinAllowedTrees({
+    items: attachmentResults,
+    allowedTreeIdSet,
+    queryKind: 'attachment_content',
+  });
+  assertItemsWithinAllowedTrees({
+    items: attachmentFileNameResults,
+    allowedTreeIdSet,
+    queryKind: 'attachment_file_name',
+  });
   const normalizedAttachmentResults = mergeSearchDocuments(
     attachmentResults,
     addAttachmentMatchSource(attachmentFileNameResults, 'fileName'),
@@ -993,6 +1058,7 @@ export async function searchTreeContent({
     indexName,
     queryKey,
     groups: groupedResults,
+    allowedTreeIdSet,
   });
   const enrichedGroups = groupedResults.map((group) => {
     const nodeDocument = nodeDocumentsByGroupKey.get(group.id);
