@@ -58,6 +58,12 @@ export default function About() {
         </article>
 
         <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Safety</p>
+          <h2 className={styles.cardTitle}>Restore before permanent removal</h2>
+          <p className={styles.cardText}>Deleting a tree, branch, or attachment does not erase it immediately. The workspace keeps a 7-day recovery window first, so accidental deletes can be restored before final cleanup.</p>
+        </article>
+
+        <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Access</p>
           <h2 className={styles.cardTitle}>Manage access through existing identity controls</h2>
           <p className={styles.cardText}>MDS can fit into existing Microsoft identity management instead of creating a separate user system inside the workspace. Access can be governed through Azure and aligned with the way teams are already managed.</p>

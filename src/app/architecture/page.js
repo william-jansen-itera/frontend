@@ -70,15 +70,15 @@ export default function Architecture() {
         </article>
 
         <article className={styles.infoCard}>
-          <p className={styles.cardEyebrow}>Deletion</p>
-          <h2 className={styles.cardTitle}>Soft delete before final purge</h2>
-          <p className={styles.cardText}>Trees, nodes, and attachments are first marked deleted and removed from active surfaces instead of being hard-deleted immediately. That creates a 7-day restore window as the first step, while admin purge is the second step that permanently removes the corresponding database rows, blobs, and search documents.</p>
+          <p className={styles.cardEyebrow}>Retention</p>
+          <h2 className={styles.cardTitle}>Two-step deletion with enforced 7-day retention</h2>
+          <p className={styles.cardText}>Trees, nodes, and attachments are first soft-deleted and removed from active surfaces. A scheduled retention job enforces a fixed 7-day window. Admins can still purge tree and node records earlier when permanent cleanup is required, but attachment blobs remain retained until the window expires.</p>
         </article>
 
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Index maintenance</p>
           <h2 className={styles.cardTitle}>Indexers for normal sync, purge for immediate cleanup</h2>
-          <p className={styles.cardText}>Normal search index maintenance runs through the SQL and blob indexers, which can be triggered from the admin surface in incremental or full modes. Separately, purge can remove search documents directly before the next indexing cycle, either through the current manual admin flow or through a retention job if that automation is added later.</p>
+          <p className={styles.cardText}>Normal search index maintenance runs through the SQL and blob indexers, which can be triggered from the admin surface in incremental or full modes. Separately, both manual purge and the scheduled 7-day retention job remove search documents directly so deleted content does not have to wait for the next indexing cycle.</p>
         </article>
 
         <article className={styles.infoCard}>
