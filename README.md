@@ -178,6 +178,7 @@ Scheduled retention purge now runs directly inside the companion Azure Function 
 - The purge uses the current `APPLICATION_IDENTIFIER` scope and a fixed 7-day retention window.
 - Cleanup runs in this order: expired individually deleted attachments, expired deleted nodes in still-active trees, then expired deleted trees.
 - Each purge step removes Azure AI Search documents before hard-deleting SQL rows. Blob deletion still follows the storage account's own soft-delete retention behavior.
+- Purge telemetry now distinguishes between `deletedBlobCount` for blobs deleted by the current purge run and `missingBlobCount` for blobs that were already gone from storage when the SQL cleanup ran.
 
 If you need to verify those manual purge requests in Application Insights, use the KQL queries documented in [functions/README.md](c:/Users/william.jansen/Documents/projects/knowledge%20application/code2/functions/README.md).
 
