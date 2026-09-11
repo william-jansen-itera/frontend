@@ -2,15 +2,8 @@ import { NextResponse } from 'next/server';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
-import {
-  deleteNodeAttachmentBlobIfExists,
-  restoreNodeAttachmentBlobIfDeleted,
-} from '@/server/utils/blobStorage';
-import {
-  buildAttachmentSearchDocumentId,
-  buildTreeNodeSearchDocumentId,
-  deleteSearchDocumentsById,
-} from '@/server/utils/azureSearch';
+import { restoreNodeAttachmentBlobIfDeleted } from '@/server/utils/blobStorage';
+import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 
 function assertAdminPrincipal(principal) {
   if (!hasClientPrincipalRole(principal, 'mdsadmin')) {
@@ -51,145 +44,6 @@ async function getIndividuallyDeletedAttachments(applicationIdentifier) {
     `);
 
   return result.recordset;
-}
-
-async function getDeletedTreeAttachmentBlobs(applicationIdentifier) {
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .query(`
-      SELECT
-        files.blob_name AS blobName,
-        files.blob_url AS blobUrl
-      FROM tree_node_detail_files files
-      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.deleted_at IS NOT NULL;
-    `);
-
-  return result.recordset;
-}
-
-async function getDeletedTreeNodeIds(applicationIdentifier) {
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .query(`
-      SELECT
-        CAST(ti.id AS VARCHAR(20)) AS treeId,
-        CAST(tn.id AS VARCHAR(20)) AS nodeId
-      FROM tree_nodes tn
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.deleted_at IS NOT NULL;
-    `);
-
-  return result.recordset;
-}
-
-async function getDeletedNodeAttachmentBlobs(applicationIdentifier) {
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .query(`
-      SELECT
-        files.blob_name AS blobName,
-        files.blob_url AS blobUrl
-      FROM tree_node_detail_files files
-      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND (tn.deleted_at IS NOT NULL OR ti.deleted_at IS NOT NULL);
-    `);
-
-  return result.recordset;
-}
-
-async function getDeletedNodeIds(applicationIdentifier) {
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .query(`
-      SELECT
-        CAST(ti.id AS VARCHAR(20)) AS treeId,
-        CAST(tn.id AS VARCHAR(20)) AS nodeId
-      FROM tree_nodes tn
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND (tn.deleted_at IS NOT NULL OR ti.deleted_at IS NOT NULL);
-    `);
-
-  return result.recordset;
-}
-
-async function purgeAllDeletedTrees(applicationIdentifier) {
-  const [nodes, attachments] = await Promise.all([
-    getDeletedTreeNodeIds(applicationIdentifier),
-    getDeletedTreeAttachmentBlobs(applicationIdentifier),
-  ]);
-  const searchDocumentIds = [
-    ...nodes.map((node) => buildTreeNodeSearchDocumentId(node.treeId, node.nodeId)),
-    ...attachments
-      .map((attachment) => buildAttachmentSearchDocumentId(attachment.blobUrl))
-      .filter(Boolean),
-  ];
-
-  await deleteSearchDocumentsById(searchDocumentIds);
-
-  for (const attachment of attachments) {
-    await deleteNodeAttachmentBlobIfExists(attachment.blobName);
-  }
-
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .query(`
-      DELETE ti
-      FROM tree_instance ti
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.deleted_at IS NOT NULL;
-    `);
-
-  return {
-    purgedTreeCount: Array.isArray(result.rowsAffected) ? result.rowsAffected.reduce((sum, count) => sum + count, 0) : 0,
-    deletedBlobCount: attachments.length,
-  };
-}
-
-async function purgeAllDeletedNodes(applicationIdentifier) {
-  const [nodes, attachments] = await Promise.all([
-    getDeletedNodeIds(applicationIdentifier),
-    getDeletedNodeAttachmentBlobs(applicationIdentifier),
-  ]);
-  const searchDocumentIds = [
-    ...nodes.map((node) => buildTreeNodeSearchDocumentId(node.treeId, node.nodeId)),
-    ...attachments
-      .map((attachment) => buildAttachmentSearchDocumentId(attachment.blobUrl))
-      .filter(Boolean),
-  ];
-
-  await deleteSearchDocumentsById(searchDocumentIds);
-
-  for (const attachment of attachments) {
-    await deleteNodeAttachmentBlobIfExists(attachment.blobName);
-  }
-
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .query(`
-      DELETE tn
-      FROM tree_nodes tn
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND (tn.deleted_at IS NOT NULL OR ti.deleted_at IS NOT NULL);
-    `);
-
-  return {
-    purgedNodeCount: Array.isArray(result.rowsAffected) ? result.rowsAffected.reduce((sum, count) => sum + count, 0) : 0,
-    deletedBlobCount: attachments.length,
-  };
 }
 
 async function undeleteTree(applicationIdentifier, treeId) {
@@ -472,72 +326,6 @@ async function undeleteAttachment(applicationIdentifier, treeId, attachmentId) {
   };
 }
 
-async function purgeAttachment(applicationIdentifier, treeId, attachmentId) {
-  const attachmentResult = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('attachment_id', sql.Int, Number(attachmentId))
-    .query(`
-      SELECT TOP 1
-        files.blob_name AS blobName,
-        files.blob_url AS blobUrl,
-        CAST(files.id AS VARCHAR(20)) AS attachmentId,
-        CAST(tn.id AS VARCHAR(20)) AS nodeId
-      FROM tree_node_detail_files files
-      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.id = @tree_instance_id
-        AND files.id = @attachment_id
-        AND files.deleted_at IS NOT NULL
-        AND tn.deleted_at IS NULL
-        AND ti.deleted_at IS NULL;
-    `);
-
-  const attachment = attachmentResult.recordset[0] ?? null;
-
-  if (!attachment) {
-    throw new Error('Attachment was not found for purge or its node is still deleted');
-  }
-
-  const documentId = buildAttachmentSearchDocumentId(attachment.blobUrl);
-
-  if (documentId) {
-    await deleteSearchDocumentsById([documentId]);
-  }
-
-  await deleteNodeAttachmentBlobIfExists(attachment.blobName);
-
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('attachment_id', sql.Int, Number(attachmentId))
-    .query(`
-      DELETE files
-      FROM tree_node_detail_files files
-      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.id = @tree_instance_id
-        AND files.id = @attachment_id
-        AND files.deleted_at IS NOT NULL
-        AND tn.deleted_at IS NULL
-        AND ti.deleted_at IS NULL;
-    `);
-
-  if (!result.rowsAffected[0]) {
-    throw new Error('Attachment was not found for purge or its node is still deleted');
-  }
-
-  return {
-    purgedAttachmentId: String(attachmentId),
-    treeId: String(treeId),
-    nodeId: String(attachment.nodeId),
-  };
-}
-
 export async function GET(request) {
   try {
     const principal = parseClientPrincipal(request);
@@ -641,30 +429,21 @@ export async function DELETE(request) {
 
     const payload = await request.json();
     const action = String(payload?.action ?? '').trim().toLowerCase();
-    const applicationIdentifier = getRequiredApplicationIdentifier();
 
     if (action !== 'purge-all-trees' && action !== 'purge-all-nodes' && action !== 'purge-attachment') {
       return NextResponse.json({ error: 'Invalid request, a supported action is required' }, { status: 400 });
     }
 
-    const result = await withSqlConnection(async () => {
-      if (action === 'purge-all-trees') {
-        return purgeAllDeletedTrees(applicationIdentifier);
+    if (action === 'purge-attachment') {
+      const treeId = Number(payload?.treeId);
+      const attachmentId = Number(payload?.attachmentId);
+
+      if (!Number.isFinite(treeId) || !Number.isFinite(attachmentId)) {
+        throw new Error('Invalid request, treeId and attachmentId are required');
       }
+    }
 
-      if (action === 'purge-attachment') {
-        const treeId = Number(payload?.treeId);
-        const attachmentId = Number(payload?.attachmentId);
-
-        if (!Number.isFinite(treeId) || !Number.isFinite(attachmentId)) {
-          throw new Error('Invalid request, treeId and attachmentId are required');
-        }
-
-        return purgeAttachment(applicationIdentifier, treeId, attachmentId);
-      }
-
-      return purgeAllDeletedNodes(applicationIdentifier);
-    });
+    const result = await invokePurgeFunction(payload);
 
     return NextResponse.json({
       success: true,
@@ -673,11 +452,10 @@ export async function DELETE(request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'The request failed';
-    const status = message === 'Admin role mdsadmin is required'
-      ? 403
-      : message.includes('treeId and attachmentId are required') || message.includes('not found for purge') || message.includes('node is still deleted')
-        ? 400
-        : 500;
+    const status = getPurgeProxyErrorStatus(err, {
+      forbiddenMessages: ['Admin role mdsadmin is required'],
+      badRequestIncludes: ['treeId and attachmentId are required', 'not found for purge', 'node is still deleted'],
+    });
     return NextResponse.json({ error: message }, { status });
   }
 }

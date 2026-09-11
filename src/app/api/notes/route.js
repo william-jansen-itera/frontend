@@ -14,12 +14,10 @@ import {
 } from '@/server/utils/chatService';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import {
-  buildAttachmentSearchDocumentId,
-  buildTreeNodeSearchDocumentId,
-  deleteSearchDocumentsById,
   requestTreeSqlIndexerRun,
 } from '@/server/utils/azureSearch';
 import { logException, logTrace } from '@/server/utils/logging';
+import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 import { assertTreeAccess, getAuditMetadata, getTreeList } from '@/server/utils/treeCatalog';
@@ -865,45 +863,6 @@ async function DeleteTreeNode({ id, treeInstanceId }) {
     }
   });
 }
-
-async function PurgeTreeNode({ id, treeInstanceId }) {
-  return withSqlConnection(async () => {
-    const purgeResult = await new sql.Request()
-      .input('id', sql.Int, id)
-      .input('tree_instance_id', sql.Int, treeInstanceId)
-      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-      .query(`
-        WITH Descendants AS (
-          SELECT tn.id
-          FROM tree_nodes tn
-          INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-          INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-          WHERE tn.id = @id
-            AND tn.tree_instance_id = @tree_instance_id
-            AND (tn.deleted_at IS NOT NULL OR ti.deleted_at IS NOT NULL)
-            AND ai.app_identifier = @application_identifier
-
-          UNION ALL
-
-          SELECT child.id
-          FROM tree_nodes child
-          INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
-          WHERE child.tree_instance_id = @tree_instance_id
-        )
-        DELETE tree_nodes
-        FROM tree_nodes
-        INNER JOIN Descendants ON Descendants.id = tree_nodes.id
-        WHERE tree_nodes.tree_instance_id = @tree_instance_id;
-      `);
-
-    if (!purgeResult.rowsAffected.some((count) => count > 0)) {
-      throw new Error('Node must be exposed as deleted before it can be purged');
-    }
-
-    return queryTreeData(treeInstanceId);
-  });
-}
-
 async function UpdateTreeNodes(treeInstanceId, nodes) {
   return withSqlConnection(async () => {
     for (const node of nodes) {
@@ -1388,35 +1347,6 @@ async function getDescendantAttachmentBlobs(treeInstanceId, nodeId, { includeDel
   return result.recordset;
 }
 
-async function getDescendantNodeIds(treeInstanceId, nodeId, { includeDeleted = false } = {}) {
-  const result = await new sql.Request()
-    .input('tree_instance_id', sql.Int, treeInstanceId)
-    .input('id', sql.Int, nodeId)
-    .input('include_deleted', sql.Bit, includeDeleted ? 1 : 0)
-    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-    .query(`WITH Descendants AS (
-        SELECT tn.id
-        FROM tree_nodes tn
-        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-        WHERE tn.id = @id
-          AND tn.tree_instance_id = @tree_instance_id
-          AND ai.app_identifier = @application_identifier
-          AND (@include_deleted = 1 OR tn.deleted_at IS NULL)
-        UNION ALL
-        SELECT t.id
-        FROM tree_nodes t
-        INNER JOIN Descendants d ON t.parent_id = d.id
-        WHERE t.tree_instance_id = @tree_instance_id
-          AND (@include_deleted = 1 OR t.deleted_at IS NULL)
-      )
-      SELECT CAST(id AS VARCHAR(10)) AS id
-      FROM Descendants;
-    `);
-
-  return result.recordset;
-}
-
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const treeIdParam = searchParams.get('treeId');
@@ -1706,37 +1636,28 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
     }
 
+    const treeInstanceId = parseInt(treeIdParam, 10);
+    const nodeId = parseInt(idParam, 10);
+
+    if (shouldPurge) {
+      const result = await invokePurgeFunction({
+        action: 'purge-node',
+        treeId: treeInstanceId,
+        nodeId,
+      });
+
+      return NextResponse.json(result);
+    }
+
     return NextResponse.json(await withSqlConnection(async () => {
-      const treeInstanceId = parseInt(treeIdParam, 10);
-      const nodeId = parseInt(idParam, 10);
-
-      if (shouldPurge) {
-        const nodes = await getDescendantNodeIds(treeInstanceId, nodeId, {
-          includeDeleted: true,
-        });
-        const attachments = await getDescendantAttachmentBlobs(treeInstanceId, nodeId, {
-          includeDeleted: true,
-        });
-        const searchDocumentIds = [
-          ...nodes.map((node) => buildTreeNodeSearchDocumentId(treeInstanceId, node.id)),
-          ...attachments
-            .map((attachment) => buildAttachmentSearchDocumentId(attachment.blobUrl))
-            .filter(Boolean),
-        ];
-
-        await deleteSearchDocumentsById(searchDocumentIds);
-
-        for (const attachment of attachments) {
-          await deleteNodeAttachmentBlobIfExists(attachment.blobName);
-        }
-
-        return PurgeTreeNode({ id: nodeId, treeInstanceId });
-      }
-
       return DeleteTreeNode({ id: nodeId, treeInstanceId });
     }));
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'The request failed';
+    const status = getPurgeProxyErrorStatus(err, {
+      forbiddenMessages: ['Admin role mdsadmin is required'],
+    });
+    return NextResponse.json({ error: message }, { status });
   }
 }
 

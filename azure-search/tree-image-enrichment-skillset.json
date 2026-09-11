@@ -53,7 +53,7 @@
       "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
       "name": "custom-skill-processor",
       "description": "Filter low-confidence custom skill values using the reusable custom-skill processor Azure Function.",
-      "uri": "<custom-skill-function-uri>",
+      "uri": "https://mds-functions-william.azurewebsites.net/api/custom-skill-processor?code=<custom-skill-function-key>",
       "httpMethod": "POST",
       "timeout": "PT30S",
       "batchSize": 1,

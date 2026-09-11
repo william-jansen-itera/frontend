@@ -24,6 +24,11 @@ Optional Azure AI Search settings:
 - `AZURE_SEARCH_SQL_INDEXER_NAME` defaults to `tree-sql-indexer`
 - `AZURE_SEARCH_BLOB_INDEXER_NAME` defaults to `tree-blob-indexer`
 
+Optional maintenance settings:
+
+- `AZURE_PURGE_FUNCTION_URL` is the full HTTP purge Function URL used by frontend admin routes for manual purge actions
+- `AZURE_PURGE_FUNCTION_KEY` is the server-side function key used when the frontend calls the purge Function
+
 `APPLICATION_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `false`.
 
 For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.
@@ -160,7 +165,21 @@ The important distinction is that navigation trimming is not security by itself.
 
 For Azure AI Search SQL indexing, soft-delete detection now depends on the string column `isDeletedMarker` in `dbo.vw_tree_search_nodes`, matched by the datasource policy value `true`. The older computed `bit` column `isDeleted` remains useful for querying and admin UI filtering, but it did not reliably trigger document deletion in the SQL indexer.
 
-The application only requests an on-demand SQL indexer run for the confirmed `create-leaf-from-chat` flow. Regular edits such as manual note text changes, rename operations, generated child nodes, tree population, expand/collapse state changes, and other routine updates do not trigger the indexer from application code. The scheduled indexer remains the general backstop. `AZURE_SEARCH_ADMIN_KEY` is also required for admin purge flows because purge now directly deletes Azure AI Search documents before hard-deleting SQL records.
+The application only requests an on-demand SQL indexer run for the confirmed `create-leaf-from-chat` flow. Regular edits such as manual note text changes, rename operations, generated child nodes, tree population, expand/collapse state changes, and other routine updates do not trigger the indexer from application code. The scheduled indexer remains the general backstop. `AZURE_SEARCH_ADMIN_KEY` is also required in the Function App because purge deletes Azure AI Search documents before hard-deleting SQL records.
+
+## Scheduled Purge
+
+Scheduled retention purge now runs directly inside the companion Azure Function instead of calling back into a frontend maintenance route.
+
+- The Function App is the only place that executes purge logic across SQL, Blob Storage, and Azure AI Search.
+- The timer-triggered purge job uses the current `APPLICATION_IDENTIFIER` scope and a fixed 7-day retention window.
+- Manual admin purge still starts from the frontend, but the frontend server now proxies those requests to the HTTP purge Function using a server-side function key.
+- Individual node purge, individual tree purge, individual attachment purge, and bulk purge actions all converge on the same `POST /api/purge` Function surface.
+- The purge uses the current `APPLICATION_IDENTIFIER` scope and a fixed 7-day retention window.
+- Cleanup runs in this order: expired individually deleted attachments, expired deleted nodes in still-active trees, then expired deleted trees.
+- Each purge step removes Azure AI Search documents before hard-deleting SQL rows. Blob deletion still follows the storage account's own soft-delete retention behavior.
+
+If you need to verify those manual purge requests in Application Insights, use the KQL queries documented in [functions/README.md](c:/Users/william.jansen/Documents/projects/knowledge%20application/code2/functions/README.md).
 
 ## Agent Behavior
 

@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { generateTreeDescriptionDraft, publishStoredTreeDescriptions } from '@/server/utils/chatService';
 import { parseClientPrincipal } from '@/server/utils/auth';
+import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import {
   createTree,
   deleteTree,
   getTreeList,
-  purgeTree,
   updateTreeDescription,
   updateTreeTitle,
   updateTreeVisibility,
@@ -282,7 +282,7 @@ export async function DELETE(request) {
         return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
       }
 
-      await purgeTree({ treeId: parsedTreeId, principal, enforceAccess: false });
+      await invokePurgeFunction({ action: 'purge-tree', treeId: parsedTreeId });
 
       return NextResponse.json({
         success: true,
@@ -325,6 +325,8 @@ export async function DELETE(request) {
       });
     }
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'The request failed';
+    const status = getPurgeProxyErrorStatus(err);
+    return NextResponse.json({ error: message }, { status });
   }
 }

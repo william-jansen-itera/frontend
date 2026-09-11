@@ -3,11 +3,6 @@ import {
   deleteNodeAttachmentBlobIfExists,
   restoreNodeAttachmentBlobIfDeleted,
 } from '@/server/utils/blobStorage';
-import {
-  buildAttachmentSearchDocumentId,
-  buildTreeNodeSearchDocumentId,
-  deleteSearchDocumentsById,
-} from '@/server/utils/azureSearch';
 import { normalizeClientPrincipal } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 
@@ -316,7 +311,6 @@ async function getScopedTreeNodeIds(treeId) {
 
   return result.recordset;
 }
-
 export async function getTreeList(options = {}) {
   const {
     principal = null,
@@ -763,69 +757,6 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
 
       throw error;
     }
-  });
-}
-
-export async function purgeTree({ treeId, principal = null, enforceAccess = false }) {
-  return withSqlConnection(async () => {
-    const scopedTree = await assertScopedTree(treeId, {
-      principal,
-      requireWriteAccess: true,
-      enforceAccess,
-      includeDeleted: true,
-    });
-
-    if (!scopedTree.deletedAt) {
-      throw new Error('Tree must be soft-deleted before it can be purged');
-    }
-
-    const [nodes, attachments] = await Promise.all([
-      getScopedTreeNodeIds(treeId),
-      new sql.Request()
-        .input('tree_instance_id', sql.Int, Number(treeId))
-        .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-        .query(`
-          SELECT
-            files.blob_name AS blobName,
-            files.blob_url AS blobUrl
-          FROM tree_node_detail_files files
-          INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-          INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-          INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-          WHERE ti.id = @tree_instance_id
-            AND ai.app_identifier = @application_identifier;
-        `),
-    ]);
-    const searchDocumentIds = [
-      ...nodes.map((node) => buildTreeNodeSearchDocumentId(treeId, node.id)),
-      ...attachments.recordset
-        .map((attachment) => buildAttachmentSearchDocumentId(attachment.blobUrl))
-        .filter(Boolean),
-    ];
-
-    await deleteSearchDocumentsById(searchDocumentIds);
-
-    for (const attachment of attachments.recordset) {
-      await deleteNodeAttachmentBlobIfExists(attachment.blobName);
-    }
-
-    const purgeResult = await new sql.Request()
-      .input('tree_instance_id', sql.Int, Number(treeId))
-      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-      .query(`
-        DELETE ti
-        FROM tree_instance ti
-        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-        WHERE ti.id = @tree_instance_id
-          AND ai.app_identifier = @application_identifier
-          AND ti.deleted_at IS NOT NULL;
-      `);
-
-    if (!purgeResult.rowsAffected[0]) {
-      throw new Error('Tree was not found for purge');
-    }
-
-    return { success: true };
   });
 }
 
