@@ -77,8 +77,8 @@ export default function Architecture() {
 
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Index maintenance</p>
-          <h2 className={styles.cardTitle}>Indexers for normal sync, purge for immediate cleanup</h2>
-          <p className={styles.cardText}>Normal search index maintenance runs through the SQL and blob indexers, which can be triggered from the admin surface in incremental or full modes. Separately, both manual purge and the scheduled 7-day retention job remove search documents directly so deleted content does not have to wait for the next indexing cycle.</p>
+          <h2 className={styles.cardTitle}>Indexers for normal sync, manual purge for immediate cleanup</h2>
+          <p className={styles.cardText}>Normal search index maintenance runs through the SQL and blob indexers, which can be triggered from the admin surface in incremental or full modes. Separately, both manual purge and the scheduled 7-day retention job remove search documents immmediately from the index.</p>
         </article>
 
         <article className={styles.infoCard}>
