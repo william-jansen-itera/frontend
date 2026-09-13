@@ -8,6 +8,7 @@ import {
 
 export function useAuth() {
   const [user, setUser] = useState(null);
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
 
   useEffect(() => {
     let isCancelled = false;
@@ -18,15 +19,26 @@ export function useAuth() {
       if (isLocal) {
         if (!isCancelled) {
           setUser(normalizeClientPrincipal(createLocalDevelopmentPrincipal()));
+          setIsAuthResolved(true);
         }
         return;
       }
 
-      const res = await fetch("/.auth/me");
-      const data = await res.json();
+      try {
+        const res = await fetch("/.auth/me", { cache: "no-store" });
+        const data = await res.json();
 
-      if (!isCancelled) {
-        setUser(normalizeClientPrincipal(data.clientPrincipal));
+        if (!isCancelled) {
+          setUser(normalizeClientPrincipal(data.clientPrincipal));
+        }
+      } catch {
+        if (!isCancelled) {
+          setUser(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsAuthResolved(true);
+        }
       }
     }
 
@@ -45,5 +57,5 @@ export function useAuth() {
     window.location.href = "/.auth/logout";
   }
 
-  return { user, signIn, signOut };
+  return { user, signIn, signOut, isAuthResolved };
 }

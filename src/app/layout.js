@@ -28,6 +28,7 @@ const navLinks = [
   { href: "/notes", label: "Notes", requiresRole: "mdsusers" },
   { href: "/search", label: "Search", requiresRole: "mdsusers" },
   { href: "/chat", label: "Agent", requiresRole: "mdsusers" },
+  { href: "/me", label: "Me", requiresAuthenticated: true },
   { href: "/admin", label: "Admin", requiresRole: "mdsadmin" },
   { href: "/about", label: "About" },
   { href: "/architecture", label: "Architecture", requiresRole: "mdsadmin" },
@@ -54,6 +55,10 @@ function getPageSurfaceClassName(pathname) {
     return "appPageSurface appPageSurfaceAbout";
   }
 
+  if (pathname === "/me") {
+    return "appPageSurface appPageSurfaceAbout";
+  }
+
   if (pathname === "/architecture") {
     return "appPageSurface appPageSurfaceAbout";
   }
@@ -73,7 +78,13 @@ function getNavAllowedVisibilityValues(href) {
   return ALL_VISIBILITY_VALUES;
 }
 
-function HeaderAuthControls({ user, signIn, signOut, mobile = false, onAction = null }) {
+function HeaderAuthControls({
+  user,
+  signIn,
+  signOut,
+  mobile = false,
+  onAction = null,
+}) {
   const authGroupClassName = mobile ? "appAuthGroup appAuthGroupMobile" : "appAuthGroup";
 
   const handleSignIn = () => {
@@ -92,7 +103,6 @@ function HeaderAuthControls({ user, signIn, signOut, mobile = false, onAction = 
         <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">Sign In</button>
       ) : (
         <>
-          <span className="appAuthText">{user.userDetails}!</span>
           <button onClick={handleSignOut} className="appAuthButton appAuthButtonSecondary">Sign Out</button>
         </>
       )}
@@ -110,7 +120,17 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
     getNavAllowedVisibilityValues(href),
   );
 
-  const visibleNavLinks = navLinks.filter((link) => !link.requiresRole || hasClientPrincipalRole(user, link.requiresRole));
+  const visibleNavLinks = navLinks.filter((link) => {
+    if (link.requiresAuthenticated && !user) {
+      return false;
+    }
+
+    if (link.requiresRole && !hasClientPrincipalRole(user, link.requiresRole)) {
+      return false;
+    }
+
+    return true;
+  });
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -172,7 +192,11 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
             </button>
           </div>
 
-          <HeaderAuthControls user={user} signIn={signIn} signOut={signOut} />
+          <HeaderAuthControls
+            user={user}
+            signIn={signIn}
+            signOut={signOut}
+          />
 
           {isMobileMenuOpen ? (
             <div id="app-mobile-menu" className="appMobileMenu">

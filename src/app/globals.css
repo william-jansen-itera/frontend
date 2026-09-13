@@ -348,8 +348,8 @@ body {
 .appBrandImage {
   display: block;
   width: auto;
-   height: 4.6rem;
-   opacity: 0.86;
+  height: 4.6rem;
+  opacity: 0.86;
 }
 
 .appNavLinks {
@@ -406,13 +406,18 @@ body {
 }
 
 .appAuthButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   appearance: none;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
   padding: 0.7rem 1rem;
   color: #ffffff;
   font-size: 0.92rem;
   font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
