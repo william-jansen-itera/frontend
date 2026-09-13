@@ -33,13 +33,21 @@
 }
 
 .cardEyebrow,
-.fieldLabel,
 .claimType {
   margin: 0;
   color: var(--ui-eyebrow-color);
   font-size: var(--ui-eyebrow-size);
   font-weight: var(--ui-eyebrow-weight);
   letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
+}
+
+.fieldLabel {
+  margin: 0;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
