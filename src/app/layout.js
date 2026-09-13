@@ -2,7 +2,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
@@ -72,7 +72,36 @@ function getNavAllowedVisibilityValues(href) {
   return ALL_VISIBILITY_VALUES;
 }
 
+function HeaderAuthControls({ user, signIn, signOut, mobile = false, onAction = null }) {
+  const authGroupClassName = mobile ? "appAuthGroup appAuthGroupMobile" : "appAuthGroup";
+
+  const handleSignIn = () => {
+    onAction?.();
+    signIn();
+  };
+
+  const handleSignOut = () => {
+    onAction?.();
+    signOut();
+  };
+
+  return (
+    <div className={authGroupClassName}>
+      {!user ? (
+        <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">Sign In</button>
+      ) : (
+        <>
+          <span className="appAuthText">{user.userDetails}!</span>
+          <button onClick={handleSignOut} className="appAuthButton appAuthButtonSecondary">Sign Out</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "public" }) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   const buildNavHref = (href) => buildVisibilityHref(
     href,
     "",
@@ -80,43 +109,73 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
     getNavAllowedVisibilityValues(href),
   );
 
+  const visibleNavLinks = navLinks.filter((link) => !link.requiresRole || hasClientPrincipalRole(user, link.requiresRole));
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [pathname]);
+
+  const renderNavLinks = ({ mobile = false } = {}) => {
+    const className = mobile ? "appNavLinks appNavLinksMobile" : "appNavLinks";
+
+    return (
+      <div className={className}>
+        {visibleNavLinks.map((link) => {
+          const isActive = pathname === link.href;
+
+          return (
+            <Link
+              key={link.href}
+              href={buildNavHref(link.href)}
+              className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
+              onClick={mobile ? () => setIsMobileMenuOpen(false) : undefined}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className={getPageSurfaceClassName(pathname)}>
       <header className="appChrome">
-        <nav className="appNav">
-          <div className="appNavBrandGroup">
-            <Link href={buildNavHref("/")} className="appBrandLink">MDS</Link>
-            <div className="appNavLinks">
-              {navLinks.map((link) => {
-                if (link.requiresRole && !hasClientPrincipalRole(user, link.requiresRole)) {
-                  return null;
-                }
-
-                const isActive = pathname === link.href;
-
-                return (
-                  <Link
-                    key={link.href}
-                    href={buildNavHref(link.href)}
-                    className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
-                  >
-                    {link.label}
-                  </Link>
-                );
-              })}
+        <nav className="appNav" aria-label="Primary">
+          <div className="appNavMainRow">
+            <div className="appNavBrandGroup">
+              <Link href={buildNavHref("/")} className="appBrandLink">MDS</Link>
+              {renderNavLinks()}
             </div>
+
+            <button
+              type="button"
+              className="appNavMenuButton"
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="app-mobile-menu"
+              aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+              onClick={() => setIsMobileMenuOpen((current) => !current)}
+            >
+              <span className="appNavMenuButtonLine" />
+              <span className="appNavMenuButtonLine" />
+              <span className="appNavMenuButtonLine" />
+            </button>
           </div>
 
-          <div className="appAuthGroup">
-          {!user ? (
-              <button onClick={signIn} className="appAuthButton appAuthButtonPrimary">Sign In</button>
-          ) : (
-            <>
-                <span className="appAuthText">Welcome, {user.userDetails}!</span>
-                <button onClick={signOut} className="appAuthButton appAuthButtonSecondary">Sign Out</button>
-            </>
-          )}
-          </div>
+          <HeaderAuthControls user={user} signIn={signIn} signOut={signOut} />
+
+          {isMobileMenuOpen ? (
+            <div id="app-mobile-menu" className="appMobileMenu">
+              {renderNavLinks({ mobile: true })}
+              <HeaderAuthControls
+                user={user}
+                signIn={signIn}
+                signOut={signOut}
+                mobile
+                onAction={() => setIsMobileMenuOpen(false)}
+              />
+            </div>
+          ) : null}
         </nav>
       </header>
       {children}

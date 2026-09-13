@@ -119,6 +119,15 @@ body {
   gap: 1rem;
 }
 
+.appNavMainRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
 .appTopLevelPanel,
 .appPanelShell {
   min-width: 0;
@@ -294,6 +303,37 @@ body {
   flex-wrap: wrap;
 }
 
+.appNavMenuButton {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.92);
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.appNavMenuButton:hover,
+.appNavMenuButton:focus-visible {
+  background: rgba(219, 234, 254, 0.72);
+  border-color: rgba(8, 145, 178, 0.38);
+  outline: none;
+}
+
+.appNavMenuButtonLine {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
 .appBrandLink {
   color: var(--ui-title-color);
   font-size: 1rem;
@@ -347,6 +387,15 @@ body {
   font-weight: 600;
 }
 
+.appMobileMenu {
+  display: none;
+}
+
+.appNavLinksMobile,
+.appAuthGroupMobile {
+  display: none;
+}
+
 .appAuthButton {
   appearance: none;
   border: 0;
@@ -382,6 +431,58 @@ body {
 @media (max-width: 720px) {
   .appNav {
     margin-bottom: 1.28rem;
+  }
+
+  .appNavMainRow {
+    align-items: center;
+  }
+
+  .appNavBrandGroup {
+    flex: 1 1 auto;
+  }
+
+  .appNavLinks,
+  .appNav > .appAuthGroup {
+    display: none;
+  }
+
+  .appNavMenuButton {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .appMobileMenu {
+    display: grid;
+    gap: 0.85rem;
+    width: 100%;
+    padding-top: 0.2rem;
+  }
+
+  .appNavLinksMobile {
+    display: grid;
+    gap: 0.45rem;
+    width: 100%;
+  }
+
+  .appNavLinksMobile .appNavLink {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .appAuthGroupMobile {
+    display: grid;
+    gap: 0.7rem;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .appAuthGroupMobile .appAuthText {
+    overflow-wrap: anywhere;
+  }
+
+  .appAuthGroupMobile .appAuthButton {
+    width: fit-content;
   }
 
   .appPageShell {
