@@ -348,7 +348,8 @@ body {
 .appBrandImage {
   display: block;
   width: auto;
-  height: 4rem;
+   height: 4.6rem;
+   opacity: 0.86;
 }
 
 .appNavLinks {
@@ -441,10 +442,6 @@ body {
 }
 
 @media (max-width: 720px) {
-  .appBrandImage {
-    height: 2.35rem;
-  }
-
   .appNav {
     margin-bottom: 1.28rem;
   }
