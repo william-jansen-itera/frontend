@@ -1,6 +1,7 @@
 "use client";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -144,7 +145,16 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
         <nav className="appNav" aria-label="Primary">
           <div className="appNavMainRow">
             <div className="appNavBrandGroup">
-              <Link href={buildNavHref("/")} className="appBrandLink">MDS</Link>
+              <Link href={buildNavHref("/")} className="appBrandLink" aria-label="MDS home">
+                <Image
+                  src="/MDS logo black heavier.png"
+                  alt="MDS"
+                  width={188}
+                  height={60}
+                  className="appBrandImage"
+                  priority
+                />
+              </Link>
               {renderNavLinks()}
             </div>
 
