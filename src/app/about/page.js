@@ -1,4 +1,5 @@
 import Link from "next/link";
+import PageVisitTracker from "../PageVisitTracker";
 import styles from "./page.module.css";
 
 export const metadata = {
@@ -8,6 +9,7 @@ export const metadata = {
 export default function About() {
   return (
     <main className="appPageShell">
+      <PageVisitTracker pagePath="/about" />
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
           <p className="appEyebrow">About</p>
