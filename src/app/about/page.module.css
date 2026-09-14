@@ -36,6 +36,28 @@
   line-height: var(--ui-body-line-height);
 }
 
+.heroQuote {
+  margin: 1rem 0 0;
+  padding: 1rem 1.15rem;
+  border-left: 3px solid rgba(8, 145, 178, 0.4);
+  border-radius: 0 18px 18px 0;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(240, 249, 255, 0.9));
+}
+
+.heroQuoteText {
+  margin: 0;
+  color: var(--ui-title-color);
+  font-size: 1.02rem;
+  line-height: 1.72;
+}
+
+.heroQuoteAttribution {
+  margin-top: 0.75rem;
+  color: #475569;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .contentGrid {
   max-width: var(--page-content-width);
   margin: 0 auto 1.5rem;

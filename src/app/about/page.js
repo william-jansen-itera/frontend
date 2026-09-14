@@ -11,6 +11,12 @@ export default function About() {
           <p className="appPageDescription">
             You grow a tree of notes and attachments, inspect the material, and talk to the domain. The agent searches that tree and shows the ground under the answer. When it uses broader model knowledge, you can pull the useful part back onto a leaf.
           </p>
+          <blockquote className={styles.heroQuote}>
+            <p className={styles.heroQuoteText}>
+              “Imagine you had access to the knowledge GPT speaks from. That you could look into it, edit it, tell it what to remember — and take part in building it. Not the whole world’s knowledge. Precisely the domain that matters in your work or your hobby. You would be steering part of its memory. Context would no longer be just the chat history. It would contain the memory you had built. And the agent would speak from that understanding of the domain.”
+            </p>
+            <footer className={styles.heroQuoteAttribution}>William Jansen</footer>
+          </blockquote>
         </div>
       </section>
 
@@ -55,6 +61,18 @@ export default function About() {
           <p className={styles.cardEyebrow}>Capture</p>
           <h2 className={styles.cardTitle}>Pull useful answers back onto a leaf</h2>
           <p className={styles.cardText}>When a broader answer contains something worth keeping, you can turn that result into structured knowledge by adding it back into the right place in the tree.</p>
+        </article>
+
+        <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Collective memory</p>
+          <h2 className={styles.cardTitle}>Hold the domain together</h2>
+          <p className={styles.cardText}>The agent has your understanding of the domain, the tree you built together, so it can recognise the connections in that material and speak from them. Context is not the chat history. It is a shared memory.</p>
+        </article>
+
+        <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Extensibility</p>
+          <h2 className={styles.cardTitle}>Add tools and the agent grows</h2>
+          <p className={styles.cardText}>Give the agent a tool for a particular context, and it can use that capability there. Then it does not only understand the domain. It can act in it. Each new tool extends what it can do, and the agent grows over the capabilities you have given it.</p>
         </article>
 
         <article className={styles.infoCard}>
