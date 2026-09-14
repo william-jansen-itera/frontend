@@ -1,31 +1,7 @@
 // src/app/api/hello/route.js
 import { NextResponse } from 'next/server';
-import { sql, withSqlConnection } from '@/server/utils/sql';
+import { confirmSqlIsResponsive, isLikelySleepingSqlError } from '@/server/utils/sql';
 import { getRelevantPrincipalDetails, parseClientPrincipal } from '@/server/utils/auth';
-
-function isLikelySleepingSqlError(error) {
-  const message = String(
-    error?.message
-      || error?.originalError?.message
-      || error?.precedingErrors?.[0]?.message
-      || '',
-  ).toLowerCase();
-  const code = String(error?.code || error?.originalError?.code || '').toLowerCase();
-
-  return [
-    'timeout',
-    'timed out',
-    'connection timeout',
-    'handshake inactivity timeout',
-    'login timeout',
-    'server was not found or was not accessible',
-    'the database is not currently available',
-    'resuming',
-    'warming up',
-    'paused',
-    'sleep',
-  ].some((fragment) => message.includes(fragment)) || ['etimeout', 'esocket'].includes(code);
-}
 
 export async function GET(request) {
   const { logTrace, logException } = await import('../../../server/utils/logging');
@@ -46,9 +22,7 @@ export async function GET(request) {
   }
 
   try {
-    const sqlResult = await withSqlConnection(async () => new sql.Request().query(`
-      SELECT DB_NAME() AS databaseName, SYSUTCDATETIME() AS serverUtcTime;
-    `));
+    const sqlResult = await confirmSqlIsResponsive();
     const databaseName = sqlResult.recordset[0]?.databaseName || 'configured database';
 
     return NextResponse.json({

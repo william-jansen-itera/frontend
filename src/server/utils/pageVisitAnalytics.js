@@ -1,8 +1,11 @@
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
+import { setTimeout as delay } from 'timers/promises';
+import { confirmSqlIsResponsive, getRequiredApplicationIdentifier, isLikelySleepingSqlError, sql, withSqlConnection } from '@/server/utils/sql';
 import { isLocalDevelopmentHost } from '@/shared/clientPrincipal';
 
 const ALLOWED_PAGE_PATHS = new Set(['/', '/about']);
+const SQL_WAKE_RETRY_DELAY_MS = 10_000;
+const SQL_WAKE_MAX_RETRIES = 3;
 
 function normalizeHostName(value) {
   const normalizedValue = String(value ?? '').trim().toLowerCase();
@@ -137,7 +140,7 @@ export async function incrementPageVisitCounter(dimensions) {
     };
   }
 
-  return withSqlConnection(async () => {
+  const executeCounterWrite = () => withSqlConnection(async () => {
     const result = await new sql.Request()
       .input('app_identifier', sql.NVarChar(128), dimensions.appIdentifier)
       .input('page_path', sql.NVarChar(32), dimensions.pagePath)
@@ -228,4 +231,23 @@ export async function incrementPageVisitCounter(dimensions) {
       counter: result.recordset[0] ?? null,
     };
   });
+
+  let lastError;
+
+  for (let attempt = 0; attempt <= SQL_WAKE_MAX_RETRIES; attempt += 1) {
+    try {
+      return await executeCounterWrite();
+    } catch (error) {
+      lastError = error;
+
+      if (!isLikelySleepingSqlError(error) || attempt === SQL_WAKE_MAX_RETRIES) {
+        throw error;
+      }
+
+      await delay(SQL_WAKE_RETRY_DELAY_MS);
+      await confirmSqlIsResponsive();
+    }
+  }
+
+  throw lastError;
 }

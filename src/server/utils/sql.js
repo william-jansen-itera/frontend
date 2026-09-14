@@ -14,6 +14,10 @@ const config = {
 
 let sqlConnectionPromise;
 
+const SQL_STATUS_PROBE_QUERY = `
+  SELECT DB_NAME() AS databaseName, SYSUTCDATETIME() AS serverUtcTime;
+`;
+
 function getSqlConnection() {
   if (!sqlConnectionPromise) {
     sqlConnectionPromise = sql.connect(config).catch((error) => {
@@ -28,6 +32,34 @@ function getSqlConnection() {
 export async function withSqlConnection(callback) {
   await getSqlConnection();
   return callback();
+}
+
+export function isLikelySleepingSqlError(error) {
+  const message = String(
+    error?.message
+      || error?.originalError?.message
+      || error?.precedingErrors?.[0]?.message
+      || '',
+  ).toLowerCase();
+  const code = String(error?.code || error?.originalError?.code || '').toLowerCase();
+
+  return [
+    'timeout',
+    'timed out',
+    'connection timeout',
+    'handshake inactivity timeout',
+    'login timeout',
+    'server was not found or was not accessible',
+    'the database is not currently available',
+    'resuming',
+    'warming up',
+    'paused',
+    'sleep',
+  ].some((fragment) => message.includes(fragment)) || ['etimeout', 'esocket'].includes(code);
+}
+
+export async function confirmSqlIsResponsive() {
+  return withSqlConnection(async () => new sql.Request().query(SQL_STATUS_PROBE_QUERY));
 }
 
 export function getRequiredApplicationIdentifier() {
