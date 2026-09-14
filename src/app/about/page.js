@@ -41,7 +41,7 @@ export default function About() {
 
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Talk</p>
-          <h2 className={styles.cardTitle}>Ask the domain, not a blank model</h2>
+          <h2 className={styles.cardTitle}>Ask the domain, not a general model</h2>
           <p className={styles.cardText}>Use Agent to ask questions against the trees you built. The answer is shaped by the material in that domain instead of relying only on broad model knowledge.</p>
         </article>
 
