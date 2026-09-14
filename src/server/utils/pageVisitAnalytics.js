@@ -92,14 +92,16 @@ function classifyBrowserFamily(userAgent) {
 
 function isLocalRequest(request) {
   const requestUrl = request?.url ? new URL(request.url) : null;
-  const candidates = [
-    requestUrl?.hostname ?? null,
-    normalizeHostName(request.headers.get('x-forwarded-host')),
-    normalizeHostName(request.headers.get('host')),
-    normalizeHostName(request.headers.get('referer')),
-  ].filter(Boolean);
+  const forwardedHost = normalizeHostName(request.headers.get('x-forwarded-host'));
+  const host = normalizeHostName(request.headers.get('host'));
+  const refererHost = normalizeHostName(request.headers.get('referer'));
+  const externallyVisibleCandidates = [forwardedHost, host, refererHost].filter(Boolean);
 
-  return candidates.some((hostName) => isLocalDevelopmentHost(hostName));
+  if (externallyVisibleCandidates.length > 0) {
+    return externallyVisibleCandidates.every((hostName) => isLocalDevelopmentHost(hostName));
+  }
+
+  return isLocalDevelopmentHost(requestUrl?.hostname ?? null);
 }
 
 export function normalizeTrackedPagePath(pagePath) {
