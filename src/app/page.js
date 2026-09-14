@@ -52,7 +52,7 @@ export default function Home() {
           <h1 className={`${styles.title} appPageTitle`}>
             Grow a tree of knowledge.
             <br />
-            Talk it.
+            Talk to it.
           </h1>
         </div>
         <div className={styles.statusRow}>
