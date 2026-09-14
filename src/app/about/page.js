@@ -1,6 +1,10 @@
 import Link from "next/link";
 import styles from "./page.module.css";
 
+export const metadata = {
+  title: "MDS — About",
+};
+
 export default function About() {
   return (
     <main className="appPageShell">
@@ -66,12 +70,12 @@ export default function About() {
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Collective memory</p>
           <h2 className={styles.cardTitle}>Hold the domain together</h2>
-          <p className={styles.cardText}>The agent has your understanding of the domain, the tree you built together, so it can recognise the connections in that material and speak from them. Context is not the chat history. It is a shared memory.</p>
+          <p className={styles.cardText}>The agent has your understanding of the domain — the tree you built together — so it can recognize the connections in that material and speak from them. Context is not the chat history. It is a shared memory.</p>
         </article>
 
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Extensibility</p>
-          <h2 className={styles.cardTitle}>Add tools and the agent grows</h2>
+          <h2 className={styles.cardTitle}>Add tools, and the agent grows</h2>
           <p className={styles.cardText}>Give the agent a tool for a particular context, and it can use that capability there. Then it does not only understand the domain. It can act in it. Each new tool extends what it can do, and the agent grows over the capabilities you have given it.</p>
         </article>
 
@@ -91,7 +95,6 @@ export default function About() {
       <section className={styles.ctaCard}>
         <div>
           <p className={styles.cardEyebrow}>Working surfaces</p>
-          <h2 className={styles.cardTitle}>Open the workspace</h2>
         </div>
         <div className={styles.ctaLinks}>
           <Link href="/notes" className={styles.ctaLink}>Open Notes</Link>
