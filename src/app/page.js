@@ -52,13 +52,13 @@ export default function Home() {
           <h1 className={`${styles.title} appPageTitle`}>
             Grow a tree of knowledge.
             <br />
-            Start talking to it.
+            Talk it.
           </h1>
         </div>
         <div className={styles.statusRow}>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>How it works</p>
-            <p className={styles.statusValue}>Notes grow the tree. Search inspects it. Agent talks from it — and shows how the answer is grounded.</p>
+            <p className={styles.statusValue}>Grow the tree with Notes. Inspect it with Search. Talk to it with Agent — it speaks from the tree, and shows how the answer is grounded.</p>
           </div>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>System status</p>
