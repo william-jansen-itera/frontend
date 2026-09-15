@@ -83,8 +83,8 @@ export default function Architecture() {
 
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Access control</p>
-          <h2 className={styles.cardTitle}>Static Web Apps roles with an optional group-mapping layer</h2>
-          <p className={styles.cardText}>The current application gates pages and APIs with Azure Static Web Apps roles such as mdsusers and mdsadmins. In the default model those roles are assigned per user through Static Web Apps role management. If the deployment adds a rolesSource function, Entra group membership can instead be mapped to those same roles at sign-in, which moves day-to-day user management into Entra while keeping the existing route protection and in-app role checks unchanged.</p>
+          <h2 className={styles.cardTitle}>Static Web Apps roles resolved from Entra groups at sign-in</h2>
+          <p className={styles.cardText}>Pages and APIs are gated with the application roles mdsusers and mdsadmins. At sign-in, Static Web Apps calls rolesSource, the backend checks the user&apos;s Entra group membership through Microsoft Graph, and the configured group object IDs are mapped onto those same app-facing roles. That keeps route protection and in-app authorization simple while making Entra group membership the operational source of access.</p>
         </article>
       </section>
 

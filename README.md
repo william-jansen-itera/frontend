@@ -15,6 +15,8 @@ The Entra groups are not used directly by the application. They are mapped to th
 
 These custom role names do not need to appear as pre-created objects in the Azure portal Role Management view. That portal surface reflects Static Web Apps-managed user-role assignments, while this app can also receive `mdsusers` and `mdsadmins` dynamically from `rolesSource` at sign-in. As a result, the Role Management list can be empty even though those role names are still valid and actively used by route protection and application checks.
 
+With `Assignment required` set to `No` on the Entra enterprise application, day-to-day user access is now effectively managed through the two Entra groups rather than through individual Static Web Apps role assignments. Users who can sign in receive `mdsusers` and `mdsadmins` dynamically from `rolesSource` based on their current group membership, so the Static Web Apps Role Management list can be cleared unless you intentionally want a second, manual assignment path.
+
 Before enabling this in Azure, grant that app registration the minimum Microsoft Graph application permissions needed for membership checks, and set the two group ID application settings in the Static Web App configuration.
 
 Required Foundry settings:

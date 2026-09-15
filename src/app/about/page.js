@@ -89,8 +89,8 @@ export default function About() {
 
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Access</p>
-          <h2 className={styles.cardTitle}>Manage access through existing identity controls</h2>
-          <p className={styles.cardText}>MDS can fit into existing Microsoft identity management instead of creating a separate user system inside the workspace. Access can be governed through Azure and aligned with the way teams are already managed.</p>
+          <h2 className={styles.cardTitle}>Manage access through the groups teams already use</h2>
+          <p className={styles.cardText}>MDS does not need a separate user list inside the workspace. People sign in with Microsoft identity, and access can follow the Entra groups a team already uses to decide who should work in the domain.</p>
         </article>
       </section>
 
