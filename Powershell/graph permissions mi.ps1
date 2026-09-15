@@ -1,3 +1,5 @@
+# this script is about assigning Microsoft Graph API permissions to the static web app's managed identity
+# however it is not used becuause the static web app's managed identity is not compatible with the next js runtime
 $resourceGroup = "mds-rg"
 $staticWebAppName = "mds-staticwebapp"
 
