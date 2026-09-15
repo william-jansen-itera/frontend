@@ -29,9 +29,9 @@ const navLinks = [
   { href: "/search", label: "Search", requiresRole: "mdsusers" },
   { href: "/chat", label: "Agent", requiresRole: "mdsusers" },
   { href: "/me", label: "Me", requiresAuthenticated: true },
-  { href: "/admin", label: "Admin", requiresRole: "mdsadmin" },
+  { href: "/admin", label: "Admin", requiresRole: "mdsadmins" },
   { href: "/about", label: "About" },
-  { href: "/architecture", label: "Architecture", requiresRole: "mdsadmin" },
+  { href: "/architecture", label: "Architecture", requiresRole: "mdsadmins" },
 ];
 
 function getPageSurfaceClassName(pathname) {

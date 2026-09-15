@@ -33,7 +33,7 @@ export function createLocalDevelopmentPrincipal(overrides = {}) {
   const expiresAtEpoch = String(overrides.expiresAtEpoch ?? '1787741761').trim();
   const userRoles = Array.isArray(overrides.userRoles) && overrides.userRoles.length > 0
     ? overrides.userRoles
-    : ['mdsadmin', 'mdsusers', 'anonymous', 'authenticated'];
+    : ['mdsadmins', 'mdsusers', 'anonymous', 'authenticated'];
   const claims = [
     createClaim('name', displayName),
     createClaim('preferred_username', userDetails),

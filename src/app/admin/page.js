@@ -93,7 +93,7 @@ function formatIndexingErrorMessage(result, fallbackMessage) {
 
 export default function AdminPage() {
   const { user } = useAuth();
-  const isAdmin = hasClientPrincipalRole(user, "mdsadmin");
+  const isAdmin = hasClientPrincipalRole(user, "mdsadmins");
   const [deletedTrees, setDeletedTrees] = useState([]);
   const [deletedNodes, setDeletedNodes] = useState([]);
   const [deletedAttachments, setDeletedAttachments] = useState([]);
@@ -491,7 +491,7 @@ export default function AdminPage() {
         <section className={`appTopLevelPanel ${styles.heroCard}`}>
           <p className="appEyebrow">Admin</p>
           <h1 className="appPageTitle">Admin operations</h1>
-          <p className="appPageDescription">Sign in with a user that has the mdsadmin role to manage search indexing and deletions.</p>
+          <p className="appPageDescription">Sign in with a user that has the mdsadmins role to manage search indexing and deletions.</p>
         </section>
       </main>
     );
@@ -503,7 +503,7 @@ export default function AdminPage() {
         <section className={`appTopLevelPanel ${styles.heroCard}`}>
           <p className="appEyebrow">Admin</p>
           <h1 className="appPageTitle">Admin operations</h1>
-          <p className="appPageDescription">This page requires the mdsadmin role.</p>
+          <p className="appPageDescription">This page requires the mdsadmins role.</p>
         </section>
       </main>
     );

@@ -1632,8 +1632,8 @@ export async function DELETE(request) {
 
     if (!shouldPurge) {
       await assertWritableTreeForRequest(request, treeIdParam);
-    } else if (!hasClientPrincipalRole(principal, 'mdsadmin')) {
-      return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
+    } else if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
+      return NextResponse.json({ error: 'Admin role mdsadmins is required' }, { status: 403 });
     }
 
     const treeInstanceId = parseInt(treeIdParam, 10);
@@ -1655,7 +1655,7 @@ export async function DELETE(request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'The request failed';
     const status = getPurgeProxyErrorStatus(err, {
-      forbiddenMessages: ['Admin role mdsadmin is required'],
+      forbiddenMessages: ['Admin role mdsadmins is required'],
     });
     return NextResponse.json({ error: message }, { status });
   }

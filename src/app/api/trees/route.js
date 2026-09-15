@@ -32,7 +32,7 @@ function getPayloadVisibility(payload) {
 }
 
 function isAdminPrincipal(principal) {
-  return hasClientPrincipalRole(principal, 'mdsadmin');
+  return hasClientPrincipalRole(principal, 'mdsadmins');
 }
 
 export async function GET(request) {
@@ -43,7 +43,7 @@ export async function GET(request) {
     const deletedOnly = String(searchParams.get('deletedOnly') ?? '').trim().toLowerCase() === 'true';
 
     if ((includeDeleted || deletedOnly) && !isAdminPrincipal(principal)) {
-      return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
+      return NextResponse.json({ error: 'Admin role mdsadmins is required' }, { status: 403 });
     }
 
     return NextResponse.json(await getTreeList({
@@ -279,7 +279,7 @@ export async function DELETE(request) {
 
     if (shouldPurge) {
       if (!isAdminPrincipal(principal)) {
-        return NextResponse.json({ error: 'Admin role mdsadmin is required' }, { status: 403 });
+        return NextResponse.json({ error: 'Admin role mdsadmins is required' }, { status: 403 });
       }
 
       await invokePurgeFunction({ action: 'purge-tree', treeId: parsedTreeId });

@@ -10,8 +10,8 @@ const SQL_INDEXER_NAME = process.env.AZURE_SEARCH_SQL_INDEXER_NAME || 'tree-sql-
 const BLOB_INDEXER_NAME = process.env.AZURE_SEARCH_BLOB_INDEXER_NAME || 'tree-blob-indexer';
 
 function assertAdminPrincipal(principal) {
-  if (!hasClientPrincipalRole(principal, 'mdsadmin')) {
-    throw new Error('Admin role mdsadmin is required');
+  if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
+    throw new Error('Admin role mdsadmins is required');
   }
 }
 
@@ -123,7 +123,7 @@ export async function POST(request) {
     return NextResponse.json(result, { status });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'The request failed';
-    const status = message === 'Admin role mdsadmin is required' ? 403 : 500;
+    const status = message === 'Admin role mdsadmins is required' ? 403 : 500;
 
     return NextResponse.json({ error: message }, { status });
   }

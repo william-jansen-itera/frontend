@@ -18,11 +18,11 @@
     },
     {
       "route": "/architecture*",
-      "allowedRoles": ["mdsadmin"]
+      "allowedRoles": ["mdsadmins"]
     },
     {
       "route": "/admin*",
-      "allowedRoles": ["mdsadmin"]
+      "allowedRoles": ["mdsadmins"]
     },
     {
       "route": "/api/attachments/*",
@@ -46,7 +46,7 @@
     },
     {
       "route": "/api/admin/*",
-      "allowedRoles": ["mdsadmin"]
+      "allowedRoles": ["mdsadmins"]
     }
   ],
   "responseOverrides": {
@@ -56,6 +56,7 @@
     }
   },
   "auth": {
+    "rolesSource": "/api/get-roles",
     "identityProviders": {
       "azureActiveDirectory": {
         "registration": {

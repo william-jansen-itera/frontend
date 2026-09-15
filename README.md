@@ -4,6 +4,19 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 The app reads its server-side settings from environment variables, typically through `.env.local` in local development and Azure Static Web App application settings in deployment.
 
+Managed identity role-mapping settings:
+
+- `MDSUSERS_ENTRA_GROUP_ID` for the Entra group that maps to `mdsusers`
+- `MDSADMINS_ENTRA_GROUP_ID` for the Entra group that maps to `mdsadmins`
+
+When `auth.rolesSource` is enabled in `staticwebapp.config.json`, the deployed Static Web App calls `POST /api/get-roles` after sign-in. That route resolves Entra group membership through Microsoft Graph and returns the matching app roles. The production deployment is intended to use the Static Web App managed identity for Graph access through `DefaultAzureCredential`.
+
+The Entra groups are not used directly by the application. They are mapped to the app-facing Static Web Apps roles `mdsusers` and `mdsadmins`, and the rest of the application continues to authorize only against those role names. This keeps route protection, navigation trimming, and server-side checks stable even if the underlying Entra group structure changes.
+
+These custom role names do not need to appear as pre-created objects in the Azure portal Role Management view. That portal surface reflects Static Web Apps-managed user-role assignments, while this app can also receive `mdsusers` and `mdsadmins` dynamically from `rolesSource` at sign-in. As a result, the Role Management list can be empty even though those role names are still valid and actively used by route protection and application checks.
+
+Before enabling this in Azure, grant the Static Web App managed identity the minimum Microsoft Graph application permissions needed for membership checks, and set the two group ID application settings in the Static Web App configuration.
+
 Required Foundry settings:
 
 - `AZURE_AI_PROJECT_ENDPOINT`
@@ -157,9 +170,9 @@ The Admin page now separates `Search indexing` from `Deletions`.
 
 Security is currently handled in three layers.
 
-1. Azure Static Web Apps route protection in `staticwebapp.config.json` is the first gate. Protected pages and API routes are assigned roles such as `mdsusers` and `mdsadmin`, and unauthenticated requests are redirected to `/.auth/login/aad`.
+1. Azure Static Web Apps route protection in `staticwebapp.config.json` is the first gate. Protected pages and API routes are assigned roles such as `mdsusers` and `mdsadmins`, and unauthenticated requests are redirected to `/.auth/login/aad`.
 2. Navigation trimming in `src/app/layout.js` is a user-experience layer. The nav defines role requirements per link and hides links when the signed-in principal does not have the required role. This uses the shared role helper in `src/shared/clientPrincipal.js` together with auth state from `src/app/useAuth.js`.
-3. Server-side in-code checks remain the enforcement boundary inside the app. API routes parse the client principal with `src/server/utils/auth.js`, then apply route-specific authorization such as `assertTreeAccess(...)` for tree-scoped access and `assertAdminPrincipal(...)` or `hasClientPrincipalRole(..., 'mdsadmin')` for admin-only operations.
+3. Server-side in-code checks remain the enforcement boundary inside the app. API routes parse the client principal with `src/server/utils/auth.js`, then apply route-specific authorization such as `assertTreeAccess(...)` for tree-scoped access and `assertAdminPrincipal(...)` or `hasClientPrincipalRole(..., 'mdsadmins')` for admin-only operations.
 
 The important distinction is that navigation trimming is not security by itself. Even if a link is hidden, the request still blocked by Static Web Apps route rules and/or server-side authorization checks.
 

@@ -6,8 +6,8 @@ import { restoreNodeAttachmentBlobIfDeleted } from '@/server/utils/blobStorage';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 
 function assertAdminPrincipal(principal) {
-  if (!hasClientPrincipalRole(principal, 'mdsadmin')) {
-    throw new Error('Admin role mdsadmin is required');
+  if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
+    throw new Error('Admin role mdsadmins is required');
   }
 }
 
@@ -417,7 +417,7 @@ export async function GET(request) {
       };
     }));
   } catch (err) {
-    const status = err instanceof Error && err.message === 'Admin role mdsadmin is required' ? 403 : 500;
+    const status = err instanceof Error && err.message === 'Admin role mdsadmins is required' ? 403 : 500;
     return NextResponse.json({ error: err.message }, { status });
   }
 }
@@ -453,7 +453,7 @@ export async function DELETE(request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'The request failed';
     const status = getPurgeProxyErrorStatus(err, {
-      forbiddenMessages: ['Admin role mdsadmin is required'],
+      forbiddenMessages: ['Admin role mdsadmins is required'],
       badRequestIncludes: ['treeId and attachmentId are required', 'not found for purge', 'node is still deleted'],
     });
     return NextResponse.json({ error: message }, { status });
@@ -507,7 +507,7 @@ export async function PATCH(request) {
     return NextResponse.json({ error: 'Invalid request, a supported action is required' }, { status: 400 });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'The request failed';
-    const status = message === 'Admin role mdsadmin is required'
+    const status = message === 'Admin role mdsadmins is required'
       ? 403
       : message.includes('not found for undelete') || message.includes('tree is still deleted') || message.includes('node is still deleted')
         ? 400
