@@ -155,18 +155,6 @@
   white-space: nowrap;
 }
 
-.ownerLine {
-  margin: 0.1rem 0 0;
-  color: #475569;
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.ownerValue {
-  color: #0f172a;
-  font-weight: 600;
-}
-
 .rowActions {
   display: flex;
   gap: 0.75rem;
@@ -252,6 +240,18 @@
 .transferOptionTitle {
   color: #0f172a;
   font-weight: 600;
+}
+
+.transferCurrentBadge {
+  display: inline-flex;
+  margin-left: 0.55rem;
+  border-radius: 999px;
+  padding: 0.14rem 0.48rem;
+  color: #1d4ed8;
+  background: rgba(191, 219, 254, 0.42);
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
 }
 
 .transferOptionMeta {

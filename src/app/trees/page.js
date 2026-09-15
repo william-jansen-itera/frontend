@@ -80,6 +80,55 @@ function getOwnerLabel(tree) {
     || "No owner assigned";
 }
 
+function getDefaultTransferQuery(tree) {
+  return getOwnerLabel(tree);
+}
+
+function getTransferTargetLabel(target) {
+  if (!target) {
+    return "";
+  }
+
+  return String(target.displayName ?? "").trim()
+    || String(target.userDetails ?? "").trim()
+    || String(target.objectId ?? "").trim();
+}
+
+function getCurrentOwnerTransferTarget(tree) {
+  const objectId = String(tree?.ownerObjectId ?? "").trim();
+
+  if (!objectId) {
+    return null;
+  }
+
+  return {
+    objectId,
+    displayName: String(tree?.ownerDisplayName ?? "").trim() || String(tree?.ownerUserDetails ?? "").trim() || "Current owner",
+    userDetails: String(tree?.ownerUserDetails ?? "").trim() || objectId,
+    isCurrentOwner: true,
+  };
+}
+
+function buildTransferOptions(tree, matches) {
+  const uniqueOptions = new Map();
+  const currentOwnerTarget = getCurrentOwnerTransferTarget(tree);
+
+  for (const match of Array.isArray(matches) ? matches : []) {
+    const objectId = String(match?.objectId ?? "").trim();
+
+    if (!objectId) {
+      continue;
+    }
+
+    uniqueOptions.set(objectId, {
+      ...match,
+      isCurrentOwner: objectId === currentOwnerTarget?.objectId,
+    });
+  }
+
+  return Array.from(uniqueOptions.values());
+}
+
 function formatSyncError(syncStatus) {
   if (!syncStatus || syncStatus.status !== "failed") {
     return "";
@@ -176,9 +225,23 @@ function TreesPageContent() {
     setEditingDescriptions((currentState) => filterTreeStateByList(currentState, nextTrees));
     setRowPendingStates((currentState) => filterTreeStateByList(currentState, nextTrees));
     setRowFeedback((currentState) => filterTreeStateByList(currentState, nextTrees));
-    setTransferQueries((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setTransferQueries((currentState) => Object.fromEntries(
+      nextTrees.map((tree) => {
+        const treeId = String(tree.id);
+        const currentQuery = String(currentState[treeId] ?? "");
+
+        return [treeId, currentQuery.trim() ? currentQuery : getDefaultTransferQuery(tree)];
+      }),
+    ));
     setTransferMatches((currentState) => filterTreeStateByList(currentState, nextTrees));
-    setSelectedTransferTargets((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setSelectedTransferTargets((currentState) => Object.fromEntries(
+      nextTrees.map((tree) => {
+        const treeId = String(tree.id);
+        const filteredSelection = currentState[treeId] ?? null;
+
+        return [treeId, filteredSelection ?? getCurrentOwnerTransferTarget(tree)];
+      }),
+    ));
   };
 
   const setDescriptionEditing = (treeId, isEditing) => {
@@ -226,7 +289,11 @@ function TreesPageContent() {
       }));
       setSelectedTransferTargets((currentState) => ({
         ...currentState,
-        [treeId]: null,
+        [treeId]: getCurrentOwnerTransferTarget(tree),
+      }));
+      setTransferQueries((currentState) => ({
+        ...currentState,
+        [treeId]: getDefaultTransferQuery(tree),
       }));
     }
   };
@@ -276,7 +343,9 @@ function TreesPageContent() {
       }));
       setSelectedTransferTargets((currentState) => ({
         ...currentState,
-        [treeId]: matches.find((entry) => String(entry?.objectId ?? "") === String(currentState[treeId]?.objectId ?? "")) ?? null,
+        [treeId]: matches.find((entry) => String(entry?.objectId ?? "") === String(currentState[treeId]?.objectId ?? ""))
+          ?? currentState[treeId]
+          ?? getCurrentOwnerTransferTarget(tree),
       }));
       updateRowFeedback(treeId, {
         transferError: matches.length === 0 ? "No matching people were found." : "",
@@ -345,7 +414,7 @@ function TreesPageContent() {
       applyTreeList(nextTrees);
       setTransferQueries((currentState) => ({
         ...currentState,
-        [treeId]: "",
+        [treeId]: getDefaultTransferQuery(data?.updatedTree ?? tree),
       }));
       setTransferMatches((currentState) => ({
         ...currentState,
@@ -921,8 +990,10 @@ function TreesPageContent() {
                 const transferQuery = String(transferQueries[treeId] ?? "");
                 const matches = Array.isArray(transferMatches[treeId]) ? transferMatches[treeId] : [];
                 const selectedTransferTarget = selectedTransferTargets[treeId] ?? null;
+                const transferOptions = buildTransferOptions(tree, matches);
                 const isCurrentOwner = String(user?.objectId ?? "").trim() !== "" && String(user?.objectId ?? "").trim() === String(tree.ownerObjectId ?? "").trim();
                 const canTransferOwner = isCurrentOwner || hasClientPrincipalRole(user, "mdsadmins");
+                const isTransferChanged = String(selectedTransferTarget?.objectId ?? "").trim() !== "" && String(selectedTransferTarget?.objectId ?? "").trim() !== String(tree.ownerObjectId ?? "").trim();
 
                 return (
                   <article key={treeId} className={styles.treeRow}>
@@ -930,9 +1001,6 @@ function TreesPageContent() {
                       <div className={styles.treeMetaRow}>
                         <div className={styles.treeMeta}>
                           <span className={styles.treeId}>Tree {treeId}</span>
-                          <p className={styles.ownerLine}>
-                            Owner: <span className={styles.ownerValue}>{getOwnerLabel(tree)}</span>
-                          </p>
                           <div className={styles.treeMetaEditor}>
                             <select
                               value={nextVisibility}
@@ -1119,7 +1187,7 @@ function TreesPageContent() {
                         <div className={styles.transferRow}>
                           <div className={styles.transferBlock}>
                             <div className={styles.transferHeader}>
-                              <span className={`${styles.transferLabel} appFieldLabel`}>Transfer owner</span>
+                              <span className={`${styles.transferLabel} appFieldLabel`}>Owner</span>
                               <span className={styles.transferHint}>
                                 {tree.isPrivate
                                   ? "The current owner can lose access immediately after transfer."
@@ -1146,7 +1214,7 @@ function TreesPageContent() {
                               <button
                                 type="button"
                                 onClick={() => handleTransferOwner(tree)}
-                                disabled={isPending || !selectedTransferTarget?.objectId}
+                                disabled={isPending || !isTransferChanged}
                                 className="appCompactActionButton appCompactActionButtonNeutral"
                               >
                                 {rowPendingState.transfer ? "Transferring..." : "Transfer owner"}
@@ -1154,7 +1222,7 @@ function TreesPageContent() {
                             </div>
                             {matches.length > 0 ? (
                               <div className={styles.transferResults}>
-                                {matches.map((match) => {
+                                {transferOptions.map((match) => {
                                   const optionId = `${treeId}-${match.objectId}`;
                                   const isSelected = String(selectedTransferTarget?.objectId ?? "") === String(match.objectId ?? "");
 
@@ -1169,11 +1237,18 @@ function TreesPageContent() {
                                             ...currentState,
                                             [treeId]: match,
                                           }));
+                                          setTransferQueries((currentState) => ({
+                                            ...currentState,
+                                            [treeId]: getTransferTargetLabel(match),
+                                          }));
                                         }}
                                         disabled={isPending}
                                       />
                                       <span className={styles.transferOptionText}>
-                                        <span className={styles.transferOptionTitle}>{match.displayName}</span>
+                                        <span className={styles.transferOptionTitle}>
+                                          {match.displayName}
+                                          {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>Current owner</span> : null}
+                                        </span>
                                         <span className={styles.transferOptionMeta}>{match.userDetails}</span>
                                       </span>
                                     </label>
