@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
+import { useAuth } from "../useAuth";
 import styles from "./page.module.css";
 import {
   PUBLIC_PRIVATE_VISIBILITY_VALUES,
@@ -72,6 +74,12 @@ function normalizeComparableValue(value) {
   return String(value ?? "").trim();
 }
 
+function getOwnerLabel(tree) {
+  return String(tree?.ownerDisplayName ?? "").trim()
+    || String(tree?.ownerUserDetails ?? "").trim()
+    || "No owner assigned";
+}
+
 function formatSyncError(syncStatus) {
   if (!syncStatus || syncStatus.status !== "failed") {
     return "";
@@ -100,6 +108,7 @@ function formatPublishOutcomeMessage(syncStatus, treeId) {
 }
 
 function TreesPageContent() {
+  const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -122,7 +131,11 @@ function TreesPageContent() {
   const [isCreating, setIsCreating] = useState(false);
   const [rowPendingStates, setRowPendingStates] = useState({});
   const [rowFeedback, setRowFeedback] = useState({});
+  const [transferQueries, setTransferQueries] = useState({});
+  const [transferMatches, setTransferMatches] = useState({});
+  const [selectedTransferTargets, setSelectedTransferTargets] = useState({});
   const [errorMessage, setErrorMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   const handleVisibilityFilterChange = (event) => {
     const nextVisibility = setPersistedVisibility(event.target.value);
@@ -163,6 +176,9 @@ function TreesPageContent() {
     setEditingDescriptions((currentState) => filterTreeStateByList(currentState, nextTrees));
     setRowPendingStates((currentState) => filterTreeStateByList(currentState, nextTrees));
     setRowFeedback((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setTransferQueries((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setTransferMatches((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setSelectedTransferTargets((currentState) => filterTreeStateByList(currentState, nextTrees));
   };
 
   const setDescriptionEditing = (treeId, isEditing) => {
@@ -197,6 +213,171 @@ function TreesPageContent() {
     }));
   };
 
+  const handleTransferQueryChange = (treeId, nextValue) => {
+    setTransferQueries((currentState) => ({
+      ...currentState,
+      [treeId]: nextValue,
+    }));
+
+    if (!String(nextValue ?? "").trim()) {
+      setTransferMatches((currentState) => ({
+        ...currentState,
+        [treeId]: [],
+      }));
+      setSelectedTransferTargets((currentState) => ({
+        ...currentState,
+        [treeId]: null,
+      }));
+    }
+  };
+
+  const handleSearchTransferTargets = async (tree) => {
+    const treeId = String(tree.id);
+    const query = String(transferQueries[treeId] ?? "").trim();
+
+    if (query.length < 2) {
+      updateRowFeedback(treeId, {
+        transferError: "Enter at least 2 characters to search for a new owner.",
+        transferMessage: "",
+      });
+      return;
+    }
+
+    setTreePendingState(treeId, "transferSearch", true);
+    setErrorMessage("");
+    setStatusMessage("");
+    updateRowFeedback(treeId, {
+      transferError: "",
+      transferMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "search-transfer-targets",
+          query,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Transfer targets could not be searched");
+      }
+
+      const matches = Array.isArray(data?.matches) ? data.matches : [];
+
+      setTransferMatches((currentState) => ({
+        ...currentState,
+        [treeId]: matches,
+      }));
+      setSelectedTransferTargets((currentState) => ({
+        ...currentState,
+        [treeId]: matches.find((entry) => String(entry?.objectId ?? "") === String(currentState[treeId]?.objectId ?? "")) ?? null,
+      }));
+      updateRowFeedback(treeId, {
+        transferError: matches.length === 0 ? "No matching people were found." : "",
+        transferMessage: matches.length > 0 ? `Found ${matches.length} possible owner${matches.length === 1 ? "" : "s"}.` : "",
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        transferError: getErrorMessage(error, "Transfer targets could not be searched"),
+        transferMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, "transferSearch", false);
+    }
+  };
+
+  const handleTransferOwner = async (tree) => {
+    const treeId = String(tree.id);
+    const selectedTarget = selectedTransferTargets[treeId];
+
+    if (!selectedTarget?.objectId) {
+      updateRowFeedback(treeId, {
+        transferError: "Select a person before transferring ownership.",
+        transferMessage: "",
+      });
+      return;
+    }
+
+    const confirmMessage = tree.isPrivate
+      ? `Transfer this private tree to ${selectedTarget.displayName}? You may lose access immediately unless you are an admin.`
+      : `Transfer the stored owner of this public tree to ${selectedTarget.displayName}? Public edit access will stay unchanged.`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setTreePendingState(treeId, "transfer", true);
+    setErrorMessage("");
+    setStatusMessage("");
+    updateRowFeedback(treeId, {
+      transferError: "",
+      transferMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "transfer-owner",
+          treeId,
+          targetOwnerObjectId: selectedTarget.objectId,
+          visibility: visibilityFilter,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Ownership could not be transferred");
+      }
+
+      const nextTrees = Array.isArray(data?.trees) ? data.trees : [];
+      const treeStillVisible = nextTrees.some((entry) => String(entry.id) === treeId);
+
+      applyTreeList(nextTrees);
+      setTransferQueries((currentState) => ({
+        ...currentState,
+        [treeId]: "",
+      }));
+      setTransferMatches((currentState) => ({
+        ...currentState,
+        [treeId]: [],
+      }));
+      setSelectedTransferTargets((currentState) => ({
+        ...currentState,
+        [treeId]: null,
+      }));
+
+      if (treeStillVisible) {
+        updateRowFeedback(treeId, {
+          transferError: "",
+          transferMessage: `Owner updated to ${selectedTarget.displayName}.`,
+        });
+      } else {
+        setStatusMessage(
+          tree.isPrivate
+            ? `Ownership transferred to ${selectedTarget.displayName}. This private tree is no longer visible to you.`
+            : `Ownership transferred to ${selectedTarget.displayName}.`,
+        );
+      }
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        transferError: getErrorMessage(error, "Ownership could not be transferred"),
+        transferMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, "transfer", false);
+    }
+  };
+
   useEffect(() => {
     if (!isVisibilityReady) {
       return;
@@ -223,6 +404,7 @@ function TreesPageContent() {
 
         applyTreeList(Array.isArray(data) ? data : []);
         setErrorMessage("");
+        setStatusMessage("");
       } catch (error) {
         if (isMounted) {
           setErrorMessage(getErrorMessage(error, "Trees could not be loaded"));
@@ -252,6 +434,7 @@ function TreesPageContent() {
 
     setIsCreating(true);
     setErrorMessage("");
+    setStatusMessage("");
 
     try {
       const response = await fetch("/api/trees", {
@@ -296,6 +479,7 @@ function TreesPageContent() {
 
     setTreePendingState(treeId, "meta", true);
     setErrorMessage("");
+    setStatusMessage("");
 
     try {
       const response = await fetch("/api/trees", {
@@ -709,6 +893,7 @@ function TreesPageContent() {
           <p className={styles.syncHint}>
             Trees without a saved description are not published to the agent.
           </p>
+          {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}
           {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
 
           {isLoading ? (
@@ -733,6 +918,11 @@ function TreesPageContent() {
                 const isVisibilityChanged = nextVisibility !== currentVisibility;
                 const isDescriptionChanged = normalizeComparableValue(draftDescription) !== normalizeComparableValue(storedDescription);
                 const hasSavedDescription = Boolean(normalizeComparableValue(storedDescription));
+                const transferQuery = String(transferQueries[treeId] ?? "");
+                const matches = Array.isArray(transferMatches[treeId]) ? transferMatches[treeId] : [];
+                const selectedTransferTarget = selectedTransferTargets[treeId] ?? null;
+                const isCurrentOwner = String(user?.objectId ?? "").trim() !== "" && String(user?.objectId ?? "").trim() === String(tree.ownerObjectId ?? "").trim();
+                const canTransferOwner = isCurrentOwner || hasClientPrincipalRole(user, "mdsadmins");
 
                 return (
                   <article key={treeId} className={styles.treeRow}>
@@ -740,6 +930,9 @@ function TreesPageContent() {
                       <div className={styles.treeMetaRow}>
                         <div className={styles.treeMeta}>
                           <span className={styles.treeId}>Tree {treeId}</span>
+                          <p className={styles.ownerLine}>
+                            Owner: <span className={styles.ownerValue}>{getOwnerLabel(tree)}</span>
+                          </p>
                           <div className={styles.treeMetaEditor}>
                             <select
                               value={nextVisibility}
@@ -921,6 +1114,82 @@ function TreesPageContent() {
                           </button>
                         </div>
                       </div>
+
+                      {canTransferOwner ? (
+                        <div className={styles.transferRow}>
+                          <div className={styles.transferBlock}>
+                            <div className={styles.transferHeader}>
+                              <span className={`${styles.transferLabel} appFieldLabel`}>Transfer owner</span>
+                              <span className={styles.transferHint}>
+                                {tree.isPrivate
+                                  ? "The current owner can lose access immediately after transfer."
+                                  : "Public trees stay editable by others after transfer until made private."}
+                              </span>
+                            </div>
+                            <div className={styles.transferControls}>
+                              <input
+                                type="text"
+                                value={transferQuery}
+                                onChange={(event) => handleTransferQueryChange(treeId, event.target.value)}
+                                disabled={isPending}
+                                placeholder="Search by name or email"
+                                className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSearchTransferTargets(tree)}
+                                disabled={isPending || transferQuery.trim().length < 2}
+                                className="appCompactActionButton appCompactActionButtonNeutral"
+                              >
+                                {rowPendingState.transferSearch ? "Searching..." : "Search"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleTransferOwner(tree)}
+                                disabled={isPending || !selectedTransferTarget?.objectId}
+                                className="appCompactActionButton appCompactActionButtonNeutral"
+                              >
+                                {rowPendingState.transfer ? "Transferring..." : "Transfer owner"}
+                              </button>
+                            </div>
+                            {matches.length > 0 ? (
+                              <div className={styles.transferResults}>
+                                {matches.map((match) => {
+                                  const optionId = `${treeId}-${match.objectId}`;
+                                  const isSelected = String(selectedTransferTarget?.objectId ?? "") === String(match.objectId ?? "");
+
+                                  return (
+                                    <label key={optionId} className={`${styles.transferOption} ${isSelected ? styles.transferOptionSelected : ""}`}>
+                                      <input
+                                        type="radio"
+                                        name={`transfer-target-${treeId}`}
+                                        checked={isSelected}
+                                        onChange={() => {
+                                          setSelectedTransferTargets((currentState) => ({
+                                            ...currentState,
+                                            [treeId]: match,
+                                          }));
+                                        }}
+                                        disabled={isPending}
+                                      />
+                                      <span className={styles.transferOptionText}>
+                                        <span className={styles.transferOptionTitle}>{match.displayName}</span>
+                                        <span className={styles.transferOptionMeta}>{match.userDetails}</span>
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                            {feedback.transferMessage ? (
+                              <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.transferMessage}</p>
+                            ) : null}
+                            {feedback.transferError ? (
+                              <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.transferError}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </article>
                 );

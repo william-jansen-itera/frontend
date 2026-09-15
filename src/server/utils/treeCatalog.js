@@ -3,7 +3,7 @@ import {
   deleteNodeAttachmentBlobIfExists,
   restoreNodeAttachmentBlobIfDeleted,
 } from '@/server/utils/blobStorage';
-import { normalizeClientPrincipal } from '@/shared/clientPrincipal';
+import { hasClientPrincipalRole, normalizeClientPrincipal } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 
 const MAX_NON_LEAF_TITLES = 64;
@@ -112,6 +112,20 @@ function isOwnedByPrincipal(tree, principal) {
   const principalOwnerObjectId = getPrincipalOwnerObjectId(principal);
 
   return Boolean(ownerObjectId && principalOwnerObjectId && ownerObjectId === principalOwnerObjectId);
+}
+
+function isAdminPrincipal(principal) {
+  return hasClientPrincipalRole(principal, 'mdsadmins');
+}
+
+function canTransferTreeOwnership(tree, principal) {
+  return isOwnedByPrincipal(tree, principal) || isAdminPrincipal(principal);
+}
+
+function createStatusError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
 }
 
 function canViewTree(tree, principal, visibility) {
@@ -566,6 +580,88 @@ export async function updateTreeVisibility({ treeId, isPrivate, principal = null
       ownerObjectId: ownerMetadata.ownerObjectId,
       ownerUserDetails: ownerMetadata.ownerUserDetails,
       ownerDisplayName: ownerMetadata.ownerDisplayName,
+    };
+  });
+}
+
+export async function updateTreeOwner({
+  treeId,
+  ownerObjectId,
+  principal = null,
+  enforceAccess = false,
+  ownerUserDetails = null,
+  ownerDisplayName = null,
+}) {
+  const normalizedOwnerObjectId = String(ownerObjectId ?? '').trim();
+  const normalizedOwnerUserDetails = String(ownerUserDetails ?? '').trim() || null;
+  const normalizedOwnerDisplayName = String(ownerDisplayName ?? '').trim() || null;
+
+  if (!normalizedOwnerObjectId) {
+    throw createStatusError('A target owner object ID is required', 400);
+  }
+
+  if (!normalizedOwnerUserDetails) {
+    throw createStatusError('A target owner user identifier is required', 400);
+  }
+
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+
+    if (enforceAccess && !canTransferTreeOwnership(scopedTree, principal)) {
+      throw createStatusError('You are not allowed to transfer ownership of this tree', 403);
+    }
+
+    if (
+      normalizedOwnerObjectId === String(scopedTree.ownerObjectId ?? '').trim()
+      && normalizedOwnerUserDetails === (String(scopedTree.ownerUserDetails ?? '').trim() || null)
+      && normalizedOwnerDisplayName === (String(scopedTree.ownerDisplayName ?? '').trim() || null)
+    ) {
+      return {
+        id: String(treeId),
+        name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
+        description: normalizeTreeDescription(scopedTree.description),
+        isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
+        isPrivate: Boolean(scopedTree.isPrivate),
+        ownerObjectId: scopedTree.ownerObjectId ?? null,
+        ownerUserDetails: scopedTree.ownerUserDetails ?? null,
+        ownerDisplayName: scopedTree.ownerDisplayName ?? null,
+      };
+    }
+
+    const updateResult = await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('owner_object_id', sql.NVarChar(100), normalizedOwnerObjectId)
+      .input('owner_user_details', sql.NVarChar(320), normalizedOwnerUserDetails)
+      .input('owner_display_name', sql.NVarChar(200), normalizedOwnerDisplayName)
+      .query(`
+        UPDATE ti
+        SET owner_object_id = @owner_object_id,
+            owner_user_details = @owner_user_details,
+            owner_display_name = @owner_display_name,
+            updated_at = SYSUTCDATETIME()
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+
+    if (!updateResult.rowsAffected[0]) {
+      throw new Error('Tree was not found for the active application instance');
+    }
+
+    return {
+      id: String(treeId),
+      name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
+      description: normalizeTreeDescription(scopedTree.description),
+      isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
+      isPrivate: Boolean(scopedTree.isPrivate),
+      ownerObjectId: normalizedOwnerObjectId,
+      ownerUserDetails: normalizedOwnerUserDetails,
+      ownerDisplayName: normalizedOwnerDisplayName,
     };
   });
 }

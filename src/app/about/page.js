@@ -90,7 +90,7 @@ export default function About() {
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Access</p>
           <h2 className={styles.cardTitle}>Manage access through the groups teams already use</h2>
-          <p className={styles.cardText}>MDS does not need a separate user list inside the workspace. People sign in with Microsoft identity, and access can follow the Entra groups a team already uses to decide who should work in the domain.</p>
+          <p className={styles.cardText}>MDS does not need a separate user list inside the workspace. People sign in with Microsoft identity, and access can follow the Entra groups a team already uses.</p>
         </article>
       </section>
 

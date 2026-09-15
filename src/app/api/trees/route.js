@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 import { generateTreeDescriptionDraft, publishStoredTreeDescriptions } from '@/server/utils/chatService';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
+import { getEntraUserByObjectId, searchEntraUsers } from '@/server/utils/swaRoleMapping';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import {
   createTree,
   deleteTree,
   getTreeList,
   updateTreeDescription,
+  updateTreeOwner,
   updateTreeTitle,
   updateTreeVisibility,
 } from '@/server/utils/treeCatalog';
@@ -35,6 +37,20 @@ function isAdminPrincipal(principal) {
   return hasClientPrincipalRole(principal, 'mdsadmins');
 }
 
+function isAuthenticatedPrincipal(principal) {
+  return Boolean(String(principal?.objectId ?? principal?.userId ?? '').trim());
+}
+
+function getErrorStatus(error, defaultStatus = 500) {
+  const status = Number(error?.status);
+
+  if (Number.isInteger(status) && status >= 400 && status < 600) {
+    return status;
+  }
+
+  return defaultStatus;
+}
+
 export async function GET(request) {
   try {
     const principal = parseClientPrincipal(request);
@@ -54,7 +70,7 @@ export async function GET(request) {
       deletedOnly,
     }));
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 
@@ -63,6 +79,22 @@ export async function POST(request) {
     const payload = await request.json();
     const principal = parseClientPrincipal(request);
     const action = String(payload?.action ?? '').trim();
+
+    if (action === 'search-transfer-targets') {
+      const query = String(payload?.query ?? '').trim();
+
+      if (!isAuthenticatedPrincipal(principal)) {
+        return NextResponse.json({ error: 'Authentication is required' }, { status: 401 });
+      }
+
+      if (query.length < 2) {
+        return NextResponse.json({ error: 'Invalid request, query must contain at least 2 characters' }, { status: 400 });
+      }
+
+      return NextResponse.json({
+        matches: await searchEntraUsers(query, { requiredRole: 'mdsusers' }),
+      });
+    }
 
     if (action === 'generate-description') {
       const parsedTreeId = parseTreeId(payload?.treeId);
@@ -227,7 +259,7 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     const principal = parseClientPrincipal(request);
-    const { treeId, name, isPrivate, visibility } = await request.json();
+    const { action, treeId, name, isPrivate, visibility, targetOwnerObjectId } = await request.json();
     const parsedTreeId = parseTreeId(treeId);
     const normalizedVisibility = String(visibility ?? '').trim() || 'public';
     const hasName = typeof name === 'string';
@@ -236,6 +268,28 @@ export async function PATCH(request) {
 
     if (!parsedTreeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
+    }
+
+    if (String(action ?? '').trim() === 'transfer-owner') {
+      const targetOwner = await getEntraUserByObjectId(targetOwnerObjectId, { requiredRole: 'mdsusers' });
+
+      if (!targetOwner?.objectId) {
+        return NextResponse.json({ error: 'Target user was not found in Entra ID or is not allowed to use this application' }, { status: 404 });
+      }
+
+      const updatedTree = await updateTreeOwner({
+        treeId: parsedTreeId,
+        ownerObjectId: targetOwner.objectId,
+        ownerUserDetails: targetOwner.userDetails,
+        ownerDisplayName: targetOwner.displayName,
+        principal,
+        enforceAccess: true,
+      });
+
+      return NextResponse.json({
+        updatedTree,
+        trees: await getTreeList({ principal, visibility: normalizedVisibility, enforceAccess: true }),
+      });
     }
 
     if (!hasName && !hasVisibility) {
@@ -261,7 +315,7 @@ export async function PATCH(request) {
       trees: await getTreeList({ principal, visibility: normalizedVisibility, enforceAccess: true }),
     });
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 
