@@ -25,8 +25,9 @@ export function parseClientPrincipal(request) {
   }
 
   const requestUrl = request?.url ? new URL(request.url) : null;
+  const isProductionRuntime = process.env.NODE_ENV === 'production';
 
-  if (isLocalDevelopmentHost(requestUrl?.hostname)) {
+  if (!isProductionRuntime && isLocalDevelopmentHost(requestUrl?.hostname)) {
     return createLocalDevelopmentPrincipal();
   }
 

@@ -1,4 +1,4 @@
-import { DefaultAzureCredential } from '@azure/identity';
+import { DefaultAzureCredential, ManagedIdentityCredential } from '@azure/identity';
 
 const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
@@ -7,7 +7,18 @@ const OBJECT_ID_CLAIM_TYPES = [
   'oid',
 ];
 
-const graphCredential = new DefaultAzureCredential();
+function isAzureManagedIdentityEnvironment() {
+  return Boolean(
+    process.env.IDENTITY_ENDPOINT
+    || process.env.MSI_ENDPOINT
+    || process.env.IMDS_ENDPOINT
+    || process.env.WEBSITE_HOSTNAME,
+  );
+}
+
+const graphCredential = isAzureManagedIdentityEnvironment()
+  ? new ManagedIdentityCredential()
+  : new DefaultAzureCredential();
 
 function getConfiguredRoleMappings() {
   return [
