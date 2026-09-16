@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import { useAuth } from "../useAuth";
 import styles from "./page.module.css";
 import {
@@ -129,6 +128,39 @@ function buildTransferOptions(tree, matches) {
   return Array.from(uniqueOptions.values());
 }
 
+function buildEditorOptions(tree, matches) {
+  const ownerObjectId = String(tree?.ownerObjectId ?? "").trim();
+  const assignedEditorIds = new Set(
+    (Array.isArray(tree?.editors) ? tree.editors : [])
+      .map((editor) => String(editor?.objectId ?? "").trim())
+      .filter(Boolean),
+  );
+  const uniqueOptions = new Map();
+
+  for (const match of Array.isArray(matches) ? matches : []) {
+    const objectId = String(match?.objectId ?? "").trim();
+
+    if (!objectId) {
+      continue;
+    }
+
+    uniqueOptions.set(objectId, {
+      ...match,
+      isCurrentOwner: objectId === ownerObjectId,
+      isAssignedEditor: assignedEditorIds.has(objectId),
+    });
+  }
+
+  return Array.from(uniqueOptions.values());
+}
+
+function getEditorLabel(editor) {
+  return String(editor?.displayName ?? "").trim()
+    || String(editor?.userDetails ?? "").trim()
+    || String(editor?.objectId ?? "").trim()
+    || "Unknown editor";
+}
+
 function formatSyncError(syncStatus) {
   if (!syncStatus || syncStatus.status !== "failed") {
     return "";
@@ -183,6 +215,9 @@ function TreesPageContent() {
   const [transferQueries, setTransferQueries] = useState({});
   const [transferMatches, setTransferMatches] = useState({});
   const [selectedTransferTargets, setSelectedTransferTargets] = useState({});
+  const [editorQueries, setEditorQueries] = useState({});
+  const [editorMatches, setEditorMatches] = useState({});
+  const [selectedEditorTargets, setSelectedEditorTargets] = useState({});
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
@@ -242,6 +277,9 @@ function TreesPageContent() {
         return [treeId, filteredSelection ?? getCurrentOwnerTransferTarget(tree)];
       }),
     ));
+    setEditorQueries((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setEditorMatches((currentState) => filterTreeStateByList(currentState, nextTrees));
+    setSelectedEditorTargets((currentState) => filterTreeStateByList(currentState, nextTrees));
   };
 
   const setDescriptionEditing = (treeId, isEditing) => {
@@ -276,7 +314,9 @@ function TreesPageContent() {
     }));
   };
 
-  const handleTransferQueryChange = (treeId, nextValue) => {
+  const handleTransferQueryChange = (tree, nextValue) => {
+    const treeId = String(tree.id);
+
     setTransferQueries((currentState) => ({
       ...currentState,
       [treeId]: nextValue,
@@ -294,6 +334,24 @@ function TreesPageContent() {
       setTransferQueries((currentState) => ({
         ...currentState,
         [treeId]: getDefaultTransferQuery(tree),
+      }));
+    }
+  };
+
+  const handleEditorQueryChange = (treeId, nextValue) => {
+    setEditorQueries((currentState) => ({
+      ...currentState,
+      [treeId]: nextValue,
+    }));
+
+    if (!String(nextValue ?? "").trim()) {
+      setEditorMatches((currentState) => ({
+        ...currentState,
+        [treeId]: [],
+      }));
+      setSelectedEditorTargets((currentState) => ({
+        ...currentState,
+        [treeId]: null,
       }));
     }
   };
@@ -374,8 +432,8 @@ function TreesPageContent() {
     }
 
     const confirmMessage = tree.isPrivate
-      ? `Transfer this private tree to ${selectedTarget.displayName}? You may lose access immediately unless you are an admin.`
-      : `Transfer the stored owner of this public tree to ${selectedTarget.displayName}? Public edit access will stay unchanged.`;
+      ? `Transfer this private tree to ${selectedTarget.displayName}? You may lose access immediately if you are not also assigned as an editor.`
+      : `Transfer this tree to ${selectedTarget.displayName}? Public visibility will stay unchanged, but only the owner and assigned editors can edit.`;
 
     if (!window.confirm(confirmMessage)) {
       return;
@@ -444,6 +502,208 @@ function TreesPageContent() {
       });
     } finally {
       setTreePendingState(treeId, "transfer", false);
+    }
+  };
+
+  const handleSearchEditorTargets = async (tree) => {
+    const treeId = String(tree.id);
+    const query = String(editorQueries[treeId] ?? "").trim();
+
+    if (query.length < 2) {
+      updateRowFeedback(treeId, {
+        editorError: "Enter at least 2 characters to search for an editor.",
+        editorMessage: "",
+      });
+      return;
+    }
+
+    setTreePendingState(treeId, "editorSearch", true);
+    setErrorMessage("");
+    setStatusMessage("");
+    updateRowFeedback(treeId, {
+      editorError: "",
+      editorMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "search-editor-targets",
+          query,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Editor targets could not be searched");
+      }
+
+      const matches = Array.isArray(data?.matches) ? data.matches : [];
+      const nextOptions = buildEditorOptions(tree, matches);
+
+      setEditorMatches((currentState) => ({
+        ...currentState,
+        [treeId]: nextOptions,
+      }));
+      setSelectedEditorTargets((currentState) => ({
+        ...currentState,
+        [treeId]: nextOptions.find((entry) => !entry.isCurrentOwner && !entry.isAssignedEditor)
+          ?? nextOptions.find((entry) => String(entry?.objectId ?? "") === String(currentState[treeId]?.objectId ?? ""))
+          ?? null,
+      }));
+      updateRowFeedback(treeId, {
+        editorError: nextOptions.length === 0 ? "No matching people were found." : "",
+        editorMessage: nextOptions.length > 0 ? `Found ${nextOptions.length} possible editor${nextOptions.length === 1 ? "" : "s"}.` : "",
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        editorError: getErrorMessage(error, "Editor targets could not be searched"),
+        editorMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, "editorSearch", false);
+    }
+  };
+
+  const handleAddEditor = async (tree) => {
+    const treeId = String(tree.id);
+    const selectedTarget = selectedEditorTargets[treeId];
+
+    if (!selectedTarget?.objectId) {
+      updateRowFeedback(treeId, {
+        editorError: "Select a person before adding an editor.",
+        editorMessage: "",
+      });
+      return;
+    }
+
+    if (selectedTarget.isCurrentOwner) {
+      updateRowFeedback(treeId, {
+        editorError: "The owner already has access to this tree.",
+        editorMessage: "",
+      });
+      return;
+    }
+
+    if (selectedTarget.isAssignedEditor) {
+      updateRowFeedback(treeId, {
+        editorError: `${selectedTarget.displayName} is already an editor for this tree.`,
+        editorMessage: "",
+      });
+      return;
+    }
+
+    setTreePendingState(treeId, "editorAdd", true);
+    setErrorMessage("");
+    setStatusMessage("");
+    updateRowFeedback(treeId, {
+      editorError: "",
+      editorMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "add-editor",
+          treeId,
+          targetOwnerObjectId: selectedTarget.objectId,
+          visibility: visibilityFilter,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Editor could not be added");
+      }
+
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+      setEditorQueries((currentState) => ({
+        ...currentState,
+        [treeId]: "",
+      }));
+      setEditorMatches((currentState) => ({
+        ...currentState,
+        [treeId]: [],
+      }));
+      setSelectedEditorTargets((currentState) => ({
+        ...currentState,
+        [treeId]: null,
+      }));
+      updateRowFeedback(treeId, {
+        editorError: "",
+        editorMessage: `${selectedTarget.displayName} can now edit this tree.`,
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        editorError: getErrorMessage(error, "Editor could not be added"),
+        editorMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, "editorAdd", false);
+    }
+  };
+
+  const handleRemoveEditor = async (tree, editor) => {
+    const treeId = String(tree.id);
+    const editorObjectId = String(editor?.objectId ?? "").trim();
+
+    if (!editorObjectId) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Remove ${getEditorLabel(editor)} as an editor for "${tree.name}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setTreePendingState(treeId, `editorRemove:${editorObjectId}`, true);
+    setErrorMessage("");
+    setStatusMessage("");
+    updateRowFeedback(treeId, {
+      editorError: "",
+      editorMessage: "",
+    });
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "remove-editor",
+          treeId,
+          targetOwnerObjectId: editorObjectId,
+          visibility: visibilityFilter,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Editor could not be removed");
+      }
+
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+      updateRowFeedback(treeId, {
+        editorError: "",
+        editorMessage: `${getEditorLabel(editor)} can no longer edit this tree.`,
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        editorError: getErrorMessage(error, "Editor could not be removed"),
+        editorMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, `editorRemove:${editorObjectId}`, false);
     }
   };
 
@@ -918,7 +1178,7 @@ function TreesPageContent() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className="appHeroCopy">
           <p className={`${styles.description} appPageDescription`}>
-            Create new trees, rename existing titles, and remove trees that should no longer be part of this application instance.
+            Create new trees, manage visibility, and maintain editor access. Only the owner can transfer ownership or change the editor list, and only the owner or assigned editors can change tree content.
           </p>
         </div>
 
@@ -991,8 +1251,12 @@ function TreesPageContent() {
                 const matches = Array.isArray(transferMatches[treeId]) ? transferMatches[treeId] : [];
                 const selectedTransferTarget = selectedTransferTargets[treeId] ?? null;
                 const transferOptions = buildTransferOptions(tree, matches);
-                const isCurrentOwner = String(user?.objectId ?? "").trim() !== "" && String(user?.objectId ?? "").trim() === String(tree.ownerObjectId ?? "").trim();
-                const canTransferOwner = isCurrentOwner || hasClientPrincipalRole(user, "mdsadmins");
+                const editorQuery = String(editorQueries[treeId] ?? "");
+                const editorOptions = Array.isArray(editorMatches[treeId]) ? editorMatches[treeId] : [];
+                const selectedEditorTarget = selectedEditorTargets[treeId] ?? null;
+                const currentEditors = Array.isArray(tree.editors) ? tree.editors : [];
+                const canWriteTree = Boolean(tree.currentUserCanWrite);
+                const canManageTreeAccess = Boolean(tree.currentUserCanManageAccess);
                 const isTransferChanged = String(selectedTransferTarget?.objectId ?? "").trim() !== "" && String(selectedTransferTarget?.objectId ?? "").trim() !== String(tree.ownerObjectId ?? "").trim();
 
                 return (
@@ -1011,7 +1275,7 @@ function TreesPageContent() {
                                   [treeId]: nextValue,
                                 }));
                               }}
-                              disabled={isPending}
+                              disabled={isPending || !canWriteTree}
                               className={`appSelectControl ${styles.treeVisibilitySelect}`}
                             >
                               <option value="public">Public</option>
@@ -1027,7 +1291,7 @@ function TreesPageContent() {
                                   [treeId]: nextValue,
                                 }));
                               }}
-                              disabled={isPending}
+                              disabled={isPending || !canWriteTree}
                               className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
                             />
                           </div>
@@ -1037,7 +1301,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => handleSaveTreeMeta(tree)}
-                            disabled={isPending || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
+                            disabled={isPending || !canWriteTree || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             {rowPendingState.meta ? "Saving..." : "Save"}
@@ -1045,7 +1309,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => handlePopulateTree(tree)}
-                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
+                            disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             {rowPendingState.populate ? "Populating..." : "Populate"}
@@ -1064,7 +1328,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => handleDeleteTree(tree)}
-                            disabled={isPending}
+                            disabled={isPending || !canWriteTree}
                             className="appCompactActionButton appCompactActionButtonDanger"
                           >
                             {rowPendingState.delete ? "Working..." : "Delete"}
@@ -1104,7 +1368,7 @@ function TreesPageContent() {
                                     [treeId]: nextValue,
                                   }));
                                 }}
-                                disabled={Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
+                                disabled={!canWriteTree || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
                                 placeholder="Generate a draft or write a tree description manually"
                                 className={`appTextAreaControl ${styles.descriptionInput}`}
                                 rows={4}
@@ -1143,7 +1407,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => setDescriptionEditing(treeId, true)}
-                            disabled={isPending || isDescriptionEditing}
+                            disabled={isPending || !canWriteTree || isDescriptionEditing}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             Edit
@@ -1151,7 +1415,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => handleGenerateDescription(tree)}
-                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
+                            disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             {rowPendingState.generate ? "Generating..." : "Generate"}
@@ -1159,7 +1423,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => handleSaveDescription(tree)}
-                            disabled={Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
+                            disabled={!canWriteTree || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
                             className="appCompactActionButton appCompactActionButtonPrimary"
                           >
                             {rowPendingState.save ? "Saving..." : rowPendingState.sync ? "Syncing..." : "Save"}
@@ -1167,7 +1431,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => handleUnpublishDescription(tree)}
-                            disabled={Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || (!hasSavedDescription && !isDescriptionPublished)}
+                            disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || (!hasSavedDescription && !isDescriptionPublished)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             {rowPendingState.save ? "Working..." : "Clear"}
@@ -1183,88 +1447,199 @@ function TreesPageContent() {
                         </div>
                       </div>
 
-                      {canTransferOwner ? (
-                        <div className={styles.transferRow}>
-                          <div className={styles.transferBlock}>
-                            <div className={styles.transferHeader}>
-                              <span className={`${styles.transferLabel} appFieldLabel`}>Owner</span>
-                              <span className={styles.transferHint}>
-                                {tree.isPrivate
-                                  ? "The current owner can lose access immediately after transfer."
-                                  : "Public trees stay editable by others after transfer until made private."}
-                              </span>
-                            </div>
-                            <div className={styles.transferControls}>
-                              <input
-                                type="text"
-                                value={transferQuery}
-                                onChange={(event) => handleTransferQueryChange(treeId, event.target.value)}
-                                disabled={isPending}
-                                placeholder="Search by name or email"
-                                className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleSearchTransferTargets(tree)}
-                                disabled={isPending || transferQuery.trim().length < 2}
-                                className="appCompactActionButton appCompactActionButtonNeutral"
-                              >
-                                {rowPendingState.transferSearch ? "Searching..." : "Search"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleTransferOwner(tree)}
-                                disabled={isPending || !isTransferChanged}
-                                className="appCompactActionButton appCompactActionButtonNeutral"
-                              >
-                                {rowPendingState.transfer ? "Transferring..." : "Transfer owner"}
-                              </button>
-                            </div>
-                            {matches.length > 0 ? (
-                              <div className={styles.transferResults}>
-                                {transferOptions.map((match) => {
-                                  const optionId = `${treeId}-${match.objectId}`;
-                                  const isSelected = String(selectedTransferTarget?.objectId ?? "") === String(match.objectId ?? "");
-
-                                  return (
-                                    <label key={optionId} className={`${styles.transferOption} ${isSelected ? styles.transferOptionSelected : ""}`}>
-                                      <input
-                                        type="radio"
-                                        name={`transfer-target-${treeId}`}
-                                        checked={isSelected}
-                                        onChange={() => {
-                                          setSelectedTransferTargets((currentState) => ({
-                                            ...currentState,
-                                            [treeId]: match,
-                                          }));
-                                          setTransferQueries((currentState) => ({
-                                            ...currentState,
-                                            [treeId]: getTransferTargetLabel(match),
-                                          }));
-                                        }}
-                                        disabled={isPending}
-                                      />
-                                      <span className={styles.transferOptionText}>
-                                        <span className={styles.transferOptionTitle}>
-                                          {match.displayName}
-                                          {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>Current owner</span> : null}
-                                        </span>
-                                        <span className={styles.transferOptionMeta}>{match.userDetails}</span>
-                                      </span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            ) : null}
-                            {feedback.transferMessage ? (
-                              <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.transferMessage}</p>
-                            ) : null}
-                            {feedback.transferError ? (
-                              <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.transferError}</p>
-                            ) : null}
+                      <div className={styles.transferRow}>
+                        <div className={styles.transferBlock}>
+                          <div className={styles.transferHeader}>
+                            <span className={`${styles.transferLabel} appFieldLabel`}>Owner</span>
+                            <span className={styles.transferHint}>
+                              {canManageTreeAccess
+                                ? "Only the owner can transfer ownership or manage editors."
+                                : "Only the owner can transfer ownership."}
+                            </span>
                           </div>
+                          <div className={styles.transferControls}>
+                            <input
+                              type="text"
+                              value={transferQuery}
+                              onChange={(event) => handleTransferQueryChange(tree, event.target.value)}
+                              disabled={isPending || !canManageTreeAccess}
+                              placeholder="Search by name or email"
+                              className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSearchTransferTargets(tree)}
+                              disabled={isPending || !canManageTreeAccess || transferQuery.trim().length < 2}
+                              className="appCompactActionButton appCompactActionButtonNeutral"
+                            >
+                              {rowPendingState.transferSearch ? "Searching..." : "Search"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleTransferOwner(tree)}
+                              disabled={isPending || !canManageTreeAccess || !isTransferChanged}
+                              className="appCompactActionButton appCompactActionButtonNeutral"
+                            >
+                              {rowPendingState.transfer ? "Transferring..." : "Transfer owner"}
+                            </button>
+                          </div>
+                          {!canManageTreeAccess ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>You can view owner details, but only the owner can change ownership.</p>
+                          ) : null}
+                          {matches.length > 0 ? (
+                            <div className={styles.transferResults}>
+                              {transferOptions.map((match) => {
+                                const optionId = `${treeId}-${match.objectId}`;
+                                const isSelected = String(selectedTransferTarget?.objectId ?? "") === String(match.objectId ?? "");
+
+                                return (
+                                  <label key={optionId} className={`${styles.transferOption} ${isSelected ? styles.transferOptionSelected : ""}`}>
+                                    <input
+                                      type="radio"
+                                      name={`transfer-target-${treeId}`}
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        setSelectedTransferTargets((currentState) => ({
+                                          ...currentState,
+                                          [treeId]: match,
+                                        }));
+                                        setTransferQueries((currentState) => ({
+                                          ...currentState,
+                                          [treeId]: getTransferTargetLabel(match),
+                                        }));
+                                      }}
+                                      disabled={isPending || !canManageTreeAccess}
+                                    />
+                                    <span className={styles.transferOptionText}>
+                                      <span className={styles.transferOptionTitle}>
+                                        {match.displayName}
+                                        {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>Current owner</span> : null}
+                                      </span>
+                                      <span className={styles.transferOptionMeta}>{match.userDetails}</span>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                          {feedback.transferMessage ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.transferMessage}</p>
+                          ) : null}
+                          {feedback.transferError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.transferError}</p>
+                          ) : null}
                         </div>
-                      ) : null}
+                      </div>
+
+                      <div className={styles.transferRow}>
+                        <div className={styles.transferBlock}>
+                          <div className={styles.transferHeader}>
+                            <span className={`${styles.transferLabel} appFieldLabel`}>Editors</span>
+                            <span className={styles.transferHint}>
+                              {tree.isPrivate
+                                ? "Editors can open and change this private tree."
+                                : "Editors can change this tree even when it is publicly visible."}
+                            </span>
+                          </div>
+                          <div className={styles.editorList}>
+                            {currentEditors.length > 0 ? currentEditors.map((editor) => {
+                              const editorObjectId = String(editor?.objectId ?? "");
+                              const removePendingKey = `editorRemove:${editorObjectId}`;
+
+                              return (
+                                <div key={`${treeId}-editor-${editorObjectId}`} className={styles.editorCard}>
+                                  <div className={styles.editorCardText}>
+                                    <span className={styles.editorCardTitle}>{getEditorLabel(editor)}</span>
+                                    <span className={styles.editorCardMeta}>{editor.userDetails || editor.objectId}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveEditor(tree, editor)}
+                                    disabled={isPending || !canManageTreeAccess || Boolean(rowPendingState[removePendingKey])}
+                                    className="appCompactActionButton appCompactActionButtonNeutral"
+                                  >
+                                    {rowPendingState[removePendingKey] ? "Removing..." : "Remove"}
+                                  </button>
+                                </div>
+                              );
+                            }) : (
+                              <p className={styles.emptyEditors}>No editors have been assigned yet.</p>
+                            )}
+                          </div>
+                          <div className={styles.transferControls}>
+                            <input
+                              type="text"
+                              value={editorQuery}
+                              onChange={(event) => handleEditorQueryChange(treeId, event.target.value)}
+                              disabled={isPending || !canManageTreeAccess}
+                              placeholder="Search by name or email"
+                              className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSearchEditorTargets(tree)}
+                              disabled={isPending || !canManageTreeAccess || editorQuery.trim().length < 2}
+                              className="appCompactActionButton appCompactActionButtonNeutral"
+                            >
+                              {rowPendingState.editorSearch ? "Searching..." : "Search"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddEditor(tree)}
+                              disabled={isPending || !canManageTreeAccess || !selectedEditorTarget?.objectId || selectedEditorTarget?.isCurrentOwner || selectedEditorTarget?.isAssignedEditor}
+                              className="appCompactActionButton appCompactActionButtonNeutral"
+                            >
+                              {rowPendingState.editorAdd ? "Adding..." : "Add editor"}
+                            </button>
+                          </div>
+                          {!canManageTreeAccess ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>You can see who can edit this tree, but only the owner can change the editor list.</p>
+                          ) : null}
+                          {editorOptions.length > 0 ? (
+                            <div className={styles.transferResults}>
+                              {editorOptions.map((match) => {
+                                const optionId = `${treeId}-editor-option-${match.objectId}`;
+                                const isSelected = String(selectedEditorTarget?.objectId ?? "") === String(match.objectId ?? "");
+
+                                return (
+                                  <label key={optionId} className={`${styles.transferOption} ${isSelected ? styles.transferOptionSelected : ""}`}>
+                                    <input
+                                      type="radio"
+                                      name={`editor-target-${treeId}`}
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        setSelectedEditorTargets((currentState) => ({
+                                          ...currentState,
+                                          [treeId]: match,
+                                        }));
+                                        setEditorQueries((currentState) => ({
+                                          ...currentState,
+                                          [treeId]: getTransferTargetLabel(match),
+                                        }));
+                                      }}
+                                      disabled={isPending || !canManageTreeAccess}
+                                    />
+                                    <span className={styles.transferOptionText}>
+                                      <span className={styles.transferOptionTitle}>
+                                        {match.displayName}
+                                        {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>Owner</span> : null}
+                                        {match.isAssignedEditor ? <span className={styles.transferCurrentBadge}>Editor</span> : null}
+                                      </span>
+                                      <span className={styles.transferOptionMeta}>{match.userDetails}</span>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                          {feedback.editorMessage ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.editorMessage}</p>
+                          ) : null}
+                          {feedback.editorError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.editorError}</p>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                   </article>
                 );

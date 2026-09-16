@@ -118,6 +118,16 @@ function normalizeEditorComparableValue(value) {
   return String(value ?? "");
 }
 
+function updateExpandedStateValue(currentExpandedState, id, isExpanded) {
+  if (isExpanded) {
+    return { ...currentExpandedState, [id]: true };
+  }
+
+  const nextExpandedState = { ...currentExpandedState };
+  delete nextExpandedState[id];
+  return nextExpandedState;
+}
+
 export default function NotesPageWrapper() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
@@ -162,13 +172,16 @@ function NotesPage() {
   const attachmentInputRef = useRef(null);
   const isApplyingExpandedStateRef = useRef(false);
   const [error, setError] = useState(null);
+  const selectedTree = availableTrees.find((tree) => String(tree.id) === String(treeIdParam ?? "")) ?? null;
+  const canWriteSelectedTree = Boolean(selectedTree?.currentUserCanWrite);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
-  const canAddRoot = Boolean(treeIdParam);
-  const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode);
-  const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode);
-  const canDelete = Boolean(selectedNode);
-  const canEditLeafDetails = Boolean(selectedNode?.isLeafNode);
-  const canGenerateNotes = Boolean(selectedNode?.isLeafNode);
+  const canAddRoot = Boolean(treeIdParam && canWriteSelectedTree);
+  const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree);
+  const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree);
+  const canDelete = Boolean(selectedNode && canWriteSelectedTree);
+  const isLeafSelection = Boolean(selectedNode?.isLeafNode);
+  const canEditLeafDetails = Boolean(isLeafSelection && canWriteSelectedTree);
+  const canGenerateNotes = Boolean(isLeafSelection && canWriteSelectedTree);
   const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null;
   const isLoadingTrees = !isVisibilityReady || loadedVisibility !== visibilityParam;
   const resolvedTreeIdValue = treeIdParam ?? "";
@@ -386,7 +399,7 @@ function NotesPage() {
             ? getAncestorExpandableNodeIds(flatData, nextSelectedNodeId).filter((nodeId) => !persistedExpandedState[String(nodeId)])
             : [];
 
-          if (missingExpandedAncestorIds.length > 0) {
+          if (canWriteSelectedTree && missingExpandedAncestorIds.length > 0) {
             fetch("/api/notes", {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
@@ -420,7 +433,7 @@ function NotesPage() {
         setIsEditingNotes(false);
         setError(err.message);
       });
-  }, [availableTrees, isLoadingTrees, treeIdParam, nodeIdParam, visibilityParam]);
+  }, [availableTrees, canWriteSelectedTree, isLoadingTrees, treeIdParam, nodeIdParam, visibilityParam]);
 
   // Fetch the details of the selected node when selectedNodeId changes
   useEffect(() => {
@@ -497,6 +510,10 @@ function NotesPage() {
   }, [treeData, expandedState, selectedNodeId]);
 
   const handleMove = async ({ dragIds, parentId, index }) => {
+    if (!canWriteSelectedTree) {
+      return;
+    }
+
     console.log("Move event:", { dragIds, parentId, index });
 
     try {
@@ -537,16 +554,11 @@ function NotesPage() {
       return;
     }
 
-    setExpandedState((currentExpandedState) => {
-      // if expanded, add to expanded state
-      if (isExpanded) {
-        return { ...currentExpandedState, [id]: true };
-      }
-      // if collapsed, remove from expanded state
-      const nextExpandedState = { ...currentExpandedState };
-      delete nextExpandedState[id];
-      return nextExpandedState;
-    });
+    setExpandedState((currentExpandedState) => updateExpandedStateValue(currentExpandedState, id, isExpanded));
+
+    if (!canWriteSelectedTree) {
+      return;
+    }
 
     try {
       // Persist the open state change to the server
@@ -561,16 +573,7 @@ function NotesPage() {
       }
     } catch (err) {
       console.error("Failed to persist tree open state:", err);
-      setExpandedState((currentExpandedState) => {
-        // revert the state back to previous expanded state
-        if (previousIsExpanded) {
-          return { ...currentExpandedState, [id]: true };
-        }
-        // revert the state back to previous collapsed state
-        const nextExpandedState = { ...currentExpandedState };
-        delete nextExpandedState[id];
-        return nextExpandedState;
-      });
+      setExpandedState((currentExpandedState) => updateExpandedStateValue(currentExpandedState, id, previousIsExpanded));
     }
   };
 
@@ -1018,6 +1021,9 @@ function NotesPage() {
                 Delete
               </button>
             </div>
+            {selectedTree && !canWriteSelectedTree ? (
+              <div className={styles.readOnlyMessage}>Read-only: only the owner or assigned editors can change this tree.</div>
+            ) : null}
           </div>
           <div ref={treeContentRef} className={styles.treeContent}>
             <Tree
@@ -1066,8 +1072,12 @@ function NotesPage() {
                 }
               }}
               disableMultiSelection={true}
-              disableDrag={(node) => !node.draggable}
+              disableDrag={(node) => !canWriteSelectedTree || !node.draggable}
               disableDrop={({ parentNode, dragNodes }) => {
+                if (!canWriteSelectedTree) {
+                  return true;
+                }
+
                 // Prevent dropping onto a leaf node
                 if (parentNode && !parentNode.isRoot && parentNode.data.isLeafNode) {
                   return true;
@@ -1130,7 +1140,7 @@ function NotesPage() {
               <span className={styles.panelHeading}>Node Details</span>
               <button
                 onClick={handleSaveNodeDetails}
-                disabled={!selectedNode || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
+                disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonPrimary"
               >
@@ -1153,11 +1163,11 @@ function NotesPage() {
                     type="text"
                     value={nodeEditorState.name}
                     onChange={(event) => handleNodeEditorChange("name", event.target.value)}
-                    disabled={isNodeDetailsBusy}
+                    disabled={isNodeDetailsBusy || !canWriteSelectedTree}
                     className={`appTextControl ${styles.textInput}`}
                   />
                 </label>
-                {canEditLeafDetails ? (
+                {isLeafSelection ? (
                   <>
                     <div className={styles.formField}>
                       <span className="appFieldLabel">Notes</span>
@@ -1171,7 +1181,7 @@ function NotesPage() {
                       <NotesEditor
                         value={nodeEditorState.notes}
                         onChange={(nextValue) => handleNodeEditorChange("notes", nextValue)}
-                        disabled={isNodeDetailsBusy}
+                        disabled={isNodeDetailsBusy || !canWriteSelectedTree}
                         onGenerate={handleGenerateNotes}
                         isGenerating={isGeneratingNotes}
                         canGenerate={canGenerateNotes && isEditingNotes}
@@ -1194,13 +1204,13 @@ function NotesPage() {
                             multiple
                             accept={ATTACHMENT_ACCEPT}
                             onChange={handleAttachmentSelectionChange}
-                            disabled={isNodeDetailsBusy}
+                            disabled={isNodeDetailsBusy || !canWriteSelectedTree}
                             className={styles.fileInputHidden}
                           />
                         </label>
                         <button
                           onClick={handleUploadAttachments}
-                          disabled={isNodeDetailsBusy || pendingFiles.length === 0}
+                          disabled={isNodeDetailsBusy || !canWriteSelectedTree || pendingFiles.length === 0}
                           type="button"
                           className="appCompactActionButton appCompactActionButtonPrimary"
                         >
@@ -1256,7 +1266,7 @@ function NotesPage() {
                                 ) : null}
                                 <button
                                   onClick={() => handleDeleteAttachment(attachment.id)}
-                                  disabled={isNodeDetailsBusy}
+                                  disabled={isNodeDetailsBusy || !canWriteSelectedTree}
                                   type="button"
                                   className="appCompactActionButton appCompactActionButtonDanger"
                                 >
@@ -1274,6 +1284,9 @@ function NotesPage() {
                     Notes and attachments are only available for leaf nodes.
                   </div>
                 )}
+                {selectedTree && !canWriteSelectedTree ? (
+                  <div className={styles.readOnlyMessage}>You can browse this tree, but editing is disabled because you are not an owner or editor.</div>
+                ) : null}
                 {nodeDetailsError && (
                   <div className={styles.fieldError}>
                     {nodeDetailsError}

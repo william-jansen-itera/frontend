@@ -104,6 +104,31 @@ function mapTreeRecord(row) {
     ownerObjectId: String(row.ownerObjectId ?? '').trim() || null,
     ownerUserDetails: String(row.ownerUserDetails ?? '').trim() || null,
     ownerDisplayName: String(row.ownerDisplayName ?? '').trim() || null,
+    editors: Array.isArray(row.editors)
+      ? row.editors
+      : (() => {
+        const rawEditors = row.editorsJson;
+
+        if (typeof rawEditors !== 'string' || !rawEditors.trim()) {
+          return [];
+        }
+
+        try {
+          const parsedEditors = JSON.parse(rawEditors);
+
+          return Array.isArray(parsedEditors)
+            ? parsedEditors
+              .map((editor) => ({
+                objectId: String(editor?.objectId ?? '').trim() || null,
+                userDetails: String(editor?.userDetails ?? '').trim() || null,
+                displayName: String(editor?.displayName ?? '').trim() || null,
+              }))
+              .filter((editor) => editor.objectId)
+            : [];
+        } catch {
+          return [];
+        }
+      })(),
   };
 }
 
@@ -114,12 +139,24 @@ function isOwnedByPrincipal(tree, principal) {
   return Boolean(ownerObjectId && principalOwnerObjectId && ownerObjectId === principalOwnerObjectId);
 }
 
-function isAdminPrincipal(principal) {
-  return hasClientPrincipalRole(principal, 'mdsadmins');
+function isEditorPrincipal(tree, principal) {
+  const principalOwnerObjectId = getPrincipalOwnerObjectId(principal);
+
+  if (!principalOwnerObjectId) {
+    return false;
+  }
+
+  return (Array.isArray(tree?.editors) ? tree.editors : []).some(
+    (editor) => String(editor?.objectId ?? '').trim() === principalOwnerObjectId,
+  );
+}
+
+function canManageTreeAccess(tree, principal) {
+  return isOwnedByPrincipal(tree, principal);
 }
 
 function canTransferTreeOwnership(tree, principal) {
-  return isOwnedByPrincipal(tree, principal) || isAdminPrincipal(principal);
+  return isOwnedByPrincipal(tree, principal);
 }
 
 function createStatusError(message, status) {
@@ -132,26 +169,43 @@ function canViewTree(tree, principal, visibility) {
   const normalizedVisibility = normalizeVisibilityFilter(visibility);
 
   if (tree?.isPrivate) {
-    return normalizedVisibility !== TREE_VISIBILITY_PUBLIC && isOwnedByPrincipal(tree, principal);
+    return normalizedVisibility !== TREE_VISIBILITY_PUBLIC && (isOwnedByPrincipal(tree, principal) || isEditorPrincipal(tree, principal));
   }
 
   return normalizedVisibility !== TREE_VISIBILITY_PRIVATE;
 }
 
 function canWriteTree(tree, principal) {
-  if (!tree?.isPrivate) {
-    return true;
-  }
+  return isOwnedByPrincipal(tree, principal) || isEditorPrincipal(tree, principal);
+}
 
-  return isOwnedByPrincipal(tree, principal);
+function buildTreePermissions(tree, principal) {
+  const isOwner = isOwnedByPrincipal(tree, principal);
+  const isEditor = isEditorPrincipal(tree, principal);
+
+  return {
+    currentUserIsOwner: isOwner,
+    currentUserIsEditor: isEditor,
+    currentUserCanManageAccess: isOwner,
+    currentUserCanTransferOwnership: isOwner,
+    currentUserCanWrite: isOwner || isEditor,
+  };
 }
 
 function filterTreesForAccess(treeList, { principal = null, visibility = TREE_VISIBILITY_BOTH, enforceAccess = false } = {}) {
   if (!enforceAccess) {
-    return treeList;
+    return treeList.map((tree) => ({
+      ...tree,
+      ...buildTreePermissions(tree, principal),
+    }));
   }
 
-  return treeList.filter((tree) => canViewTree(tree, principal, visibility));
+  return treeList
+    .filter((tree) => canViewTree(tree, principal, visibility))
+    .map((tree) => ({
+      ...tree,
+      ...buildTreePermissions(tree, principal),
+    }));
 }
 
 async function assertScopedTree(treeId, options = {}) {
@@ -176,9 +230,23 @@ async function assertScopedTree(treeId, options = {}) {
         ti.deleted_at AS deletedAt,
         ti.owner_object_id AS ownerObjectId,
         ti.owner_user_details AS ownerUserDetails,
-        ti.owner_display_name AS ownerDisplayName
+        ti.owner_display_name AS ownerDisplayName,
+        editor_list.editorsJson
       FROM tree_instance ti
       INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      OUTER APPLY (
+        SELECT (
+          SELECT
+            te.editor_object_id AS objectId,
+            te.editor_user_details AS userDetails,
+            te.editor_display_name AS displayName
+          FROM tree_editors te
+          WHERE te.tree_instance_id = ti.id
+            AND te.deleted_at IS NULL
+          ORDER BY te.editor_display_name, te.editor_user_details, te.id
+          FOR JSON PATH
+        ) AS editorsJson
+      ) editor_list
       WHERE ti.id = @tree_instance_id
         AND ai.app_identifier = @application_identifier
         AND (@include_deleted = 1 OR ti.deleted_at IS NULL);
@@ -344,9 +412,23 @@ export async function getTreeList(options = {}) {
       ti.owner_object_id AS ownerObjectId,
       ti.owner_user_details AS ownerUserDetails,
       ti.owner_display_name AS ownerDisplayName,
+      editor_list.editorsJson,
       ti.display_name AS displayName
     FROM tree_instance ti
     INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+    OUTER APPLY (
+      SELECT (
+        SELECT
+          te.editor_object_id AS objectId,
+          te.editor_user_details AS userDetails,
+          te.editor_display_name AS displayName
+        FROM tree_editors te
+        WHERE te.tree_instance_id = ti.id
+          AND te.deleted_at IS NULL
+        ORDER BY te.editor_display_name, te.editor_user_details, te.id
+        FOR JSON PATH
+      ) AS editorsJson
+    ) editor_list
     OUTER APPLY (
       SELECT TOP 1 tn.text
       FROM tree_nodes tn
@@ -1149,4 +1231,149 @@ export async function getTreeRoutingProfile(treeId, options = {}) {
   }
 
   return matchingTree;
+}
+
+export async function listTreeEditors({ treeId, principal = null, enforceAccess = false }) {
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      enforceAccess,
+    });
+
+    return Array.isArray(scopedTree.editors) ? scopedTree.editors : [];
+  });
+}
+
+export async function addTreeEditor({
+  treeId,
+  editorObjectId,
+  editorUserDetails = null,
+  editorDisplayName = null,
+  principal = null,
+  enforceAccess = false,
+}) {
+  const normalizedEditorObjectId = String(editorObjectId ?? '').trim();
+  const normalizedEditorUserDetails = String(editorUserDetails ?? '').trim() || null;
+  const normalizedEditorDisplayName = String(editorDisplayName ?? '').trim() || null;
+
+  if (!normalizedEditorObjectId) {
+    throw createStatusError('A target editor object ID is required', 400);
+  }
+
+  if (!normalizedEditorUserDetails) {
+    throw createStatusError('A target editor user identifier is required', 400);
+  }
+
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+
+    if (enforceAccess && !canManageTreeAccess(scopedTree, principal)) {
+      throw createStatusError('You are not allowed to manage editors for this tree', 403);
+    }
+
+    if (String(scopedTree.ownerObjectId ?? '').trim() === normalizedEditorObjectId) {
+      throw createStatusError('The owner already has access to this tree', 400);
+    }
+
+    const existingEditor = (Array.isArray(scopedTree.editors) ? scopedTree.editors : []).some(
+      (editor) => String(editor?.objectId ?? '').trim() === normalizedEditorObjectId,
+    );
+
+    if (!existingEditor) {
+      await new sql.Request()
+        .input('tree_instance_id', sql.Int, Number(treeId))
+        .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+        .input('editor_object_id', sql.NVarChar(100), normalizedEditorObjectId)
+        .input('editor_user_details', sql.NVarChar(320), normalizedEditorUserDetails)
+        .input('editor_display_name', sql.NVarChar(200), normalizedEditorDisplayName)
+        .query(`
+          MERGE tree_editors AS target
+          USING (
+            SELECT
+              ti.id AS tree_instance_id,
+              @editor_object_id AS editor_object_id,
+              @editor_user_details AS editor_user_details,
+              @editor_display_name AS editor_display_name
+            FROM tree_instance ti
+            INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+            WHERE ti.id = @tree_instance_id
+              AND ai.app_identifier = @application_identifier
+          ) AS source
+            ON target.tree_instance_id = source.tree_instance_id
+            AND target.editor_object_id = source.editor_object_id
+          WHEN MATCHED THEN
+            UPDATE SET
+              target.editor_user_details = source.editor_user_details,
+              target.editor_display_name = source.editor_display_name,
+              target.deleted_at = NULL,
+              target.updated_at = SYSUTCDATETIME()
+          WHEN NOT MATCHED THEN
+            INSERT (
+              tree_instance_id,
+              editor_object_id,
+              editor_user_details,
+              editor_display_name,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              source.tree_instance_id,
+              source.editor_object_id,
+              source.editor_user_details,
+              source.editor_display_name,
+              SYSUTCDATETIME(),
+              SYSUTCDATETIME()
+            );
+        `);
+    }
+
+    return assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+  });
+}
+
+export async function removeTreeEditor({ treeId, editorObjectId, principal = null, enforceAccess = false }) {
+  const normalizedEditorObjectId = String(editorObjectId ?? '').trim();
+
+  if (!normalizedEditorObjectId) {
+    throw createStatusError('A target editor object ID is required', 400);
+  }
+
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+
+    if (enforceAccess && !canManageTreeAccess(scopedTree, principal)) {
+      throw createStatusError('You are not allowed to manage editors for this tree', 403);
+    }
+
+    await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('editor_object_id', sql.NVarChar(100), normalizedEditorObjectId)
+      .query(`
+        UPDATE te
+        SET deleted_at = SYSUTCDATETIME(),
+            updated_at = SYSUTCDATETIME()
+        FROM tree_editors te
+        INNER JOIN tree_instance ti ON ti.id = te.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE te.tree_instance_id = @tree_instance_id
+          AND te.editor_object_id = @editor_object_id
+          AND te.deleted_at IS NULL
+          AND ai.app_identifier = @application_identifier;
+      `);
+
+    return assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+  });
 }

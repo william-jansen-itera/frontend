@@ -5,9 +5,11 @@ import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/pu
 import { getEntraUserByObjectId, searchEntraUsers } from '@/server/utils/swaRoleMapping';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import {
+  addTreeEditor,
   createTree,
   deleteTree,
   getTreeList,
+  removeTreeEditor,
   updateTreeDescription,
   updateTreeOwner,
   updateTreeTitle,
@@ -92,7 +94,23 @@ export async function POST(request) {
       }
 
       return NextResponse.json({
-        matches: await searchEntraUsers(query, { requiredRole: 'mdsusers' }),
+        matches: await searchEntraUsers(query, {}),
+      });
+    }
+
+    if (action === 'search-editor-targets') {
+      const query = String(payload?.query ?? '').trim();
+
+      if (!isAuthenticatedPrincipal(principal)) {
+        return NextResponse.json({ error: 'Authentication is required' }, { status: 401 });
+      }
+
+      if (query.length < 2) {
+        return NextResponse.json({ error: 'Invalid request, query must contain at least 2 characters' }, { status: 400 });
+      }
+
+      return NextResponse.json({
+        matches: await searchEntraUsers(query, {}),
       });
     }
 
@@ -271,10 +289,10 @@ export async function PATCH(request) {
     }
 
     if (String(action ?? '').trim() === 'transfer-owner') {
-      const targetOwner = await getEntraUserByObjectId(targetOwnerObjectId, { requiredRole: 'mdsusers' });
+      const targetOwner = await getEntraUserByObjectId(targetOwnerObjectId, {});
 
       if (!targetOwner?.objectId) {
-        return NextResponse.json({ error: 'Target user was not found in Entra ID or is not allowed to use this application' }, { status: 404 });
+        return NextResponse.json({ error: 'Target user was not found in Entra ID' }, { status: 404 });
       }
 
       const updatedTree = await updateTreeOwner({
@@ -282,6 +300,48 @@ export async function PATCH(request) {
         ownerObjectId: targetOwner.objectId,
         ownerUserDetails: targetOwner.userDetails,
         ownerDisplayName: targetOwner.displayName,
+        principal,
+        enforceAccess: true,
+      });
+
+      return NextResponse.json({
+        updatedTree,
+        trees: await getTreeList({ principal, visibility: normalizedVisibility, enforceAccess: true }),
+      });
+    }
+
+    if (String(action ?? '').trim() === 'add-editor') {
+      const targetEditor = await getEntraUserByObjectId(targetOwnerObjectId, {});
+
+      if (!targetEditor?.objectId) {
+        return NextResponse.json({ error: 'Target user was not found in Entra ID' }, { status: 404 });
+      }
+
+      const updatedTree = await addTreeEditor({
+        treeId: parsedTreeId,
+        editorObjectId: targetEditor.objectId,
+        editorUserDetails: targetEditor.userDetails,
+        editorDisplayName: targetEditor.displayName,
+        principal,
+        enforceAccess: true,
+      });
+
+      return NextResponse.json({
+        updatedTree,
+        trees: await getTreeList({ principal, visibility: normalizedVisibility, enforceAccess: true }),
+      });
+    }
+
+    if (String(action ?? '').trim() === 'remove-editor') {
+      const editorObjectId = String(targetOwnerObjectId ?? '').trim();
+
+      if (!editorObjectId) {
+        return NextResponse.json({ error: 'Invalid request, target editor object ID is required' }, { status: 400 });
+      }
+
+      const updatedTree = await removeTreeEditor({
+        treeId: parsedTreeId,
+        editorObjectId,
         principal,
         enforceAccess: true,
       });

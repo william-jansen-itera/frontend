@@ -23,6 +23,11 @@ function buildFollowUpSubmissionMessage(optionId, fallbackLabel) {
   return fallbackLabel;
 }
 
+function parseToolTreeId(toolName) {
+  const match = String(toolName ?? "").trim().match(/_(\d+)$/);
+  return match ? match[1] : "";
+}
+
 function getLatestBroaderAnswerClarificationTurn(turns) {
   const latestTurn = turns.at(-1) ?? null;
 
@@ -684,6 +689,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
   const [addActionState, setAddActionState] = useState(null);
+  const [writableTreeIds, setWritableTreeIds] = useState([]);
   const chatFeedRef = useRef(null);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
@@ -724,6 +730,48 @@ export default function ChatPageClient({ includeDebug }) {
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, visibility]);
+
+  useEffect(() => {
+    if (!isVisibilityReady) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    fetch("/api/trees?visibility=both", { cache: "no-store" })
+      .then((response) => response.json().then((payload) => ({ ok: response.ok, payload })))
+      .then(({ ok, payload }) => {
+        if (isCancelled) {
+          return;
+        }
+
+        if (!ok) {
+          throw new Error(payload?.error || "Tree permissions could not be loaded");
+        }
+
+        const nextWritableTreeIds = Array.isArray(payload)
+          ? payload
+            .filter((tree) => Boolean(tree?.currentUserCanWrite))
+            .map((tree) => String(tree.id))
+          : [];
+
+        setWritableTreeIds(nextWritableTreeIds);
+      })
+      .catch((error) => {
+        if (isCancelled) {
+          return;
+        }
+
+        console.error("Tree permission load failed:", error);
+        setWritableTreeIds([]);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isVisibilityReady]);
+
+  const writableTreeIdSet = new Set(writableTreeIds);
 
   async function submitTurn({ question, message, followUpSelection = null }) {
     const turnId = `${Date.now()}`;
@@ -887,8 +935,19 @@ export default function ChatPageClient({ includeDebug }) {
     }
 
     const normalizedToolName = String(toolName ?? "").trim();
+    const targetTreeId = parseToolTreeId(normalizedToolName);
     const originalQuestion = String(turn?.originalQuestion ?? turn?.question ?? "").trim();
     const broaderAnswer = String(turn?.answer ?? "").trim();
+
+    if (!targetTreeId || !writableTreeIdSet.has(targetTreeId)) {
+      setAddActionState({
+        status: "error",
+        turnId: turn?.id ?? null,
+        toolName: normalizedToolName,
+        message: "Read-only: only the owner or assigned editors can add notes to this tree.",
+      });
+      return;
+    }
 
     if (!normalizedToolName || !originalQuestion || !broaderAnswer) {
       setAddActionState({
@@ -955,6 +1014,16 @@ export default function ChatPageClient({ includeDebug }) {
     }
 
     const preview = addActionState.preview;
+
+    if (!writableTreeIdSet.has(String(preview?.treeId ?? ""))) {
+      setAddActionState({
+        status: "error",
+        turnId: turn.id,
+        toolName: addActionState.toolName,
+        message: "Read-only: only the owner or assigned editors can add notes to this tree.",
+      });
+      return;
+    }
 
     setAddActionState({
       ...addActionState,
@@ -1143,17 +1212,23 @@ export default function ChatPageClient({ includeDebug }) {
                       <div className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""} ${turn.isPending ? styles.messageBubbleAgentThinking : ""}`}>
                         <div className={styles.messageHeaderRow}>
                           <p className={styles.messageLabel}>Agent</p>
-                          {toolBadgeState.addTargets.map((target) => (
-                            <button
-                              key={`${turn.id}-${target.toolName}`}
-                              type="button"
-                              className={`appCompactActionButton appCompactActionButtonNeutral ${styles.addToToolChipButton}`}
-                              onClick={(event) => handleAddToToolClick(event, turn, target.toolName)}
-                              disabled={addActionState?.status === "pending"}
-                            >
-                              {target.label}
-                            </button>
-                          ))}
+                          {toolBadgeState.addTargets.map((target) => {
+                            const targetTreeId = parseToolTreeId(target.toolName);
+                            const canAddToTool = Boolean(targetTreeId) && writableTreeIdSet.has(targetTreeId);
+
+                            return (
+                              <button
+                                key={`${turn.id}-${target.toolName}`}
+                                type="button"
+                                className={`appCompactActionButton appCompactActionButtonNeutral ${styles.addToToolChipButton}`}
+                                onClick={(event) => handleAddToToolClick(event, turn, target.toolName)}
+                                disabled={addActionState?.status === "pending" || !canAddToTool}
+                                title={canAddToTool ? target.label : "Read-only: only the owner or assigned editors can add notes to this tree."}
+                              >
+                                {target.label}
+                              </button>
+                            );
+                          })}
                         </div>
                         <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""} ${turn.isPending ? styles.messageTextThinking : ""}`}>
                           {turn.isPending ? "Waiting for response..." : turn.error ? turn.error : turn.answer || "No answer returned."}

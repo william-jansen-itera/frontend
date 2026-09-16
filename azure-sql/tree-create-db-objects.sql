@@ -177,6 +177,26 @@ ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ((0)) FOR [description_published_t
 GO
 ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ((1)) FOR [is_private]
 GO
+/****** Object:  Table [dbo].[tree_editors]    Script Date: 9/16/2026 10:00:00 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[tree_editors](
+	[id] [int] IDENTITY(1,1) NOT NULL,
+	[tree_instance_id] [int] NOT NULL,
+	[editor_object_id] [nvarchar](100) NOT NULL,
+	[editor_user_details] [nvarchar](320) NULL,
+	[editor_display_name] [nvarchar](200) NULL,
+	[deleted_at] [datetime2](7) NULL,
+	[created_at] [datetime2](0) NOT NULL,
+	[updated_at] [datetime2](0) NOT NULL,
+ CONSTRAINT [PK_tree_editors] PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
 /****** Object:  Table [dbo].[tree_node_detail_files]    Script Date: 7/31/2026 4:11:42 PM ******/
 SET ANSI_NULLS ON
 GO
@@ -250,6 +270,25 @@ CREATE NONCLUSTERED INDEX [IX_tree_node_detail_files_tree_node_detail_id_created
 	[id] DESC
 )WITH (STATISTICS_NORECOMPUTE = OFF, DROP_EXISTING = OFF, ONLINE = OFF, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 GO
+/****** Object:  Index [IX_tree_editors_tree_instance_active]    Script Date: 9/16/2026 10:00:00 AM ******/
+CREATE NONCLUSTERED INDEX [IX_tree_editors_tree_instance_active] ON [dbo].[tree_editors]
+(
+	[tree_instance_id] ASC,
+	[editor_display_name] ASC,
+	[editor_user_details] ASC
+)
+WHERE ([deleted_at] IS NULL)
+WITH (STATISTICS_NORECOMPUTE = OFF, DROP_EXISTING = OFF, ONLINE = OFF, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+/****** Object:  Index [UQ_tree_editors_tree_editor_active]    Script Date: 9/16/2026 10:00:00 AM ******/
+CREATE UNIQUE NONCLUSTERED INDEX [UQ_tree_editors_tree_editor_active] ON [dbo].[tree_editors]
+(
+	[tree_instance_id] ASC,
+	[editor_object_id] ASC
+)
+WHERE ([deleted_at] IS NULL)
+WITH (STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
 /****** Object:  Index [IX_tree_nodes_parent_id]    Script Date: 7/31/2026 4:11:42 PM ******/
 CREATE NONCLUSTERED INDEX [IX_tree_nodes_parent_id] ON [dbo].[tree_nodes]
 (
@@ -282,6 +321,10 @@ ALTER TABLE [dbo].[tree_instance] ADD  CONSTRAINT [DF_tree_instance_created_at] 
 GO
 ALTER TABLE [dbo].[tree_instance] ADD  CONSTRAINT [DF_tree_instance_updated_at]  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
+ALTER TABLE [dbo].[tree_editors] ADD  CONSTRAINT [DF_tree_editors_created_at]  DEFAULT (sysutcdatetime()) FOR [created_at]
+GO
+ALTER TABLE [dbo].[tree_editors] ADD  CONSTRAINT [DF_tree_editors_updated_at]  DEFAULT (sysutcdatetime()) FOR [updated_at]
+GO
 ALTER TABLE [dbo].[tree_node_detail_files] ADD  CONSTRAINT [DF_tree_node_detail_files_created_at]  DEFAULT (sysutcdatetime()) FOR [created_at]
 GO
 ALTER TABLE [dbo].[tree_node_detail_files] ADD  CONSTRAINT [DF_tree_node_detail_files_updated_at]  DEFAULT (sysutcdatetime()) FOR [updated_at]
@@ -311,6 +354,12 @@ REFERENCES [dbo].[application_instance] ([id])
 ON DELETE CASCADE
 GO
 ALTER TABLE [dbo].[tree_instance] CHECK CONSTRAINT [FK_tree_instance_application_instance]
+GO
+ALTER TABLE [dbo].[tree_editors]  WITH CHECK ADD  CONSTRAINT [FK_tree_editors_tree_instance] FOREIGN KEY([tree_instance_id])
+REFERENCES [dbo].[tree_instance] ([id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[tree_editors] CHECK CONSTRAINT [FK_tree_editors_tree_instance]
 GO
 ALTER TABLE [dbo].[tree_node_detail_files]  WITH CHECK ADD  CONSTRAINT [FK_tree_node_detail_files_tree_node_details] FOREIGN KEY([tree_node_id])
 REFERENCES [dbo].[tree_node_details] ([tree_node_id])
