@@ -723,7 +723,7 @@ export default function ReviewPage() {
                         <div className={styles.itemHeader}>
                           <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Tree {attachment.treeId}</span></span>
                           <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Node {attachment.nodeId}</span></span>
-                          <span className={styles.badgeMuted}><span className={styles.badgeTextNudge}>Attachment {attachment.id}</span></span>
+                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Attachment {attachment.id}</span></span>
                         </div>
                         <h2 className={styles.itemTitle}>{attachment.fileName}</h2>
                         <p className={styles.itemDetail}>Tree: {attachment.treeName}</p>

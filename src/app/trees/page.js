@@ -1367,6 +1367,8 @@ function TreesPageContent() {
 
     const reviewActionLabel = action === "submit"
       ? `submit ${treeScopeLabel} for review`
+      : action === "unsubmit"
+        ? `move ${treeScopeLabel} back to draft`
       : action === "approve"
         ? `approve ${treeScopeLabel}`
         : `reject ${treeScopeLabel}`;
@@ -1406,6 +1408,8 @@ function TreesPageContent() {
         reviewError: "",
         reviewMessage: action === "submit"
           ? "Tree submitted for review."
+          : action === "unsubmit"
+            ? "Tree moved back to draft."
           : action === "approve"
             ? "Tree approved."
             : "Tree rejected.",
@@ -1510,6 +1514,7 @@ function TreesPageContent() {
                 const isTransferChanged = String(selectedTransferTarget?.objectId ?? "").trim() !== "" && String(selectedTransferTarget?.objectId ?? "").trim() !== String(tree.ownerObjectId ?? "").trim();
                 const canSubmitTree = approvalEnabled && (reviewStatus === "draft" || reviewStatus === "rejected");
                 const canApproveOrRejectTree = approvalEnabled && reviewStatus === "submitted";
+                const canUnsubmitTree = approvalEnabled && reviewStatus === "submitted";
 
                 return (
                   <article key={treeId} className={styles.treeRow}>
@@ -1742,6 +1747,16 @@ function TreesPageContent() {
                                     className="appCompactActionButton appCompactActionButtonNeutral"
                                   >
                                     {rowPendingState["review:submit"] ? "Submitting..." : "Submit"}
+                                  </button>
+                                ) : null}
+                                {canUnsubmitTree ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTreeReviewAction(tree, "unsubmit")}
+                                    disabled={isPending || !canReviewTree}
+                                    className="appCompactActionButton appCompactActionButtonNeutral"
+                                  >
+                                    {rowPendingState["review:unsubmit"] ? "Unsubmitting..." : "Unsubmit"}
                                   </button>
                                 ) : null}
                                 {canApproveOrRejectTree ? (

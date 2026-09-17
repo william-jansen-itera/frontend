@@ -280,9 +280,7 @@ function NotesPage() {
   const resolvedTreeIdValue = treeIdParam ?? "";
   const hasUnsavedNodeDetailChanges = normalizeEditorComparableValue(nodeEditorState.name) !== normalizeEditorComparableValue(savedNodeEditorState.name)
     || normalizeEditorComparableValue(nodeEditorState.notes) !== normalizeEditorComparableValue(savedNodeEditorState.notes);
-  const selectedNodeReviewStatus = isLeafSelection
-    ? String(nodeEditorState.reviewStatus ?? selectedNode?.reviewStatus ?? "draft")
-    : String(selectedNode?.reviewStatus ?? "draft");
+  const selectedNodeReviewStatus = String(nodeEditorState.reviewStatus ?? selectedNode?.reviewStatus ?? "draft");
   const canSubmitSelectedNode = approvalEnabled && Boolean(selectedNode) && (selectedNodeReviewStatus === "draft" || selectedNodeReviewStatus === "rejected");
   const canApproveOrRejectSelectedNode = approvalEnabled && Boolean(selectedNode) && selectedNodeReviewStatus === "submitted";
 
