@@ -40,6 +40,12 @@ export default function About() {
         </article>
 
         <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Review</p>
+          <h2 className={styles.cardTitle}>Activate drafting and review where it matters</h2>
+          <p className={styles.cardText}>A tree can opt into its own review workflow when the domain needs more control. That lets people draft material first, submit it for review, and approve or reject it inside the same workspace, while trees that do not need that process can stay lightweight.</p>
+        </article>
+
+        <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Inspect</p>
           <h2 className={styles.cardTitle}>See what the material actually says</h2>
           <p className={styles.cardText}>Use Search to inspect notes and attachments directly, review highlighted matches, and jump back into the exact branch or leaf that produced them.</p>

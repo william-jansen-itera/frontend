@@ -76,6 +76,12 @@ export default function Architecture() {
         </article>
 
         <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Review workflow</p>
+          <h2 className={styles.cardTitle}>Optional approval, hierarchical review</h2>
+          <p className={styles.cardText}>Each tree can opt into a four-state review flow of draft, submitted, approved, and rejected. Tree-level actions cascade through nodes and attachments, node-level actions cascade through descendant nodes, documents remain individually reviewable rather than cascading from a node, rejection always requires a comment, and the separate Review surface lets reviewers work the same hierarchy outside the Notes and Trees pages.</p>
+        </article>
+
+        <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Index maintenance</p>
           <h2 className={styles.cardTitle}>Indexers for normal sync, manual purge for immediate cleanup</h2>
           <p className={styles.cardText}>Normal search index maintenance runs through the SQL and blob indexers, which can be triggered from the admin surface in incremental or full modes. Separately, both manual purge and the scheduled 7-day retention job remove search documents immmediately from the index.</p>
