@@ -137,6 +137,66 @@
   padding: 0.75rem 1rem;
 }
 
+.reviewBanner,
+.reviewDetailCard {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  color: #475569;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--surface-radius-empty);
+  padding: 0.75rem 1rem;
+}
+
+.reviewDetailCard {
+  margin-top: 0;
+}
+
+.reviewDetailRow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.reviewStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.reviewStatusDraft {
+  color: #475569;
+  background: rgba(226, 232, 240, 0.72);
+}
+
+.reviewStatusSubmitted {
+  color: #1d4ed8;
+  background: rgba(191, 219, 254, 0.58);
+}
+
+.reviewStatusApproved {
+  color: #1e3a8a;
+  background: rgba(191, 219, 254, 0.72);
+}
+
+.reviewStatusRejected {
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.78);
+}
+
+.reviewMetaText {
+  color: #64748b;
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
 .detailsForm {
   display: grid;
   gap: 12px;

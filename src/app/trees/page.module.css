@@ -134,11 +134,41 @@
   gap: 0.55rem;
 }
 
+.treeMetaHeader {
+  grid-column: 1 / -1;
+}
+
+.treeIdRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .treeMetaEditor {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.treeVisibilityRow {
+  display: flex;
+  align-items: center;
+}
+
+.treeTitleRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.75rem;
   align-items: center;
+}
+
+.treeMetaActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .treeId {
@@ -202,6 +232,91 @@
   align-items: start;
 }
 
+.reviewSummaryRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.reviewSectionBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.reviewToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.reviewStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.reviewStatusDraft {
+  color: #475569;
+  background: rgba(226, 232, 240, 0.72);
+}
+
+.reviewStatusSubmitted {
+  color: #1d4ed8;
+  background: rgba(191, 219, 254, 0.58);
+}
+
+.reviewStatusApproved {
+  color: #1e3a8a;
+  background: rgba(191, 219, 254, 0.72);
+}
+
+.reviewStatusRejected {
+  color: #b91c1c;
+  background: rgba(254, 226, 226, 0.78);
+}
+
+.reviewMeta {
+  color: #64748b;
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
+.reviewActionRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 920px) {
+  .treeIdRow {
+    align-items: flex-start;
+  }
+
+  .treeMetaActions {
+    justify-content: flex-start;
+  }
+
+  .reviewSectionBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reviewActionRow {
+    justify-content: flex-start;
+  }
+}
+
 .ownerSummary {
   color: #0f172a;
   font-weight: 600;
@@ -209,6 +324,8 @@
 
 .transferInput {
   min-width: 0;
+  width: 100%;
+  max-width: 34rem;
 }
 
 .editorList {
@@ -300,10 +417,14 @@
 
 .treeNameInput {
   min-width: 0;
+  width: 100%;
+  max-width: 34rem;
 }
 
 .treeVisibilitySelect {
   min-width: 8.5rem;
+  width: 100%;
+  max-width: 34rem;
   padding: 10px 10px 10px 9px;
 }
 
@@ -348,6 +469,7 @@
 
 .descriptionInput {
   width: 100%;
+  max-width: 34rem;
   min-height: 7.5rem;
   box-sizing: border-box;
   margin-top: 0.12rem;
@@ -366,6 +488,7 @@
 
 .descriptionPreview {
   width: 100%;
+  max-width: 34rem;
   min-height: 7.5rem;
   box-sizing: border-box;
   margin-top: 0.12rem;
@@ -455,6 +578,7 @@
 
 .createTreeInput {
   height: 3.45rem;
+  max-width: 34rem;
   padding: 0.95rem 1rem;
   font-size: 1rem;
 }
@@ -496,6 +620,14 @@
   }
 
   .transferControls {
+    grid-template-columns: 1fr;
+  }
+
+  .treeMetaEditor {
+    gap: 0.6rem;
+  }
+
+  .treeTitleRow {
     grid-template-columns: 1fr;
   }
 

@@ -168,6 +168,83 @@ The Admin page now separates `Search indexing` from `Deletions`.
 - `blob content` targets the blob indexer configured by `AZURE_SEARCH_BLOB_INDEXER_NAME`.
 - `all` starts both indexers in the selected mode.
 
+## Review Workflow
+
+The application supports an approval workflow for trees, nodes, and attachments. The workflow is opt-in per tree.
+
+### Status model
+
+Review status uses four values:
+
+- `draft`
+- `submitted`
+- `approved`
+- `rejected`
+
+When a tree does not have approval enabled, the effective status for its content is treated as `draft`.
+
+### Enabling approval
+
+- Tree owners can enable or disable approval on the Trees page.
+- When approval is disabled for a tree, the app resets the tree, all of its nodes, and all of its attachments back to `draft` and clears review audit metadata and rejection comments.
+- Only content from approval-enabled trees appears on the Review page.
+
+### Where review actions happen
+
+- Trees page: whole-tree submit, approve, and reject actions.
+- Notes page: node and attachment submit, approve, and reject actions.
+- Review page: submitted and rejected items across approval-enabled trees, with bulk actions for the submitted view.
+
+Reject actions require a rejection comment. The comment is stored on the reviewed object and is shown in Notes node details and in the rejected Review view.
+
+### Tree-level behavior
+
+Tree review actions are hierarchical.
+
+- Submitting a tree submits the tree and all nodes and attachments in that tree.
+- Approving a tree approves the tree and all nodes and attachments in that tree.
+- Rejecting a tree rejects the tree and all nodes and attachments in that tree.
+
+For tree-level reject, the entered rejection comment is written to the tree and also propagated to descendant nodes and attachments that do not already have a rejection comment. Existing child rejection comments are preserved. Approving a tree clears rejection comments in that tree scope.
+
+### Node-level behavior
+
+Node review actions apply only to nodes, not to attachments.
+
+- Submitting a leaf node submits only that leaf node.
+- Approving a leaf node approves only that leaf node.
+- Rejecting a leaf node rejects only that leaf node.
+- Submitting a branch node submits that branch and all descendant nodes.
+- Approving a branch node approves that branch and all descendant nodes.
+- Rejecting a branch node rejects that branch and all descendant nodes.
+
+Node cascades do not change attachments under those nodes. Attachments remain separately reviewable from the Notes page and Review page.
+
+For node-level reject, the entered rejection comment is applied to the selected node scope. Existing descendant-node rejection comments are preserved. Approving a node scope clears rejection comments in that node scope.
+
+### Attachment-level behavior
+
+Attachments are always reviewed individually.
+
+- Submitting an attachment affects only that attachment.
+- Approving an attachment affects only that attachment.
+- Rejecting an attachment affects only that attachment.
+
+Attachment approve clears the stored rejection comment for that attachment.
+
+### Review page behavior
+
+- The Review page only lists content from approval-enabled trees.
+- The `submitted` view is for approval decisions and supports `Approve`, `Reject`, `Approve All`, and `Reject All`.
+- The `rejected` view is for inspection and reopening the underlying item in Trees or Notes. It does not expose resubmit actions.
+- Rejection comments are visible in the rejected view.
+
+### Permissions
+
+- Tree owners manage approval enablement.
+- Users who can write to a tree, meaning the owner or an editor, can perform node and attachment review actions.
+- Review actions still respect the tree's visibility and access rules.
+
 ## Security
 
 Security is currently handled in three layers.

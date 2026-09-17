@@ -10,7 +10,10 @@ import {
   deleteTree,
   getTreeList,
   removeTreeEditor,
+  transitionTreeReviewStatus,
+  TREE_REVIEW_ACTION_VALUES,
   updateTreeDescription,
+  updateTreeApprovalEnabled,
   updateTreeOwner,
   updateTreeTitle,
   updateTreeVisibility,
@@ -277,9 +280,19 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     const principal = parseClientPrincipal(request);
-    const { action, treeId, name, isPrivate, visibility, targetOwnerObjectId } = await request.json();
+    const {
+      action,
+      treeId,
+      name,
+      isPrivate,
+      visibility,
+      targetOwnerObjectId,
+      approvalEnabled,
+      rejectionComment,
+    } = await request.json();
     const parsedTreeId = parseTreeId(treeId);
     const normalizedVisibility = String(visibility ?? '').trim() || 'public';
+    const normalizedAction = String(action ?? '').trim().toLowerCase();
     const hasName = typeof name === 'string';
     const nextName = hasName ? name.trim() : '';
     const hasVisibility = typeof isPrivate === 'boolean';
@@ -288,7 +301,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
     }
 
-    if (String(action ?? '').trim() === 'transfer-owner') {
+    if (normalizedAction === 'transfer-owner') {
       const targetOwner = await getEntraUserByObjectId(targetOwnerObjectId, {});
 
       if (!targetOwner?.objectId) {
@@ -310,7 +323,7 @@ export async function PATCH(request) {
       });
     }
 
-    if (String(action ?? '').trim() === 'add-editor') {
+    if (normalizedAction === 'add-editor') {
       const targetEditor = await getEntraUserByObjectId(targetOwnerObjectId, {});
 
       if (!targetEditor?.objectId) {
@@ -332,7 +345,7 @@ export async function PATCH(request) {
       });
     }
 
-    if (String(action ?? '').trim() === 'remove-editor') {
+    if (normalizedAction === 'remove-editor') {
       const editorObjectId = String(targetOwnerObjectId ?? '').trim();
 
       if (!editorObjectId) {
@@ -342,6 +355,39 @@ export async function PATCH(request) {
       const updatedTree = await removeTreeEditor({
         treeId: parsedTreeId,
         editorObjectId,
+        principal,
+        enforceAccess: true,
+      });
+
+      return NextResponse.json({
+        updatedTree,
+        trees: await getTreeList({ principal, visibility: normalizedVisibility, enforceAccess: true }),
+      });
+    }
+
+    if (normalizedAction === 'set-approval-enabled') {
+      if (typeof approvalEnabled !== 'boolean') {
+        return NextResponse.json({ error: 'Invalid request, approvalEnabled must be provided' }, { status: 400 });
+      }
+
+      const updatedTree = await updateTreeApprovalEnabled({
+        treeId: parsedTreeId,
+        approvalEnabled,
+        principal,
+        enforceAccess: true,
+      });
+
+      return NextResponse.json({
+        updatedTree,
+        trees: await getTreeList({ principal, visibility: normalizedVisibility, enforceAccess: true }),
+      });
+    }
+
+    if (TREE_REVIEW_ACTION_VALUES.includes(normalizedAction)) {
+      const updatedTree = await transitionTreeReviewStatus({
+        treeId: parsedTreeId,
+        reviewAction: normalizedAction,
+        rejectionComment,
         principal,
         enforceAccess: true,
       });

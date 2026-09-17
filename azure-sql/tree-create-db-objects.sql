@@ -63,6 +63,14 @@ CREATE TABLE [dbo].[tree_nodes](
 	[is_expanded] [bit] NOT NULL,
 	[draggable] [bit] NOT NULL,
 	[sort_order] [int] NOT NULL,
+	[review_status] [nvarchar](20) NOT NULL,
+	[submitted_at] [datetime2](7) NULL,
+	[submitted_by_object_id] [nvarchar](100) NULL,
+	[submitted_by_user_details] [nvarchar](320) NULL,
+	[reviewed_at] [datetime2](7) NULL,
+	[reviewed_by_object_id] [nvarchar](100) NULL,
+	[reviewed_by_user_details] [nvarchar](320) NULL,
+	[rejection_comment] [nvarchar](2000) NULL,
 	[deleted_at] [datetime2](7) NULL,
 	[created_at] [datetime2](0) NOT NULL,
 	[updated_at] [datetime2](0) NOT NULL,
@@ -154,6 +162,15 @@ CREATE TABLE [dbo].[tree_instance](
 	[description] [nvarchar](max) NULL,
 	[description_published_to_agent] [bit] NOT NULL,
 	[is_private] [bit] NOT NULL,
+	[approval_enabled] [bit] NOT NULL,
+	[review_status] [nvarchar](20) NOT NULL,
+	[submitted_at] [datetime2](7) NULL,
+	[submitted_by_object_id] [nvarchar](100) NULL,
+	[submitted_by_user_details] [nvarchar](320) NULL,
+	[reviewed_at] [datetime2](7) NULL,
+	[reviewed_by_object_id] [nvarchar](100) NULL,
+	[reviewed_by_user_details] [nvarchar](320) NULL,
+	[rejection_comment] [nvarchar](2000) NULL,
 	[owner_object_id] [nvarchar](100) NULL,
 	[owner_user_details] [nvarchar](320) NULL,
 	[owner_display_name] [nvarchar](200) NULL,
@@ -176,6 +193,10 @@ GO
 ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ((0)) FOR [description_published_to_agent]
 GO
 ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ((1)) FOR [is_private]
+GO
+ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ((0)) FOR [approval_enabled]
+GO
+ALTER TABLE [dbo].[tree_instance] ADD DEFAULT ('draft') FOR [review_status]
 GO
 /****** Object:  Table [dbo].[tree_editors]    Script Date: 9/16/2026 10:00:00 AM ******/
 SET ANSI_NULLS ON
@@ -210,6 +231,14 @@ CREATE TABLE [dbo].[tree_node_detail_files](
 	[byte_size] [bigint] NOT NULL,
 	[blob_name] [nvarchar](1024) NOT NULL,
 	[blob_url] [nvarchar](2048) NOT NULL,
+	[review_status] [nvarchar](20) NOT NULL,
+	[submitted_at] [datetime2](7) NULL,
+	[submitted_by_object_id] [nvarchar](100) NULL,
+	[submitted_by_user_details] [nvarchar](320) NULL,
+	[reviewed_at] [datetime2](7) NULL,
+	[reviewed_by_object_id] [nvarchar](100) NULL,
+	[reviewed_by_user_details] [nvarchar](320) NULL,
+	[rejection_comment] [nvarchar](2000) NULL,
 	[deleted_at] [datetime2](7) NULL,
 	[created_at] [datetime2](7) NOT NULL,
 	[updated_at] [datetime2](7) NOT NULL,
@@ -329,6 +358,8 @@ ALTER TABLE [dbo].[tree_node_detail_files] ADD  CONSTRAINT [DF_tree_node_detail_
 GO
 ALTER TABLE [dbo].[tree_node_detail_files] ADD  CONSTRAINT [DF_tree_node_detail_files_updated_at]  DEFAULT (sysutcdatetime()) FOR [updated_at]
 GO
+ALTER TABLE [dbo].[tree_node_detail_files] ADD  CONSTRAINT [DF_tree_node_detail_files_review_status]  DEFAULT ('draft') FOR [review_status]
+GO
 ALTER TABLE [dbo].[tree_node_details] ADD  CONSTRAINT [DF_tree_node_details_created_at]  DEFAULT (sysutcdatetime()) FOR [created_at]
 GO
 ALTER TABLE [dbo].[tree_node_details] ADD  CONSTRAINT [DF_tree_node_details_updated_at]  DEFAULT (sysutcdatetime()) FOR [updated_at]
@@ -341,6 +372,8 @@ ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_draggable]  DEFAUL
 GO
 ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_sort_order]  DEFAULT ((0)) FOR [sort_order]
 GO
+ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_review_status]  DEFAULT ('draft') FOR [review_status]
+GO
 ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_created_at]  DEFAULT (sysutcdatetime()) FOR [created_at]
 GO
 ALTER TABLE [dbo].[tree_nodes] ADD  CONSTRAINT [DF_tree_nodes_updated_at]  DEFAULT (sysutcdatetime()) FOR [updated_at]
@@ -348,6 +381,18 @@ GO
 ALTER TABLE [dbo].[tree_setting] ADD  CONSTRAINT [DF_tree_setting_created_at]  DEFAULT (sysutcdatetime()) FOR [created_at]
 GO
 ALTER TABLE [dbo].[tree_setting] ADD  CONSTRAINT [DF_tree_setting_updated_at]  DEFAULT (sysutcdatetime()) FOR [updated_at]
+GO
+ALTER TABLE [dbo].[tree_instance]  WITH CHECK ADD  CONSTRAINT [CK_tree_instance_review_status] CHECK  (([review_status]='draft' OR [review_status]='submitted' OR [review_status]='approved' OR [review_status]='rejected'))
+GO
+ALTER TABLE [dbo].[tree_instance] CHECK CONSTRAINT [CK_tree_instance_review_status]
+GO
+ALTER TABLE [dbo].[tree_nodes]  WITH CHECK ADD  CONSTRAINT [CK_tree_nodes_review_status] CHECK  (([review_status]='draft' OR [review_status]='submitted' OR [review_status]='approved' OR [review_status]='rejected'))
+GO
+ALTER TABLE [dbo].[tree_nodes] CHECK CONSTRAINT [CK_tree_nodes_review_status]
+GO
+ALTER TABLE [dbo].[tree_node_detail_files]  WITH CHECK ADD  CONSTRAINT [CK_tree_node_detail_files_review_status] CHECK  (([review_status]='draft' OR [review_status]='submitted' OR [review_status]='approved' OR [review_status]='rejected'))
+GO
+ALTER TABLE [dbo].[tree_node_detail_files] CHECK CONSTRAINT [CK_tree_node_detail_files_review_status]
 GO
 ALTER TABLE [dbo].[tree_instance]  WITH CHECK ADD  CONSTRAINT [FK_tree_instance_application_instance] FOREIGN KEY([application_instance_id])
 REFERENCES [dbo].[application_instance] ([id])

@@ -23,6 +23,10 @@ import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/serv
 import { assertTreeAccess, getAuditMetadata, getTreeList } from '@/server/utils/treeCatalog';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const REVIEW_STATUS_DRAFT = 'draft';
+const REVIEW_STATUS_SUBMITTED = 'submitted';
+const REVIEW_STATUS_APPROVED = 'approved';
+const REVIEW_STATUS_REJECTED = 'rejected';
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   '.csv',
   '.doc',
@@ -42,6 +46,90 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   '.xls',
   '.xlsx',
 ]);
+
+function createStatusError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function getErrorStatus(error, defaultStatus = 500) {
+  const status = Number(error?.status);
+
+  if (Number.isInteger(status) && status >= 400 && status < 600) {
+    return status;
+  }
+
+  return defaultStatus;
+}
+
+function normalizeReviewStatus(value, fallback = REVIEW_STATUS_DRAFT) {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+
+  if (
+    normalizedValue === REVIEW_STATUS_DRAFT
+    || normalizedValue === REVIEW_STATUS_SUBMITTED
+    || normalizedValue === REVIEW_STATUS_APPROVED
+    || normalizedValue === REVIEW_STATUS_REJECTED
+  ) {
+    return normalizedValue;
+  }
+
+  return fallback;
+}
+
+function normalizeRejectionComment(value, { required = false } = {}) {
+  const normalizedValue = String(value ?? '').trim();
+
+  if (!normalizedValue) {
+    if (required) {
+      throw createStatusError('A rejection comment is required', 400);
+    }
+
+    return null;
+  }
+
+  return normalizedValue.slice(0, 2000);
+}
+
+function getEffectiveReviewStatus(value, approvalEnabled) {
+  if (!approvalEnabled) {
+    return REVIEW_STATUS_DRAFT;
+  }
+
+  return normalizeReviewStatus(value, REVIEW_STATUS_DRAFT);
+}
+
+function resolveNextReviewStatus(currentStatus, reviewAction) {
+  const normalizedAction = String(reviewAction ?? '').trim().toLowerCase();
+  const normalizedStatus = normalizeReviewStatus(currentStatus, REVIEW_STATUS_DRAFT);
+
+  if (normalizedAction === 'submit') {
+    if (normalizedStatus === REVIEW_STATUS_DRAFT || normalizedStatus === REVIEW_STATUS_REJECTED) {
+      return REVIEW_STATUS_SUBMITTED;
+    }
+
+    throw createStatusError(`Cannot submit a ${normalizedStatus} item for review`, 400);
+  }
+
+  if (normalizedAction === 'approve') {
+    if (normalizedStatus === REVIEW_STATUS_SUBMITTED) {
+      return REVIEW_STATUS_APPROVED;
+    }
+
+    throw createStatusError(`Cannot approve a ${normalizedStatus} item`, 400);
+  }
+
+  if (normalizedAction === 'reject') {
+    if (normalizedStatus === REVIEW_STATUS_SUBMITTED) {
+      return REVIEW_STATUS_REJECTED;
+    }
+
+    throw createStatusError(`Cannot reject a ${normalizedStatus} item`, 400);
+  }
+
+  throw createStatusError('A valid review action is required', 400);
+}
 
 async function assertReadableTreeForRequest(request, treeId, visibility = 'both') {
   return assertTreeAccess(treeId, {
@@ -80,19 +168,22 @@ async function requestIndexerRefreshForMutation(treeInstanceId, mutationLabel) {
 async function queryTreeData(treeInstanceId) {
   const query = `WITH RecursiveTree AS (
       SELECT
-        id,
-        parent_id,
-        text,
-        is_leaf_node,
-        is_expanded,
-        draggable,
-        sort_order,
-        CAST(RIGHT(REPLICATE('0', 3) + CAST(sort_order AS VARCHAR(3)), 3) AS VARCHAR(MAX)) AS path,
+        tn.id,
+        tn.parent_id,
+        tn.text,
+        tn.is_leaf_node,
+        tn.is_expanded,
+        tn.draggable,
+        tn.sort_order,
+        CAST(COALESCE(ti.approval_enabled, 0) AS BIT) AS approvalEnabled,
+        CAST(CASE WHEN COALESCE(ti.approval_enabled, 0) = 1 THEN COALESCE(tn.review_status, '${REVIEW_STATUS_DRAFT}') ELSE '${REVIEW_STATUS_DRAFT}' END AS NVARCHAR(20)) AS reviewStatus,
+        CAST(RIGHT(REPLICATE('0', 3) + CAST(tn.sort_order AS VARCHAR(3)), 3) AS VARCHAR(MAX)) AS path,
         0 AS _depth
-      FROM tree_nodes
-      WHERE tree_instance_id = @tree_instance_id
-        AND deleted_at IS NULL
-        AND parent_id IS NULL
+      FROM tree_nodes tn
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      WHERE tn.tree_instance_id = @tree_instance_id
+        AND tn.deleted_at IS NULL
+        AND tn.parent_id IS NULL
       UNION ALL
       SELECT
         t.id,
@@ -102,6 +193,8 @@ async function queryTreeData(treeInstanceId) {
         t.is_expanded,
         t.draggable,
         t.sort_order,
+        rt.approvalEnabled,
+        CAST(CASE WHEN rt.approvalEnabled = 1 THEN COALESCE(t.review_status, '${REVIEW_STATUS_DRAFT}') ELSE '${REVIEW_STATUS_DRAFT}' END AS NVARCHAR(20)) AS reviewStatus,
         CAST(rt.path + '-' + RIGHT(REPLICATE('0', 3) + CAST(t.sort_order AS VARCHAR(3)), 3) AS VARCHAR(MAX)) AS path,
         rt._depth + 1 AS _depth
       FROM tree_nodes t
@@ -117,6 +210,7 @@ async function queryTreeData(treeInstanceId) {
       is_expanded AS isExpanded,
       draggable,
       sort_order,
+      reviewStatus,
       _depth,
       path
     FROM RecursiveTree
@@ -141,11 +235,18 @@ async function queryTreeNode(treeInstanceId, nodeId, transaction = null) {
     .input('id', sql.Int, parseInt(nodeId, 10))
     .query(`
       SELECT TOP 1
-        CAST(id AS VARCHAR(10)) AS id,
-        text AS name,
-        is_leaf_node AS isLeafNode
-      FROM tree_nodes
-      WHERE tree_instance_id = @tree_instance_id AND id = @id AND deleted_at IS NULL;
+        CAST(tn.id AS VARCHAR(10)) AS id,
+        tn.text AS name,
+        tn.is_leaf_node AS isLeafNode,
+        CAST(CASE WHEN COALESCE(ti.approval_enabled, 0) = 1 THEN COALESCE(tn.review_status, '${REVIEW_STATUS_DRAFT}') ELSE '${REVIEW_STATUS_DRAFT}' END AS NVARCHAR(20)) AS reviewStatus,
+        tn.submitted_at AS submittedAt,
+        tn.submitted_by_user_details AS submittedByUserDetails,
+        tn.reviewed_at AS reviewedAt,
+        tn.reviewed_by_user_details AS reviewedByUserDetails,
+        tn.rejection_comment AS rejectionComment
+      FROM tree_nodes tn
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL;
     `);
 
   return result.recordset[0] ?? null;
@@ -166,6 +267,12 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       updatedByUserDetails: null,
       attachments: [],
       isLeafNode: false,
+      reviewStatus: getEffectiveReviewStatus(node.reviewStatus, true),
+      submittedAt: node.submittedAt ?? null,
+      submittedByUserDetails: node.submittedByUserDetails ?? null,
+      reviewedAt: node.reviewedAt ?? null,
+      reviewedByUserDetails: node.reviewedByUserDetails ?? null,
+      rejectionComment: normalizeRejectionComment(node.rejectionComment),
     };
   }
 
@@ -177,9 +284,16 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
         CAST(tn.id AS VARCHAR(10)) AS id,
         tn.text AS name,
         ISNULL(tnd.notes, '') AS notes,
+        CAST(CASE WHEN COALESCE(ti.approval_enabled, 0) = 1 THEN COALESCE(tn.review_status, '${REVIEW_STATUS_DRAFT}') ELSE '${REVIEW_STATUS_DRAFT}' END AS NVARCHAR(20)) AS reviewStatus,
+        tn.submitted_at AS submittedAt,
+        tn.submitted_by_user_details AS submittedByUserDetails,
+        tn.reviewed_at AS reviewedAt,
+        tn.reviewed_by_user_details AS reviewedByUserDetails,
+        tn.rejection_comment AS rejectionComment,
         tnd.updated_at AS updatedAt,
         tnd.updated_by_user_details AS updatedByUserDetails
       FROM tree_nodes tn
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
       LEFT JOIN tree_node_details tnd ON tnd.tree_node_id = tn.id
       WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL;
     `);
@@ -194,6 +308,12 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       updatedByUserDetails: null,
       attachments: [],
       isLeafNode: true,
+      reviewStatus: REVIEW_STATUS_DRAFT,
+      submittedAt: null,
+      submittedByUserDetails: null,
+      reviewedAt: null,
+      reviewedByUserDetails: null,
+      rejectionComment: null,
     };
   }
 
@@ -208,12 +328,19 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
         files.byte_size AS byteSize,
         files.blob_name AS blobName,
         files.blob_url AS blobUrl,
+        CAST(CASE WHEN COALESCE(ti.approval_enabled, 0) = 1 THEN COALESCE(files.review_status, '${REVIEW_STATUS_DRAFT}') ELSE '${REVIEW_STATUS_DRAFT}' END AS NVARCHAR(20)) AS reviewStatus,
+        files.submitted_at AS submittedAt,
+        files.submitted_by_user_details AS submittedByUserDetails,
+        files.reviewed_at AS reviewedAt,
+        files.reviewed_by_user_details AS reviewedByUserDetails,
+        files.rejection_comment AS rejectionComment,
         files.created_at AS createdAt,
         files.updated_at AS updatedAt,
         files.updated_by_user_details AS updatedByUserDetails
       FROM tree_node_detail_files files
       INNER JOIN tree_node_details details ON details.tree_node_id = files.tree_node_id
       INNER JOIN tree_nodes tn ON tn.id = details.tree_node_id
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
       WHERE tn.tree_instance_id = @tree_instance_id AND tn.id = @id AND tn.deleted_at IS NULL AND files.deleted_at IS NULL
       ORDER BY files.created_at DESC, files.id DESC;
     `);
@@ -930,6 +1057,167 @@ function normalizeUpdatedByMetadata(principal) {
   };
 }
 
+async function transitionTreeNodeReviewStatus({ treeInstanceId, nodeId, principal, reviewAction, rejectionComment = null }) {
+  const scopedTree = await assertTreeAccess(treeInstanceId, {
+    principal,
+    visibility: 'both',
+    requireWriteAccess: true,
+  });
+
+  if (!scopedTree.approvalEnabled) {
+    throw createStatusError('Review is not enabled for this tree', 400);
+  }
+
+  const actor = normalizeUpdatedByMetadata(principal);
+
+  if (!String(actor.updatedByObjectId ?? '').trim()) {
+    throw createStatusError('Authentication is required to review this node', 401);
+  }
+
+  const treeNode = await queryTreeNode(treeInstanceId, nodeId);
+
+  if (!treeNode) {
+    throw createStatusError('Node was not found for the selected tree', 404);
+  }
+
+  const nextReviewStatus = resolveNextReviewStatus(treeNode.reviewStatus, reviewAction);
+  const isSubmitAction = nextReviewStatus === REVIEW_STATUS_SUBMITTED;
+  const normalizedRejectionComment = nextReviewStatus === REVIEW_STATUS_REJECTED
+    ? normalizeRejectionComment(rejectionComment, { required: true })
+    : null;
+
+  await new sql.Request()
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .input('id', sql.Int, nodeId)
+    .input('review_status', sql.NVarChar(20), nextReviewStatus)
+    .input('submitted_by_object_id', sql.NVarChar(100), isSubmitAction ? actor.updatedByObjectId : null)
+    .input('submitted_by_user_details', sql.NVarChar(320), isSubmitAction ? actor.updatedByUserDetails : null)
+    .input('reviewed_by_object_id', sql.NVarChar(100), isSubmitAction ? null : actor.updatedByObjectId)
+    .input('reviewed_by_user_details', sql.NVarChar(320), isSubmitAction ? null : actor.updatedByUserDetails)
+    .input('rejection_comment', sql.NVarChar(2000), normalizedRejectionComment)
+    .query(`
+      WITH Descendants AS (
+        SELECT id
+        FROM tree_nodes
+        WHERE id = @id
+          AND tree_instance_id = @tree_instance_id
+          AND deleted_at IS NULL
+
+        UNION ALL
+
+        SELECT child.id
+        FROM tree_nodes child
+        INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
+        WHERE child.tree_instance_id = @tree_instance_id
+          AND child.deleted_at IS NULL
+      )
+      UPDATE tree_nodes
+      SET review_status = @review_status,
+          submitted_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME() ELSE submitted_at END,
+          submitted_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id ELSE submitted_by_object_id END,
+          submitted_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details ELSE submitted_by_user_details END,
+          reviewed_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE SYSUTCDATETIME() END,
+          reviewed_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_object_id END,
+          reviewed_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_user_details END,
+          rejection_comment = CASE
+            WHEN @review_status = '${REVIEW_STATUS_APPROVED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_REJECTED}' THEN COALESCE(NULLIF(LTRIM(RTRIM(tree_nodes.rejection_comment)), ''), @rejection_comment)
+            ELSE tree_nodes.rejection_comment
+          END,
+          updated_at = SYSUTCDATETIME()
+      FROM tree_nodes
+      INNER JOIN Descendants ON Descendants.id = tree_nodes.id
+      WHERE tree_nodes.tree_instance_id = @tree_instance_id
+      OPTION (MAXRECURSION 32767);
+    `);
+
+  return {
+    flatData: await queryTreeData(treeInstanceId),
+    details: await queryNodeDetails(treeInstanceId, nodeId),
+  };
+}
+
+async function queryAttachmentRecord(treeInstanceId, attachmentId, transaction = null) {
+  const result = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .input('attachment_id', sql.Int, attachmentId)
+    .query(`
+      SELECT TOP 1
+        CAST(files.id AS VARCHAR(10)) AS id,
+        CAST(files.tree_node_id AS VARCHAR(10)) AS treeNodeId,
+        files.blob_name AS blobName,
+        CAST(CASE WHEN COALESCE(ti.approval_enabled, 0) = 1 THEN COALESCE(files.review_status, '${REVIEW_STATUS_DRAFT}') ELSE '${REVIEW_STATUS_DRAFT}' END AS NVARCHAR(20)) AS reviewStatus
+      FROM tree_node_detail_files files
+      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      WHERE tn.tree_instance_id = @tree_instance_id
+        AND tn.deleted_at IS NULL
+        AND files.deleted_at IS NULL
+        AND files.id = @attachment_id;
+    `);
+
+  return result.recordset[0] ?? null;
+}
+
+async function transitionAttachmentReviewStatus({ treeInstanceId, attachmentId, principal, reviewAction, rejectionComment = null }) {
+  const scopedTree = await assertTreeAccess(treeInstanceId, {
+    principal,
+    visibility: 'both',
+    requireWriteAccess: true,
+  });
+
+  if (!scopedTree.approvalEnabled) {
+    throw createStatusError('Review is not enabled for this tree', 400);
+  }
+
+  const actor = normalizeUpdatedByMetadata(principal);
+
+  if (!String(actor.updatedByObjectId ?? '').trim()) {
+    throw createStatusError('Authentication is required to review this attachment', 401);
+  }
+
+  const attachment = await queryAttachmentRecord(treeInstanceId, attachmentId);
+
+  if (!attachment) {
+    throw createStatusError('Attachment was not found for the selected tree', 404);
+  }
+
+  const nextReviewStatus = resolveNextReviewStatus(attachment.reviewStatus, reviewAction);
+  const isSubmitAction = nextReviewStatus === REVIEW_STATUS_SUBMITTED;
+  const normalizedRejectionComment = nextReviewStatus === REVIEW_STATUS_REJECTED
+    ? normalizeRejectionComment(rejectionComment, { required: true })
+    : null;
+
+  await new sql.Request()
+    .input('attachment_id', sql.Int, attachmentId)
+    .input('review_status', sql.NVarChar(20), nextReviewStatus)
+    .input('submitted_by_object_id', sql.NVarChar(100), isSubmitAction ? actor.updatedByObjectId : null)
+    .input('submitted_by_user_details', sql.NVarChar(320), isSubmitAction ? actor.updatedByUserDetails : null)
+    .input('reviewed_by_object_id', sql.NVarChar(100), isSubmitAction ? null : actor.updatedByObjectId)
+    .input('reviewed_by_user_details', sql.NVarChar(320), isSubmitAction ? null : actor.updatedByUserDetails)
+    .input('rejection_comment', sql.NVarChar(2000), normalizedRejectionComment)
+    .query(`
+      UPDATE tree_node_detail_files
+      SET review_status = @review_status,
+          submitted_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME() ELSE submitted_at END,
+          submitted_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id ELSE submitted_by_object_id END,
+          submitted_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details ELSE submitted_by_user_details END,
+          reviewed_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE SYSUTCDATETIME() END,
+          reviewed_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_object_id END,
+          reviewed_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_user_details END,
+          rejection_comment = CASE
+            WHEN @review_status = '${REVIEW_STATUS_APPROVED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_REJECTED}' THEN COALESCE(NULLIF(LTRIM(RTRIM(rejection_comment)), ''), @rejection_comment)
+            ELSE rejection_comment
+          END,
+          updated_at = SYSUTCDATETIME()
+      WHERE id = @attachment_id
+        AND deleted_at IS NULL;
+    `);
+
+  return queryNodeDetails(treeInstanceId, attachment.treeNodeId);
+}
+
 async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes, updatedBy = null }) {
   return withSqlConnection(async () => {
     const trimmedName = name.trim();
@@ -1384,7 +1672,7 @@ export async function GET(request) {
 
     return NextResponse.json(await getTreeData(treeIdParam));
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 
@@ -1541,7 +1829,7 @@ export async function POST(request) {
       name: name?.trim() || 'New node',
     }));
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 
@@ -1558,20 +1846,51 @@ export async function PUT(request) {
     await UpdateTreeNodes(parseInt(treeId), nodes);
     return NextResponse.json(await getTreeData(treeId));
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 
 export async function PATCH(request) {
   try {
     const principal = parseClientPrincipal(request);
-    const { id, treeId, isExpanded, expandedNodeIds, name, notes } = await request.json();
+    const { action, id, treeId, isExpanded, expandedNodeIds, name, notes, attachmentId, rejectionComment } = await request.json();
+    const normalizedAction = String(action ?? '').trim().toLowerCase();
 
     if (!treeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
     }
 
     await assertWritableTreeForRequest(request, treeId);
+
+    if (normalizedAction === 'submit-node-review' || normalizedAction === 'approve-node-review' || normalizedAction === 'reject-node-review') {
+      if (id === undefined) {
+        return NextResponse.json({ error: 'Invalid request, id is required for node review' }, { status: 400 });
+      }
+
+      return NextResponse.json(await transitionTreeNodeReviewStatus({
+        treeInstanceId: parseInt(treeId, 10),
+        nodeId: parseInt(id, 10),
+        principal,
+        reviewAction: normalizedAction.replace('-node-review', ''),
+        rejectionComment,
+      }));
+    }
+
+    if (normalizedAction === 'submit-attachment-review' || normalizedAction === 'approve-attachment-review' || normalizedAction === 'reject-attachment-review') {
+      if (attachmentId === undefined) {
+        return NextResponse.json({ error: 'Invalid request, attachmentId is required for attachment review' }, { status: 400 });
+      }
+
+      return NextResponse.json({
+        details: await transitionAttachmentReviewStatus({
+          treeInstanceId: parseInt(treeId, 10),
+          attachmentId: parseInt(attachmentId, 10),
+          principal,
+          reviewAction: normalizedAction.replace('-attachment-review', ''),
+          rejectionComment,
+        }),
+      });
+    }
 
     if (Array.isArray(expandedNodeIds)) {
       await UpdateTreeNodeOpenStates(parseInt(treeId, 10), expandedNodeIds, true);
@@ -1597,7 +1916,7 @@ export async function PATCH(request) {
       updatedBy: normalizeUpdatedByMetadata(principal),
     }));
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 

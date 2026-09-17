@@ -25,6 +25,20 @@
   gap: 0.45rem;
 }
 
+.heroControls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.fieldStack {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+
 .statusMessage,
 .errorMessage {
   margin: 1rem 0 0;
@@ -192,10 +206,13 @@
 .badgeMuted {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   border-radius: 999px;
-  padding: 0.18rem 0.55rem;
+  height: 1.45rem;
+  padding: 0 0.55rem;
   font-size: 0.72rem;
   font-weight: 700;
+  line-height: 1;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -203,6 +220,16 @@
 .badge {
   color: #7c2d12;
   background: rgba(254, 215, 170, 0.54);
+}
+
+.reviewBadgeSubmitted {
+  color: #166534;
+  background: rgba(220, 252, 231, 0.8);
+}
+
+.badgeTextNudge {
+  position: relative;
+  top: 0.04em;
 }
 
 .badgeMuted {
@@ -235,6 +262,11 @@
   .listItem {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .heroControls {
+    justify-content: flex-start;
+    align-items: flex-start;
   }
 
   .actionGroup {

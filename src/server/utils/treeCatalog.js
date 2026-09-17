@@ -14,6 +14,27 @@ const DEFAULT_TREE_MAX_DEPTH = '3';
 const TREE_VISIBILITY_PUBLIC = 'public';
 const TREE_VISIBILITY_PRIVATE = 'private';
 const TREE_VISIBILITY_BOTH = 'both';
+const REVIEW_STATUS_DRAFT = 'draft';
+const REVIEW_STATUS_SUBMITTED = 'submitted';
+const REVIEW_STATUS_APPROVED = 'approved';
+const REVIEW_STATUS_REJECTED = 'rejected';
+
+export const REVIEW_STATUS_VALUES = Object.freeze([
+  REVIEW_STATUS_DRAFT,
+  REVIEW_STATUS_SUBMITTED,
+  REVIEW_STATUS_APPROVED,
+  REVIEW_STATUS_REJECTED,
+]);
+
+const REVIEW_ACTION_SUBMIT = 'submit';
+const REVIEW_ACTION_APPROVE = 'approve';
+const REVIEW_ACTION_REJECT = 'reject';
+
+export const TREE_REVIEW_ACTION_VALUES = Object.freeze([
+  REVIEW_ACTION_SUBMIT,
+  REVIEW_ACTION_APPROVE,
+  REVIEW_ACTION_REJECT,
+]);
 
 function normalizeTreeName(name) {
   return String(name ?? '').trim();
@@ -21,6 +42,78 @@ function normalizeTreeName(name) {
 
 function normalizeTreeDescription(description) {
   return String(description ?? '').trim();
+}
+
+function normalizeReviewStatus(value, fallback = REVIEW_STATUS_DRAFT) {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+
+  return REVIEW_STATUS_VALUES.includes(normalizedValue) ? normalizedValue : fallback;
+}
+
+function normalizeOptionalMetadataValue(value) {
+  return String(value ?? '').trim() || null;
+}
+
+function normalizeRejectionComment(value, { required = false } = {}) {
+  const normalizedValue = String(value ?? '').trim();
+
+  if (!normalizedValue) {
+    if (required) {
+      throw createStatusError('A rejection comment is required', 400);
+    }
+
+    return null;
+  }
+
+  return normalizedValue.slice(0, 2000);
+}
+
+function getEffectiveReviewStatus(value, approvalEnabled) {
+  if (!approvalEnabled) {
+    return REVIEW_STATUS_DRAFT;
+  }
+
+  return normalizeReviewStatus(value, REVIEW_STATUS_DRAFT);
+}
+
+function getReviewActorMetadata(principal) {
+  const auditMetadata = getAuditMetadata(principal);
+
+  return {
+    actorObjectId: normalizeOptionalMetadataValue(auditMetadata.updatedByObjectId),
+    actorUserDetails: normalizeOptionalMetadataValue(auditMetadata.updatedByUserDetails),
+  };
+}
+
+function resolveNextReviewStatus(currentStatus, reviewAction) {
+  const normalizedStatus = normalizeReviewStatus(currentStatus, REVIEW_STATUS_DRAFT);
+  const normalizedAction = String(reviewAction ?? '').trim().toLowerCase();
+
+  if (normalizedAction === REVIEW_ACTION_SUBMIT) {
+    if (normalizedStatus === REVIEW_STATUS_DRAFT || normalizedStatus === REVIEW_STATUS_REJECTED) {
+      return REVIEW_STATUS_SUBMITTED;
+    }
+
+    throw createStatusError(`Cannot submit a ${normalizedStatus} item for review`, 400);
+  }
+
+  if (normalizedAction === REVIEW_ACTION_APPROVE) {
+    if (normalizedStatus === REVIEW_STATUS_SUBMITTED) {
+      return REVIEW_STATUS_APPROVED;
+    }
+
+    throw createStatusError(`Cannot approve a ${normalizedStatus} item`, 400);
+  }
+
+  if (normalizedAction === REVIEW_ACTION_REJECT) {
+    if (normalizedStatus === REVIEW_STATUS_SUBMITTED) {
+      return REVIEW_STATUS_REJECTED;
+    }
+
+    throw createStatusError(`Cannot reject a ${normalizedStatus} item`, 400);
+  }
+
+  throw createStatusError('A valid review action is required', 400);
 }
 
 function buildTreeKey(name) {
@@ -93,6 +186,8 @@ function normalizeVisibilityFilter(value, defaultValue = TREE_VISIBILITY_BOTH) {
 }
 
 function mapTreeRecord(row) {
+  const approvalEnabled = Boolean(row.approvalEnabled);
+
   return {
     id: String(row.id),
     name: String(row.name ?? row.displayName ?? '').trim() || `Tree ${row.id}`,
@@ -100,6 +195,15 @@ function mapTreeRecord(row) {
     description: normalizeTreeDescription(row.description),
     isDescriptionPublished: Boolean(row.isDescriptionPublished),
     isPrivate: Boolean(row.isPrivate),
+    approvalEnabled,
+    reviewStatus: getEffectiveReviewStatus(row.reviewStatus, approvalEnabled),
+    submittedAt: row.submittedAt ?? null,
+    submittedByObjectId: normalizeOptionalMetadataValue(row.submittedByObjectId),
+    submittedByUserDetails: normalizeOptionalMetadataValue(row.submittedByUserDetails),
+    reviewedAt: row.reviewedAt ?? null,
+    reviewedByObjectId: normalizeOptionalMetadataValue(row.reviewedByObjectId),
+    reviewedByUserDetails: normalizeOptionalMetadataValue(row.reviewedByUserDetails),
+    rejectionComment: normalizeRejectionComment(row.rejectionComment),
     deletedAt: row.deletedAt ?? null,
     ownerObjectId: String(row.ownerObjectId ?? '').trim() || null,
     ownerUserDetails: String(row.ownerUserDetails ?? '').trim() || null,
@@ -179,16 +283,23 @@ function canWriteTree(tree, principal) {
   return isOwnedByPrincipal(tree, principal) || isEditorPrincipal(tree, principal);
 }
 
+function canReviewTree(tree, principal) {
+  return Boolean(tree?.approvalEnabled) && canWriteTree(tree, principal);
+}
+
 function buildTreePermissions(tree, principal) {
   const isOwner = isOwnedByPrincipal(tree, principal);
   const isEditor = isEditorPrincipal(tree, principal);
+  const canWrite = isOwner || isEditor;
 
   return {
     currentUserIsOwner: isOwner,
     currentUserIsEditor: isEditor,
     currentUserCanManageAccess: isOwner,
     currentUserCanTransferOwnership: isOwner,
-    currentUserCanWrite: isOwner || isEditor,
+    currentUserCanWrite: canWrite,
+    currentUserCanReview: Boolean(tree?.approvalEnabled) && canWrite,
+    currentUserCanToggleApproval: isOwner,
   };
 }
 
@@ -227,6 +338,15 @@ async function assertScopedTree(treeId, options = {}) {
         ti.description,
         CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished,
         CAST(COALESCE(ti.is_private, 0) AS BIT) AS isPrivate,
+        CAST(COALESCE(ti.approval_enabled, 0) AS BIT) AS approvalEnabled,
+        CAST(COALESCE(ti.review_status, '${REVIEW_STATUS_DRAFT}') AS NVARCHAR(20)) AS reviewStatus,
+        ti.submitted_at AS submittedAt,
+        ti.submitted_by_object_id AS submittedByObjectId,
+        ti.submitted_by_user_details AS submittedByUserDetails,
+        ti.reviewed_at AS reviewedAt,
+        ti.reviewed_by_object_id AS reviewedByObjectId,
+        ti.reviewed_by_user_details AS reviewedByUserDetails,
+        ti.rejection_comment AS rejectionComment,
         ti.deleted_at AS deletedAt,
         ti.owner_object_id AS ownerObjectId,
         ti.owner_user_details AS ownerUserDetails,
@@ -408,6 +528,15 @@ export async function getTreeList(options = {}) {
       CAST(COALESCE(ti.description, '') AS NVARCHAR(MAX)) AS description,
       CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished,
       CAST(COALESCE(ti.is_private, 0) AS BIT) AS isPrivate,
+      CAST(COALESCE(ti.approval_enabled, 0) AS BIT) AS approvalEnabled,
+      CAST(COALESCE(ti.review_status, '${REVIEW_STATUS_DRAFT}') AS NVARCHAR(20)) AS reviewStatus,
+      ti.submitted_at AS submittedAt,
+      ti.submitted_by_object_id AS submittedByObjectId,
+      ti.submitted_by_user_details AS submittedByUserDetails,
+      ti.reviewed_at AS reviewedAt,
+      ti.reviewed_by_object_id AS reviewedByObjectId,
+      ti.reviewed_by_user_details AS reviewedByUserDetails,
+      ti.rejection_comment AS rejectionComment,
       ti.deleted_at AS deletedAt,
       ti.owner_object_id AS ownerObjectId,
       ti.owner_user_details AS ownerUserDetails,
@@ -549,6 +678,15 @@ export async function createTree({ name, principal = null }) {
       description: '',
       isDescriptionPublished: false,
       isPrivate: true,
+      approvalEnabled: false,
+      reviewStatus: REVIEW_STATUS_DRAFT,
+      submittedAt: null,
+      submittedByObjectId: null,
+      submittedByUserDetails: null,
+      reviewedAt: null,
+      reviewedByObjectId: null,
+      reviewedByUserDetails: null,
+      rejectionComment: null,
       ownerObjectId: ownerMetadata.ownerObjectId,
       ownerUserDetails: ownerMetadata.ownerUserDetails,
       ownerDisplayName: ownerMetadata.ownerDisplayName,
@@ -600,6 +738,8 @@ export async function updateTreeTitle({ treeId, name, principal = null, enforceA
       id: String(treeId),
       name: normalizedName,
       isPrivate: Boolean(scopedTree.isPrivate),
+      approvalEnabled: Boolean(scopedTree.approvalEnabled),
+      reviewStatus: getEffectiveReviewStatus(scopedTree.reviewStatus, Boolean(scopedTree.approvalEnabled)),
       ownerObjectId: scopedTree.ownerObjectId ?? null,
       ownerUserDetails: scopedTree.ownerUserDetails ?? null,
       ownerDisplayName: scopedTree.ownerDisplayName ?? null,
@@ -659,6 +799,8 @@ export async function updateTreeVisibility({ treeId, isPrivate, principal = null
       description: normalizeTreeDescription(scopedTree.description),
       isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
       isPrivate: nextIsPrivate,
+      approvalEnabled: Boolean(scopedTree.approvalEnabled),
+      reviewStatus: getEffectiveReviewStatus(scopedTree.reviewStatus, Boolean(scopedTree.approvalEnabled)),
       ownerObjectId: ownerMetadata.ownerObjectId,
       ownerUserDetails: ownerMetadata.ownerUserDetails,
       ownerDisplayName: ownerMetadata.ownerDisplayName,
@@ -707,6 +849,8 @@ export async function updateTreeOwner({
         description: normalizeTreeDescription(scopedTree.description),
         isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
         isPrivate: Boolean(scopedTree.isPrivate),
+        approvalEnabled: Boolean(scopedTree.approvalEnabled),
+        reviewStatus: getEffectiveReviewStatus(scopedTree.reviewStatus, Boolean(scopedTree.approvalEnabled)),
         ownerObjectId: scopedTree.ownerObjectId ?? null,
         ownerUserDetails: scopedTree.ownerUserDetails ?? null,
         ownerDisplayName: scopedTree.ownerDisplayName ?? null,
@@ -741,6 +885,8 @@ export async function updateTreeOwner({
       description: normalizeTreeDescription(scopedTree.description),
       isDescriptionPublished: Boolean(scopedTree.isDescriptionPublished),
       isPrivate: Boolean(scopedTree.isPrivate),
+      approvalEnabled: Boolean(scopedTree.approvalEnabled),
+      reviewStatus: getEffectiveReviewStatus(scopedTree.reviewStatus, Boolean(scopedTree.approvalEnabled)),
       ownerObjectId: normalizedOwnerObjectId,
       ownerUserDetails: normalizedOwnerUserDetails,
       ownerDisplayName: normalizedOwnerDisplayName,
@@ -768,6 +914,8 @@ export async function updateTreeDescription({ treeId, description, principal = n
         description: currentDescription,
         isDescriptionPublished: false,
         isPrivate: Boolean(scopedTree.isPrivate),
+        approvalEnabled: Boolean(scopedTree.approvalEnabled),
+        reviewStatus: getEffectiveReviewStatus(scopedTree.reviewStatus, Boolean(scopedTree.approvalEnabled)),
         ownerObjectId: scopedTree.ownerObjectId ?? null,
         ownerUserDetails: scopedTree.ownerUserDetails ?? null,
         ownerDisplayName: scopedTree.ownerDisplayName ?? null,
@@ -799,10 +947,207 @@ export async function updateTreeDescription({ treeId, description, principal = n
       description: nextDescription,
       isDescriptionPublished: false,
       isPrivate: Boolean(scopedTree.isPrivate),
+      approvalEnabled: Boolean(scopedTree.approvalEnabled),
+      reviewStatus: getEffectiveReviewStatus(scopedTree.reviewStatus, Boolean(scopedTree.approvalEnabled)),
       ownerObjectId: scopedTree.ownerObjectId ?? null,
       ownerUserDetails: scopedTree.ownerUserDetails ?? null,
       ownerDisplayName: scopedTree.ownerDisplayName ?? null,
     };
+  });
+}
+
+export async function updateTreeApprovalEnabled({ treeId, approvalEnabled, principal = null, enforceAccess = false }) {
+  const nextApprovalEnabled = Boolean(approvalEnabled);
+
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+
+    if (enforceAccess && !canManageTreeAccess(scopedTree, principal)) {
+      throw createStatusError('You are not allowed to change review settings for this tree', 403);
+    }
+
+    if (Boolean(scopedTree.approvalEnabled) === nextApprovalEnabled) {
+      return scopedTree;
+    }
+
+    const request = new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('approval_enabled', sql.Bit, nextApprovalEnabled ? 1 : 0)
+      .input('review_status_draft', sql.NVarChar(20), REVIEW_STATUS_DRAFT);
+
+    if (nextApprovalEnabled) {
+      await request.query(`
+        UPDATE ti
+        SET approval_enabled = @approval_enabled,
+            review_status = COALESCE(NULLIF(ti.review_status, ''), @review_status_draft),
+            updated_at = SYSUTCDATETIME()
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+    } else {
+      await request.query(`
+        UPDATE ti
+        SET approval_enabled = @approval_enabled,
+            review_status = @review_status_draft,
+            submitted_at = NULL,
+            submitted_by_object_id = NULL,
+            submitted_by_user_details = NULL,
+            reviewed_at = NULL,
+            reviewed_by_object_id = NULL,
+            reviewed_by_user_details = NULL,
+            rejection_comment = NULL,
+            updated_at = SYSUTCDATETIME()
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+
+        UPDATE tn
+        SET review_status = @review_status_draft,
+            submitted_at = NULL,
+            submitted_by_object_id = NULL,
+            submitted_by_user_details = NULL,
+            reviewed_at = NULL,
+            reviewed_by_object_id = NULL,
+            reviewed_by_user_details = NULL,
+            rejection_comment = NULL
+        FROM tree_nodes tn
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+
+        UPDATE files
+        SET review_status = @review_status_draft,
+            submitted_at = NULL,
+            submitted_by_object_id = NULL,
+            submitted_by_user_details = NULL,
+            reviewed_at = NULL,
+            reviewed_by_object_id = NULL,
+            reviewed_by_user_details = NULL,
+            rejection_comment = NULL
+        FROM tree_node_detail_files files
+        INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+    }
+
+    return assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+  });
+}
+
+export async function transitionTreeReviewStatus({ treeId, reviewAction, rejectionComment = null, principal = null, enforceAccess = false }) {
+  return withSqlConnection(async () => {
+    const scopedTree = await assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
+
+    if (!Boolean(scopedTree.approvalEnabled)) {
+      throw createStatusError('Review is not enabled for this tree', 400);
+    }
+
+    if (enforceAccess && !canReviewTree(scopedTree, principal)) {
+      throw createStatusError('You are not allowed to review this tree', 403);
+    }
+
+    const { actorObjectId, actorUserDetails } = getReviewActorMetadata(principal);
+
+    if (!actorObjectId) {
+      throw createStatusError('Authentication is required to review this tree', 401);
+    }
+
+    const nextReviewStatus = resolveNextReviewStatus(scopedTree.reviewStatus, reviewAction);
+    const isSubmitAction = nextReviewStatus === REVIEW_STATUS_SUBMITTED;
+    const normalizedRejectionComment = nextReviewStatus === REVIEW_STATUS_REJECTED
+      ? normalizeRejectionComment(rejectionComment, { required: true })
+      : null;
+
+    await new sql.Request()
+      .input('tree_instance_id', sql.Int, Number(treeId))
+      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+      .input('review_status', sql.NVarChar(20), nextReviewStatus)
+      .input('submitted_by_object_id', sql.NVarChar(100), isSubmitAction ? actorObjectId : null)
+      .input('submitted_by_user_details', sql.NVarChar(320), isSubmitAction ? actorUserDetails : null)
+      .input('reviewed_by_object_id', sql.NVarChar(100), isSubmitAction ? null : actorObjectId)
+      .input('reviewed_by_user_details', sql.NVarChar(320), isSubmitAction ? null : actorUserDetails)
+      .input('rejection_comment', sql.NVarChar(2000), normalizedRejectionComment)
+      .query(`
+        UPDATE ti
+        SET review_status = @review_status,
+            submitted_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME() ELSE submitted_at END,
+            submitted_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id ELSE submitted_by_object_id END,
+            submitted_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details ELSE submitted_by_user_details END,
+            reviewed_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE SYSUTCDATETIME() END,
+            reviewed_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_object_id END,
+            reviewed_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_user_details END,
+            rejection_comment = CASE
+              WHEN @review_status = '${REVIEW_STATUS_APPROVED}' THEN NULL
+              WHEN @review_status = '${REVIEW_STATUS_REJECTED}' THEN COALESCE(NULLIF(LTRIM(RTRIM(ti.rejection_comment)), ''), @rejection_comment)
+              ELSE ti.rejection_comment
+            END,
+            updated_at = SYSUTCDATETIME()
+        FROM tree_instance ti
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+
+        UPDATE tn
+        SET review_status = @review_status,
+            submitted_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME() ELSE submitted_at END,
+            submitted_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id ELSE submitted_by_object_id END,
+            submitted_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details ELSE submitted_by_user_details END,
+            reviewed_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE SYSUTCDATETIME() END,
+            reviewed_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_object_id END,
+            reviewed_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_user_details END,
+            rejection_comment = CASE
+              WHEN @review_status = '${REVIEW_STATUS_APPROVED}' THEN NULL
+              WHEN @review_status = '${REVIEW_STATUS_REJECTED}' THEN COALESCE(NULLIF(LTRIM(RTRIM(tn.rejection_comment)), ''), @rejection_comment)
+              ELSE tn.rejection_comment
+            END
+        FROM tree_nodes tn
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+
+        UPDATE files
+        SET review_status = @review_status,
+            submitted_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME() ELSE submitted_at END,
+            submitted_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id ELSE submitted_by_object_id END,
+            submitted_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details ELSE submitted_by_user_details END,
+            reviewed_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE SYSUTCDATETIME() END,
+            reviewed_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_object_id END,
+            reviewed_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_user_details END,
+            rejection_comment = CASE
+              WHEN @review_status = '${REVIEW_STATUS_APPROVED}' THEN NULL
+              WHEN @review_status = '${REVIEW_STATUS_REJECTED}' THEN COALESCE(NULLIF(LTRIM(RTRIM(files.rejection_comment)), ''), @rejection_comment)
+              ELSE files.rejection_comment
+            END
+        FROM tree_node_detail_files files
+        INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ti.id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier;
+      `);
+
+    return assertScopedTree(treeId, {
+      principal,
+      enforceAccess: false,
+    });
   });
 }
 

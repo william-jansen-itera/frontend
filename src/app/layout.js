@@ -28,6 +28,7 @@ const navLinks = [
   { href: "/notes", label: "Notes", requiresRole: "mdsusers" },
   { href: "/search", label: "Search", requiresRole: "mdsusers" },
   { href: "/chat", label: "Agent", requiresRole: "mdsusers" },
+  { href: "/review", label: "Review", requiresAuthenticated: true },
   { href: "/me", label: "Me", requiresAuthenticated: true },
   { href: "/admin", label: "Admin", requiresRole: "mdsadmins" },
   { href: "/about", label: "About" },
@@ -49,6 +50,10 @@ function getPageSurfaceClassName(pathname) {
 
   if (pathname === "/search") {
     return "appPageSurface appPageSurfaceSearch";
+  }
+
+  if (pathname === "/review") {
+    return "appPageSurface appPageSurfaceAbout";
   }
 
   if (pathname === "/about") {
@@ -111,7 +116,8 @@ function HeaderAuthControls({
 }
 
 function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "public" }) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileMenuPathname, setMobileMenuPathname] = useState(null);
+  const isMobileMenuOpen = mobileMenuPathname === pathname;
 
   const buildNavHref = (href) => buildVisibilityHref(
     href,
@@ -132,10 +138,6 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
     return true;
   });
 
-  useEffect(() => {
-    setIsMobileMenuOpen(false);
-  }, [pathname]);
-
   const renderNavLinks = ({ mobile = false } = {}) => {
     const className = mobile ? "appNavLinks appNavLinksMobile" : "appNavLinks";
 
@@ -149,7 +151,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
               key={link.href}
               href={buildNavHref(link.href)}
               className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
-              onClick={mobile ? () => setIsMobileMenuOpen(false) : undefined}
+              onClick={mobile ? () => setMobileMenuPathname(null) : undefined}
             >
               {link.label}
             </Link>
@@ -184,7 +186,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
               aria-expanded={isMobileMenuOpen}
               aria-controls="app-mobile-menu"
               aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
-              onClick={() => setIsMobileMenuOpen((current) => !current)}
+              onClick={() => setMobileMenuPathname((current) => (current === pathname ? null : pathname))}
             >
               <span className="appNavMenuButtonLine" />
               <span className="appNavMenuButtonLine" />
@@ -206,7 +208,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
                 signIn={signIn}
                 signOut={signOut}
                 mobile
-                onAction={() => setIsMobileMenuOpen(false)}
+                onAction={() => setMobileMenuPathname(null)}
               />
             </div>
           ) : null}

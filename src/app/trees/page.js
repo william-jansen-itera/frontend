@@ -188,6 +188,130 @@ function formatPublishOutcomeMessage(syncStatus, treeId) {
   return "Stored description was published to the agent.";
 }
 
+function formatReviewStatusLabel(reviewStatus) {
+  const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
+
+  if (normalizedStatus === "submitted") {
+    return "Submitted";
+  }
+
+  if (normalizedStatus === "approved") {
+    return "Approved";
+  }
+
+  if (normalizedStatus === "rejected") {
+    return "Rejected";
+  }
+
+  return "Draft";
+}
+
+function promptForRejectionComment(targetLabel) {
+  const nextComment = window.prompt(`Enter a rejection comment for ${targetLabel}:`, "");
+
+  if (nextComment === null) {
+    return null;
+  }
+
+  const normalizedComment = String(nextComment).trim();
+
+  if (!normalizedComment) {
+    window.alert("A rejection comment is required.");
+    return null;
+  }
+
+  return normalizedComment;
+}
+
+function getTreeReviewScopeLabel(treeName) {
+  return `tree "${treeName}" and everything in it, including all nodes, leaves, and attachments`;
+}
+
+function getReviewStatusClassName(reviewStatus, styles) {
+  const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
+
+  if (normalizedStatus === "submitted") {
+    return styles.reviewStatusSubmitted;
+  }
+
+  if (normalizedStatus === "approved") {
+    return styles.reviewStatusApproved;
+  }
+
+  if (normalizedStatus === "rejected") {
+    return styles.reviewStatusRejected;
+  }
+
+  return styles.reviewStatusDraft;
+}
+
+function formatReviewTimestamp(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parsedValue = new Date(value);
+
+  if (Number.isNaN(parsedValue.getTime())) {
+    return null;
+  }
+
+  return parsedValue.toLocaleString();
+}
+
+function formatReviewAuditLabel(tree) {
+  const reviewStatus = String(tree?.reviewStatus ?? "draft").trim().toLowerCase();
+  const submittedTimestamp = formatReviewTimestamp(tree?.submittedAt);
+  const reviewedTimestamp = formatReviewTimestamp(tree?.reviewedAt);
+
+  if (reviewStatus === "submitted") {
+    const parts = [];
+    const submittedByUserDetails = String(tree?.submittedByUserDetails ?? "").trim();
+
+    if (submittedByUserDetails) {
+      parts.push(`Submitted by ${submittedByUserDetails}`);
+    }
+
+    if (submittedTimestamp) {
+      parts.push(submittedTimestamp);
+    }
+
+    return parts.join(" • ") || "Submitted for review";
+  }
+
+  if (reviewStatus === "approved") {
+    const parts = [];
+    const reviewedByUserDetails = String(tree?.reviewedByUserDetails ?? "").trim();
+
+    if (reviewedByUserDetails) {
+      parts.push(`Approved by ${reviewedByUserDetails}`);
+    }
+
+    if (reviewedTimestamp) {
+      parts.push(reviewedTimestamp);
+    }
+
+    return parts.join(" • ") || "Approved";
+  }
+
+  if (reviewStatus === "rejected") {
+    const parts = [];
+    const reviewedByUserDetails = String(tree?.reviewedByUserDetails ?? "").trim();
+
+    if (reviewedByUserDetails) {
+      parts.push(`Rejected by ${reviewedByUserDetails}`);
+    }
+
+    if (reviewedTimestamp) {
+      parts.push(reviewedTimestamp);
+    }
+
+    return parts.join(" • ") || "Rejected";
+  }
+
+  return "Not yet submitted";
+}
+
 function TreesPageContent() {
   const { user } = useAuth();
   const pathname = usePathname();
@@ -1173,12 +1297,135 @@ function TreesPageContent() {
     }
   };
 
+  const handleToggleApprovalEnabled = async (tree) => {
+    const treeId = String(tree.id);
+    const nextApprovalEnabled = !Boolean(tree.approvalEnabled);
+
+    if (!nextApprovalEnabled) {
+      const confirmed = window.confirm(
+        `Disable approvals for "${tree.name}"? This will reset the tree and its nodes and attachments back to draft.`,
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setTreePendingState(treeId, "approval", true);
+    updateRowFeedback(treeId, {
+      reviewError: "",
+      reviewMessage: "",
+    });
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "set-approval-enabled",
+          treeId,
+          approvalEnabled: nextApprovalEnabled,
+          visibility: visibilityFilter,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Approval setting could not be updated");
+      }
+
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+      updateRowFeedback(treeId, {
+        reviewError: "",
+        reviewMessage: nextApprovalEnabled
+          ? "Approval workflow enabled for this tree."
+          : "Approval workflow disabled and all review states reset to draft.",
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        reviewError: getErrorMessage(error, "Approval setting could not be updated"),
+        reviewMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, "approval", false);
+    }
+  };
+
+  const handleTreeReviewAction = async (tree, action) => {
+    const treeId = String(tree.id);
+    const treeScopeLabel = getTreeReviewScopeLabel(tree.name);
+    const rejectionComment = action === "reject"
+      ? promptForRejectionComment(treeScopeLabel)
+      : null;
+
+    if (action === "reject" && rejectionComment === null) {
+      return;
+    }
+
+    const reviewActionLabel = action === "submit"
+      ? `submit ${treeScopeLabel} for review`
+      : action === "approve"
+        ? `approve ${treeScopeLabel}`
+        : `reject ${treeScopeLabel}`;
+
+    if (!window.confirm(`Are you sure you want to ${reviewActionLabel}?`)) {
+      return;
+    }
+
+    setTreePendingState(treeId, `review:${action}`, true);
+    updateRowFeedback(treeId, {
+      reviewError: "",
+      reviewMessage: "",
+    });
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action,
+          treeId,
+          rejectionComment,
+          visibility: visibilityFilter,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Tree review action could not be completed");
+      }
+
+      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
+      updateRowFeedback(treeId, {
+        reviewError: "",
+        reviewMessage: action === "submit"
+          ? "Tree submitted for review."
+          : action === "approve"
+            ? "Tree approved."
+            : "Tree rejected.",
+      });
+    } catch (error) {
+      updateRowFeedback(treeId, {
+        reviewError: getErrorMessage(error, "Tree review action could not be completed"),
+        reviewMessage: "",
+      });
+    } finally {
+      setTreePendingState(treeId, `review:${action}`, false);
+    }
+  };
+
   return (
     <main className={`${styles.pageShell} appPageShell`}>
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className="appHeroCopy">
           <p className={`${styles.description} appPageDescription`}>
-            Create new trees, manage visibility, and maintain editor access. Only the owner can transfer ownership or change the editor list, and only the owner or assigned editors can change tree content.
+            Create new trees, manage visibility, maintain editor access, and submit entire trees for review. Only the owner can transfer ownership, change the editor list, or enable approvals, and only the owner or assigned editors can change tree content.
           </p>
         </div>
 
@@ -1257,82 +1504,94 @@ function TreesPageContent() {
                 const currentEditors = Array.isArray(tree.editors) ? tree.editors : [];
                 const canWriteTree = Boolean(tree.currentUserCanWrite);
                 const canManageTreeAccess = Boolean(tree.currentUserCanManageAccess);
+                const canReviewTree = Boolean(tree.currentUserCanReview);
+                const approvalEnabled = Boolean(tree.approvalEnabled);
+                const reviewStatus = String(tree.reviewStatus ?? "draft");
                 const isTransferChanged = String(selectedTransferTarget?.objectId ?? "").trim() !== "" && String(selectedTransferTarget?.objectId ?? "").trim() !== String(tree.ownerObjectId ?? "").trim();
+                const canSubmitTree = approvalEnabled && (reviewStatus === "draft" || reviewStatus === "rejected");
+                const canApproveOrRejectTree = approvalEnabled && reviewStatus === "submitted";
 
                 return (
                   <article key={treeId} className={styles.treeRow}>
                     <div className={styles.rowSection}>
                       <div className={styles.treeMetaRow}>
-                        <div className={styles.treeMeta}>
-                          <span className={styles.treeId}>Tree {treeId}</span>
-                          <div className={styles.treeMetaEditor}>
-                            <select
-                              value={nextVisibility}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setDraftVisibility((currentDrafts) => ({
-                                  ...currentDrafts,
-                                  [treeId]: nextValue,
-                                }));
-                              }}
-                              disabled={isPending || !canWriteTree}
-                              className={`appSelectControl ${styles.treeVisibilitySelect}`}
-                            >
-                              <option value="public">Public</option>
-                              <option value="private">Private</option>
-                            </select>
-                            <input
-                              type="text"
-                              value={draftName}
-                              onChange={(event) => {
-                                const nextValue = event.target.value;
-                                setDraftNames((currentDrafts) => ({
-                                  ...currentDrafts,
-                                  [treeId]: nextValue,
-                                }));
-                              }}
-                              disabled={isPending || !canWriteTree}
-                              className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
-                            />
+                        <div className={styles.treeMetaHeader}>
+                          <div className={styles.treeIdRow}>
+                            <span className={styles.treeId}>Tree {treeId}</span>
                           </div>
                         </div>
-
-                        <div className={styles.rowActions}>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveTreeMeta(tree)}
-                            disabled={isPending || !canWriteTree || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
-                            className="appCompactActionButton appCompactActionButtonNeutral"
-                          >
-                            {rowPendingState.meta ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handlePopulateTree(tree)}
-                            disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
-                            className="appCompactActionButton appCompactActionButtonNeutral"
-                          >
-                            {rowPendingState.populate ? "Populating..." : "Populate"}
-                          </button>
-                          <Link
-                            href={buildVisibilityHref(
-                              "/notes",
-                              `treeId=${encodeURIComponent(treeId)}`,
-                              visibilityFilter,
-                              PUBLIC_PRIVATE_VISIBILITY_VALUES,
-                            )}
-                            className={`appCompactActionButton ${styles.actionButtonLink}`}
-                          >
-                            Open
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteTree(tree)}
-                            disabled={isPending || !canWriteTree}
-                            className="appCompactActionButton appCompactActionButtonDanger"
-                          >
-                            {rowPendingState.delete ? "Working..." : "Delete"}
-                          </button>
+                        <div className={styles.treeMeta}>
+                          <div className={styles.treeMetaEditor}>
+                            <div className={styles.treeVisibilityRow}>
+                              <select
+                                value={nextVisibility}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value;
+                                  setDraftVisibility((currentDrafts) => ({
+                                    ...currentDrafts,
+                                    [treeId]: nextValue,
+                                  }));
+                                }}
+                                disabled={isPending || !canWriteTree}
+                                className={`appSelectControl ${styles.treeVisibilitySelect}`}
+                              >
+                                <option value="public">Public</option>
+                                <option value="private">Private</option>
+                              </select>
+                            </div>
+                            <div className={styles.treeTitleRow}>
+                              <input
+                                type="text"
+                                value={draftName}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value;
+                                  setDraftNames((currentDrafts) => ({
+                                    ...currentDrafts,
+                                    [treeId]: nextValue,
+                                  }));
+                                }}
+                                disabled={isPending || !canWriteTree}
+                                className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveTreeMeta(tree)}
+                                disabled={isPending || !canWriteTree || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
+                                className="appCompactActionButton appCompactActionButtonNeutral"
+                              >
+                                {rowPendingState.meta ? "Saving..." : "Save"}
+                              </button>
+                            </div>
+                          </div>
+                          <div className={styles.treeMetaActions}>
+                            <button
+                              type="button"
+                              onClick={() => handlePopulateTree(tree)}
+                              disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
+                              className="appCompactActionButton appCompactActionButtonNeutral"
+                            >
+                              {rowPendingState.populate ? "Populating..." : "Populate"}
+                            </button>
+                            <Link
+                              href={buildVisibilityHref(
+                                "/notes",
+                                `treeId=${encodeURIComponent(treeId)}`,
+                                visibilityFilter,
+                                PUBLIC_PRIVATE_VISIBILITY_VALUES,
+                              )}
+                              className={`appCompactActionButton ${styles.actionButtonLink}`}
+                            >
+                              Open
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTree(tree)}
+                              disabled={isPending || !canWriteTree}
+                              className="appCompactActionButton appCompactActionButtonDanger"
+                            >
+                              {rowPendingState.delete ? "Working..." : "Delete"}
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -1444,6 +1703,82 @@ function TreesPageContent() {
                           >
                             Cancel
                           </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.transferRow}>
+                        <div className={styles.transferBlock}>
+                          <div className={styles.transferHeader}>
+                            <span className={`${styles.transferLabel} appFieldLabel`}>Review</span>
+                            <span className={styles.transferHint}>Approval applies to the entire tree here and gates Review-page visibility for this tree and its child content.</span>
+                          </div>
+                          <div className={styles.reviewSectionBody}>
+                            <div className={styles.reviewSummaryRow}>
+                              <label className={styles.reviewToggle}>
+                                <input
+                                  type="checkbox"
+                                  checked={approvalEnabled}
+                                  onChange={() => handleToggleApprovalEnabled(tree)}
+                                  disabled={isPending || !canManageTreeAccess}
+                                />
+                                <span>Approval enabled</span>
+                              </label>
+                              {approvalEnabled ? (
+                                <>
+                                  <span className={`${styles.reviewStatusBadge} ${getReviewStatusClassName(reviewStatus, styles)}`}>
+                                    {formatReviewStatusLabel(reviewStatus)}
+                                  </span>
+                                  <span className={styles.reviewMeta}>{formatReviewAuditLabel(tree)}</span>
+                                </>
+                              ) : null}
+                            </div>
+                            {approvalEnabled ? (
+                              <div className={styles.reviewActionRow}>
+                                {canSubmitTree ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTreeReviewAction(tree, "submit")}
+                                    disabled={isPending || !canReviewTree}
+                                    className="appCompactActionButton appCompactActionButtonNeutral"
+                                  >
+                                    {rowPendingState["review:submit"] ? "Submitting..." : "Submit"}
+                                  </button>
+                                ) : null}
+                                {canApproveOrRejectTree ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleTreeReviewAction(tree, "approve")}
+                                      disabled={isPending || !canReviewTree}
+                                      className="appCompactActionButton appCompactActionButtonPrimary"
+                                    >
+                                      {rowPendingState["review:approve"] ? "Approving..." : "Approve"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleTreeReviewAction(tree, "reject")}
+                                      disabled={isPending || !canReviewTree}
+                                      className="appCompactActionButton appCompactActionButtonDanger"
+                                    >
+                                      {rowPendingState["review:reject"] ? "Rejecting..." : "Reject"}
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                          {!approvalEnabled ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>Approval is disabled. This tree and its child content stay in draft and do not appear on the Review page.</p>
+                          ) : null}
+                          {!canManageTreeAccess ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>Only the owner can enable or disable approvals for this tree.</p>
+                          ) : null}
+                          {feedback.reviewMessage ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.reviewMessage}</p>
+                          ) : null}
+                          {feedback.reviewError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.reviewError}</p>
+                          ) : null}
                         </div>
                       </div>
 

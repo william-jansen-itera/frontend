@@ -104,6 +104,96 @@ function buildAuditLabel(userDetails, timestamp, defaultLabel) {
   return parts.join(" • ");
 }
 
+function formatReviewStatusLabel(reviewStatus) {
+  const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
+
+  if (normalizedStatus === "submitted") {
+    return "Submitted";
+  }
+
+  if (normalizedStatus === "approved") {
+    return "Approved";
+  }
+
+  if (normalizedStatus === "rejected") {
+    return "Rejected";
+  }
+
+  return "Draft";
+}
+
+function getReviewStatusClassName(reviewStatus, styles) {
+  const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
+
+  if (normalizedStatus === "submitted") {
+    return styles.reviewStatusSubmitted;
+  }
+
+  if (normalizedStatus === "approved") {
+    return styles.reviewStatusApproved;
+  }
+
+  if (normalizedStatus === "rejected") {
+    return styles.reviewStatusRejected;
+  }
+
+  return styles.reviewStatusDraft;
+}
+
+function buildReviewAuditLabel(reviewStatus, submittedByUserDetails, submittedAt, reviewedByUserDetails, reviewedAt) {
+  const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
+
+  if (normalizedStatus === "submitted") {
+    return buildAuditLabel(submittedByUserDetails, submittedAt, "Submitted for review");
+  }
+
+  if (normalizedStatus === "approved") {
+    return buildAuditLabel(reviewedByUserDetails, reviewedAt, null);
+  }
+
+  if (normalizedStatus === "rejected") {
+    return buildAuditLabel(reviewedByUserDetails, reviewedAt, null);
+  }
+
+  return "Not yet submitted";
+}
+
+function promptForRejectionComment(targetLabel) {
+  const nextComment = window.prompt(`Enter a rejection comment for ${targetLabel}:`, "");
+
+  if (nextComment === null) {
+    return null;
+  }
+
+  const normalizedComment = String(nextComment).trim();
+
+  if (!normalizedComment) {
+    window.alert("A rejection comment is required.");
+    return null;
+  }
+
+  return normalizedComment;
+}
+
+function formatRejectionComment(value) {
+  const normalizedValue = String(value ?? "").trim();
+  return normalizedValue || "No rejection comment recorded.";
+}
+
+function getNodeReviewScopeLabel(node) {
+  const nodeName = node?.name || "this node";
+
+  if (node?.isLeafNode) {
+    return `leaf node "${nodeName}" only`;
+  }
+
+  return `branch node "${nodeName}", its descendant branches, and its leaf nodes`;
+}
+
+function getAttachmentReviewScopeLabel(fileName) {
+  return `attachment "${fileName || "this file"}" only`;
+}
+
 function countVisibleNodes(nodes, expandedState) {
   return nodes.reduce((total, node) => {
     const childCount = Array.isArray(node.children) && expandedState?.[String(node.id)]
@@ -167,6 +257,7 @@ function NotesPage() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState(null);
+  const [pendingReviewKey, setPendingReviewKey] = useState("");
   const { pageContainerRef, treeContentRef, isStackedLayout, panelHeight, treeHeight } = usePanelLayout();
   const treeRef = useRef();
   const attachmentInputRef = useRef(null);
@@ -174,6 +265,8 @@ function NotesPage() {
   const [error, setError] = useState(null);
   const selectedTree = availableTrees.find((tree) => String(tree.id) === String(treeIdParam ?? "")) ?? null;
   const canWriteSelectedTree = Boolean(selectedTree?.currentUserCanWrite);
+  const approvalEnabled = Boolean(selectedTree?.approvalEnabled);
+  const canReviewSelectedTree = Boolean(selectedTree?.currentUserCanReview);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
   const canAddRoot = Boolean(treeIdParam && canWriteSelectedTree);
   const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree);
@@ -182,11 +275,16 @@ function NotesPage() {
   const isLeafSelection = Boolean(selectedNode?.isLeafNode);
   const canEditLeafDetails = Boolean(isLeafSelection && canWriteSelectedTree);
   const canGenerateNotes = Boolean(isLeafSelection && canWriteSelectedTree);
-  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null;
+  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null || Boolean(pendingReviewKey);
   const isLoadingTrees = !isVisibilityReady || loadedVisibility !== visibilityParam;
   const resolvedTreeIdValue = treeIdParam ?? "";
   const hasUnsavedNodeDetailChanges = normalizeEditorComparableValue(nodeEditorState.name) !== normalizeEditorComparableValue(savedNodeEditorState.name)
     || normalizeEditorComparableValue(nodeEditorState.notes) !== normalizeEditorComparableValue(savedNodeEditorState.notes);
+  const selectedNodeReviewStatus = isLeafSelection
+    ? String(nodeEditorState.reviewStatus ?? selectedNode?.reviewStatus ?? "draft")
+    : String(selectedNode?.reviewStatus ?? "draft");
+  const canSubmitSelectedNode = approvalEnabled && Boolean(selectedNode) && (selectedNodeReviewStatus === "draft" || selectedNodeReviewStatus === "rejected");
+  const canApproveOrRejectSelectedNode = approvalEnabled && Boolean(selectedNode) && selectedNodeReviewStatus === "submitted";
 
   const visibilityQueryParam = visibilityParam === "public"
     ? ""
@@ -438,10 +536,6 @@ function NotesPage() {
   // Fetch the details of the selected node when selectedNodeId changes
   useEffect(() => {
     if (!treeIdParam || !selectedNodeId) {
-      return;
-    }
-
-    if (!selectedNode?.isLeafNode) {
       return;
     }
 
@@ -809,6 +903,119 @@ function NotesPage() {
     }
   };
 
+  const handleNodeReviewAction = async (action) => {
+    if (!treeIdParam || !selectedNodeId || !approvalEnabled) {
+      return;
+    }
+
+    const selectedNodeLabel = getNodeReviewScopeLabel(selectedNode);
+
+    const rejectionComment = action === "reject"
+      ? promptForRejectionComment(selectedNodeLabel)
+      : null;
+
+    if (action === "reject" && rejectionComment === null) {
+      return;
+    }
+
+    const actionLabel = action === "submit"
+      ? `submit ${selectedNodeLabel} for review`
+      : action === "approve"
+        ? `approve ${selectedNodeLabel}`
+        : `reject ${selectedNodeLabel}`;
+
+    if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) {
+      return;
+    }
+
+    try {
+      setPendingReviewKey(`node:${action}`);
+      setNodeDetailsError(null);
+
+      const response = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: `${action}-node-review`,
+          treeId: treeIdParam,
+          id: selectedNodeId,
+          rejectionComment,
+        }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to update node review status");
+      }
+
+      applyTreeResponse(result.flatData, selectedNodeId);
+      const nextEditorState = buildNodeEditorState(result.details);
+      setNodeEditorState(nextEditorState);
+      setSavedNodeEditorState(nextEditorState);
+    } catch (err) {
+      console.error("Failed to update node review status:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setPendingReviewKey("");
+    }
+  };
+
+  const handleAttachmentReviewAction = async (attachmentId, action) => {
+    if (!treeIdParam || !attachmentId || !approvalEnabled) {
+      return;
+    }
+
+    const attachment = nodeEditorState.attachments.find((item) => String(item.id) === String(attachmentId));
+    const attachmentLabel = getAttachmentReviewScopeLabel(attachment?.fileName);
+    const rejectionComment = action === "reject"
+      ? promptForRejectionComment(attachmentLabel)
+      : null;
+
+    if (action === "reject" && rejectionComment === null) {
+      return;
+    }
+
+    const actionLabel = action === "submit"
+      ? `submit ${attachmentLabel} for review`
+      : action === "approve"
+        ? `approve ${attachmentLabel}`
+        : `reject ${attachmentLabel}`;
+
+    if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) {
+      return;
+    }
+
+    try {
+      setPendingReviewKey(`attachment:${attachmentId}:${action}`);
+      setNodeDetailsError(null);
+
+      const response = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: `${action}-attachment-review`,
+          treeId: treeIdParam,
+          attachmentId,
+          rejectionComment,
+        }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to update attachment review status");
+      }
+
+      const nextEditorState = buildNodeEditorState(result.details);
+      setNodeEditorState(nextEditorState);
+      setSavedNodeEditorState(nextEditorState);
+    } catch (err) {
+      console.error("Failed to update attachment review status:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setPendingReviewKey("");
+    }
+  };
+
   const handleGenerateNotes = async () => {
     if (!treeIdParam || !selectedNodeId || !canGenerateNotes || !isEditingNotes) {
       return;
@@ -1020,6 +1227,36 @@ function NotesPage() {
               >
                 Delete
               </button>
+              {approvalEnabled && canSubmitSelectedNode ? (
+                <button
+                  onClick={() => handleNodeReviewAction("submit")}
+                  disabled={!canReviewSelectedTree || isNodeDetailsBusy}
+                  type="button"
+                  className="appCompactActionButton appCompactActionButtonNeutral"
+                >
+                  {pendingReviewKey === "node:submit" ? "Submitting..." : "Submit"}
+                </button>
+              ) : null}
+              {approvalEnabled && canApproveOrRejectSelectedNode ? (
+                <>
+                  <button
+                    onClick={() => handleNodeReviewAction("approve")}
+                    disabled={!canReviewSelectedTree || isNodeDetailsBusy}
+                    type="button"
+                    className="appCompactActionButton appCompactActionButtonPrimary"
+                  >
+                    {pendingReviewKey === "node:approve" ? "Approving..." : "Approve"}
+                  </button>
+                  <button
+                    onClick={() => handleNodeReviewAction("reject")}
+                    disabled={!canReviewSelectedTree || isNodeDetailsBusy}
+                    type="button"
+                    className="appCompactActionButton appCompactActionButtonDanger"
+                  >
+                    {pendingReviewKey === "node:reject" ? "Rejecting..." : "Reject"}
+                  </button>
+                </>
+              ) : null}
             </div>
             {selectedTree && !canWriteSelectedTree ? (
               <div className={styles.readOnlyMessage}>Read-only: only the owner or assigned editors can change this tree.</div>
@@ -1167,6 +1404,38 @@ function NotesPage() {
                     className={`appTextControl ${styles.textInput}`}
                   />
                 </label>
+                {approvalEnabled ? (
+                  <div className={styles.reviewDetailCard}>
+                    <span className="appFieldLabel">Review status</span>
+                    <div className={styles.reviewDetailRow}>
+                      <span className={`${styles.reviewStatusBadge} ${getReviewStatusClassName(selectedNodeReviewStatus, styles)}`}>
+                        {formatReviewStatusLabel(selectedNodeReviewStatus)}
+                      </span>
+                      {buildReviewAuditLabel(
+                        selectedNodeReviewStatus,
+                        nodeEditorState.submittedByUserDetails,
+                        nodeEditorState.submittedAt,
+                        nodeEditorState.reviewedByUserDetails,
+                        nodeEditorState.reviewedAt,
+                      ) ? (
+                        <span className={styles.reviewMetaText}>
+                          {buildReviewAuditLabel(
+                            selectedNodeReviewStatus,
+                            nodeEditorState.submittedByUserDetails,
+                            nodeEditorState.submittedAt,
+                            nodeEditorState.reviewedByUserDetails,
+                            nodeEditorState.reviewedAt,
+                          )}
+                        </span>
+                      ) : null}
+                    </div>
+                    {selectedNodeReviewStatus === "rejected" ? (
+                      <p className={styles.reviewMetaText}>
+                        Rejection comment: {formatRejectionComment(nodeEditorState.rejectionComment)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {isLeafSelection ? (
                   <>
                     <div className={styles.formField}>
@@ -1252,6 +1521,30 @@ function NotesPage() {
                                     "Uploader unknown",
                                   )}
                                 </span>
+                                {approvalEnabled ? (
+                                  <div className={styles.reviewDetailRow}>
+                                    <span className={`${styles.reviewStatusBadge} ${getReviewStatusClassName(attachment.reviewStatus, styles)}`}>
+                                      {formatReviewStatusLabel(attachment.reviewStatus)}
+                                    </span>
+                                    {buildReviewAuditLabel(
+                                      attachment.reviewStatus,
+                                      attachment.submittedByUserDetails,
+                                      attachment.submittedAt,
+                                      attachment.reviewedByUserDetails,
+                                      attachment.reviewedAt,
+                                    ) ? (
+                                      <span className={styles.reviewMetaText}>
+                                        {buildReviewAuditLabel(
+                                          attachment.reviewStatus,
+                                          attachment.submittedByUserDetails,
+                                          attachment.submittedAt,
+                                          attachment.reviewedByUserDetails,
+                                          attachment.reviewedAt,
+                                        )}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                               <div className={styles.attachmentActions}>
                                 {getNodeAttachmentContentUrl(attachment) ? (
@@ -1263,6 +1556,36 @@ function NotesPage() {
                                   >
                                     Open
                                   </a>
+                                ) : null}
+                                {approvalEnabled && (attachment.reviewStatus === "draft" || attachment.reviewStatus === "rejected") ? (
+                                  <button
+                                    onClick={() => handleAttachmentReviewAction(attachment.id, "submit")}
+                                    disabled={isNodeDetailsBusy || !canReviewSelectedTree}
+                                    type="button"
+                                    className="appCompactActionButton appCompactActionButtonNeutral"
+                                  >
+                                    {pendingReviewKey === `attachment:${attachment.id}:submit` ? "Submitting..." : "Submit"}
+                                  </button>
+                                ) : null}
+                                {approvalEnabled && attachment.reviewStatus === "submitted" ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleAttachmentReviewAction(attachment.id, "approve")}
+                                      disabled={isNodeDetailsBusy || !canReviewSelectedTree}
+                                      type="button"
+                                      className="appCompactActionButton appCompactActionButtonPrimary"
+                                    >
+                                      {pendingReviewKey === `attachment:${attachment.id}:approve` ? "Approving..." : "Approve"}
+                                    </button>
+                                    <button
+                                      onClick={() => handleAttachmentReviewAction(attachment.id, "reject")}
+                                      disabled={isNodeDetailsBusy || !canReviewSelectedTree}
+                                      type="button"
+                                      className="appCompactActionButton appCompactActionButtonDanger"
+                                    >
+                                      {pendingReviewKey === `attachment:${attachment.id}:reject` ? "Rejecting..." : "Reject"}
+                                    </button>
+                                  </>
                                 ) : null}
                                 <button
                                   onClick={() => handleDeleteAttachment(attachment.id)}
