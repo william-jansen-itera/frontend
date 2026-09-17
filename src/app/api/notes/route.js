@@ -112,6 +112,14 @@ function resolveNextReviewStatus(currentStatus, reviewAction) {
     throw createStatusError(`Cannot submit a ${normalizedStatus} item for review`, 400);
   }
 
+  if (normalizedAction === 'unsubmit') {
+    if (normalizedStatus === REVIEW_STATUS_SUBMITTED) {
+      return REVIEW_STATUS_DRAFT;
+    }
+
+    throw createStatusError(`Cannot unsubmit a ${normalizedStatus} item`, 400);
+  }
+
   if (normalizedAction === 'approve') {
     if (normalizedStatus === REVIEW_STATUS_SUBMITTED) {
       return REVIEW_STATUS_APPROVED;
@@ -1113,13 +1121,38 @@ async function transitionTreeNodeReviewStatus({ treeInstanceId, nodeId, principa
       )
       UPDATE tree_nodes
       SET review_status = @review_status,
-          submitted_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME() ELSE submitted_at END,
-          submitted_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id ELSE submitted_by_object_id END,
-          submitted_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details ELSE submitted_by_user_details END,
-          reviewed_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE SYSUTCDATETIME() END,
-          reviewed_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_object_id END,
-          reviewed_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_user_details END,
+          submitted_at = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME()
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE submitted_at
+          END,
+          submitted_by_object_id = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE submitted_by_object_id
+          END,
+          submitted_by_user_details = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE submitted_by_user_details
+          END,
+          reviewed_at = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE SYSUTCDATETIME()
+          END,
+          reviewed_by_object_id = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE @reviewed_by_object_id
+          END,
+          reviewed_by_user_details = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE @reviewed_by_user_details
+          END,
           rejection_comment = CASE
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
             WHEN @review_status = '${REVIEW_STATUS_APPROVED}' THEN NULL
             WHEN @review_status = '${REVIEW_STATUS_REJECTED}' THEN COALESCE(NULLIF(LTRIM(RTRIM(tree_nodes.rejection_comment)), ''), @rejection_comment)
             ELSE tree_nodes.rejection_comment
@@ -1199,13 +1232,38 @@ async function transitionAttachmentReviewStatus({ treeInstanceId, attachmentId, 
     .query(`
       UPDATE tree_node_detail_files
       SET review_status = @review_status,
-          submitted_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME() ELSE submitted_at END,
-          submitted_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id ELSE submitted_by_object_id END,
-          submitted_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details ELSE submitted_by_user_details END,
-          reviewed_at = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE SYSUTCDATETIME() END,
-          reviewed_by_object_id = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_object_id END,
-          reviewed_by_user_details = CASE WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL ELSE @reviewed_by_user_details END,
+          submitted_at = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN SYSUTCDATETIME()
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE submitted_at
+          END,
+          submitted_by_object_id = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_object_id
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE submitted_by_object_id
+          END,
+          submitted_by_user_details = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN @submitted_by_user_details
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE submitted_by_user_details
+          END,
+          reviewed_at = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE SYSUTCDATETIME()
+          END,
+          reviewed_by_object_id = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE @reviewed_by_object_id
+          END,
+          reviewed_by_user_details = CASE
+            WHEN @review_status = '${REVIEW_STATUS_SUBMITTED}' THEN NULL
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
+            ELSE @reviewed_by_user_details
+          END,
           rejection_comment = CASE
+            WHEN @review_status = '${REVIEW_STATUS_DRAFT}' THEN NULL
             WHEN @review_status = '${REVIEW_STATUS_APPROVED}' THEN NULL
             WHEN @review_status = '${REVIEW_STATUS_REJECTED}' THEN COALESCE(NULLIF(LTRIM(RTRIM(rejection_comment)), ''), @rejection_comment)
             ELSE rejection_comment
@@ -1862,7 +1920,7 @@ export async function PATCH(request) {
 
     await assertWritableTreeForRequest(request, treeId);
 
-    if (normalizedAction === 'submit-node-review' || normalizedAction === 'approve-node-review' || normalizedAction === 'reject-node-review') {
+    if (normalizedAction === 'submit-node-review' || normalizedAction === 'unsubmit-node-review' || normalizedAction === 'approve-node-review' || normalizedAction === 'reject-node-review') {
       if (id === undefined) {
         return NextResponse.json({ error: 'Invalid request, id is required for node review' }, { status: 400 });
       }
@@ -1876,7 +1934,7 @@ export async function PATCH(request) {
       }));
     }
 
-    if (normalizedAction === 'submit-attachment-review' || normalizedAction === 'approve-attachment-review' || normalizedAction === 'reject-attachment-review') {
+    if (normalizedAction === 'submit-attachment-review' || normalizedAction === 'unsubmit-attachment-review' || normalizedAction === 'approve-attachment-review' || normalizedAction === 'reject-attachment-review') {
       if (attachmentId === undefined) {
         return NextResponse.json({ error: 'Invalid request, attachmentId is required for attachment review' }, { status: 400 });
       }

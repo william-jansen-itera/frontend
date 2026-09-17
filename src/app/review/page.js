@@ -116,6 +116,10 @@ function getReviewActionPastTense(action) {
     return "submitted";
   }
 
+  if (action === "unsubmit") {
+    return "unsubmitted";
+  }
+
   if (action === "approve") {
     return "approved";
   }
@@ -229,7 +233,11 @@ export default function ReviewPage() {
       return;
     }
 
-    const label = action === "submit" ? "resubmit" : action;
+    const label = action === "submit"
+      ? "resubmit"
+      : action === "unsubmit"
+        ? "move back to draft"
+        : action;
 
     if (!window.confirm(`Are you sure you want to ${label} ${treeScopeLabel}?`)) {
       return;
@@ -278,7 +286,11 @@ export default function ReviewPage() {
       return;
     }
 
-    const label = action === "submit" ? "resubmit" : action;
+    const label = action === "submit"
+      ? "resubmit"
+      : action === "unsubmit"
+        ? "move back to draft"
+        : action;
 
     if (!window.confirm(`Are you sure you want to ${label} ${nodeTargetLabel}?`)) {
       return;
@@ -327,7 +339,11 @@ export default function ReviewPage() {
       return;
     }
 
-    const label = action === "submit" ? "resubmit" : action;
+    const label = action === "submit"
+      ? "resubmit"
+      : action === "unsubmit"
+        ? "move back to draft"
+        : action;
 
     if (!window.confirm(`Are you sure you want to ${label} ${attachmentTargetLabel}?`)) {
       return;
@@ -378,22 +394,28 @@ export default function ReviewPage() {
     const itemCount = items.length;
     const normalizedAction = String(action ?? "").trim().toLowerCase();
 
-    if (!["submit", "approve", "reject"].includes(normalizedAction)) {
+    if (!["submit", "unsubmit", "approve", "reject"].includes(normalizedAction)) {
       return;
     }
 
     const actionVerb = normalizedAction === "submit"
       ? "Submit"
+      : normalizedAction === "unsubmit"
+        ? "Unsubmit"
       : normalizedAction === "approve"
         ? "Approve"
         : "Reject";
     const actionPastTense = normalizedAction === "submit"
       ? "Submitted"
+      : normalizedAction === "unsubmit"
+        ? "Unsubmitted"
       : normalizedAction === "approve"
         ? "Approved"
         : "Rejected";
     const actionProgressLabel = normalizedAction === "submit"
       ? "Submitting..."
+      : normalizedAction === "unsubmit"
+        ? "Unsubmitting..."
       : normalizedAction === "approve"
         ? "Approving..."
         : "Rejecting...";
@@ -489,6 +511,7 @@ export default function ReviewPage() {
       return null;
     }
 
+    const unsubmitKey = `bulk:${kind}:unsubmit`;
     const approveKey = `bulk:${kind}:approve`;
     const rejectKey = `bulk:${kind}:reject`;
 
@@ -496,8 +519,16 @@ export default function ReviewPage() {
       <div className={styles.actionGroup}>
         <button
           type="button"
+          onClick={() => handleBulkAction(items, kind, "unsubmit")}
+          disabled={isLoading || items.length === 0 || Boolean(pendingItems[unsubmitKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey])}
+          className="appCompactActionButton appCompactActionButtonNeutral"
+        >
+          {pendingItems[unsubmitKey] ? "Unsubmitting..." : "Unsubmit All"}
+        </button>
+        <button
+          type="button"
           onClick={() => handleBulkAction(items, kind, "approve")}
-          disabled={isLoading || items.length === 0 || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey])}
+          disabled={isLoading || items.length === 0 || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonPrimary"
         >
           {pendingItems[approveKey] ? "Approving..." : "Approve All"}
@@ -505,7 +536,7 @@ export default function ReviewPage() {
         <button
           type="button"
           onClick={() => handleBulkAction(items, kind, "reject")}
-          disabled={isLoading || items.length === 0 || Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[approveKey])}
+          disabled={isLoading || items.length === 0 || Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonDanger"
         >
           {pendingItems[rejectKey] ? "Rejecting..." : "Reject All"}
@@ -519,11 +550,28 @@ export default function ReviewPage() {
       return null;
     }
 
+    const unsubmitKey = `${kind}:unsubmit:${item.id}`;
     const approveKey = `${kind}:approve:${item.id}`;
     const rejectKey = `${kind}:reject:${item.id}`;
 
     return (
       <>
+        <button
+          type="button"
+          onClick={() => {
+            if (kind === "tree") {
+              handleTreeAction(item, "unsubmit");
+            } else if (kind === "node") {
+              handleNodeAction(item, "unsubmit");
+            } else {
+              handleAttachmentAction(item, "unsubmit");
+            }
+          }}
+          disabled={Boolean(pendingItems[unsubmitKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey])}
+          className="appCompactActionButton appCompactActionButtonNeutral"
+        >
+          {pendingItems[unsubmitKey] ? "Unsubmitting..." : "Unsubmit"}
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -535,7 +583,7 @@ export default function ReviewPage() {
               handleAttachmentAction(item, "approve");
             }
           }}
-          disabled={Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey])}
+          disabled={Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonPrimary"
         >
           {pendingItems[approveKey] ? "Approving..." : "Approve"}
@@ -551,7 +599,7 @@ export default function ReviewPage() {
               handleAttachmentAction(item, "reject");
             }
           }}
-          disabled={Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[approveKey])}
+          disabled={Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonDanger"
         >
           {pendingItems[rejectKey] ? "Rejecting..." : "Reject"}
