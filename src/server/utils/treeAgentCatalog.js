@@ -218,7 +218,13 @@ function buildDebugSearchResultSnapshot(rawResult) {
   };
 }
 
-function buildToolHandlerResult({ toolOutput, searchResult = null }) {
+function buildToolHandlerResult({ toolOutput, searchResult = null, includeDebug = false }) {
+  if (!includeDebug) {
+    return {
+      toolOutput,
+    };
+  }
+
   return {
     toolOutput,
     debug: {
@@ -237,7 +243,7 @@ function buildExcludedTrees(availableTrees) {
     }));
 }
 
-function buildHandlerMap(includedTrees) {
+function buildHandlerMap(includedTrees, { includeDebug = false } = {}) {
   const handlerMap = new Map();
 
   includedTrees.forEach((tree) => {
@@ -252,9 +258,12 @@ function buildHandlerMap(includedTrees) {
             count: 0,
             results: [],
           },
-          searchResult: {
-            searches: [],
-          },
+          searchResult: includeDebug
+            ? {
+              searches: [],
+            }
+            : null,
+          includeDebug,
         });
       }
 
@@ -264,13 +273,14 @@ function buildHandlerMap(includedTrees) {
         top: normalizeToolTop(top),
         allowedTreeIds: [String(tree.id)],
         defaultTop: DEFAULT_TOOL_TOP,
-        includeExecutedSearches: true,
+        includeExecutedSearches: includeDebug,
         searchMode: 'any',
       });
 
       return buildToolHandlerResult({
         toolOutput: buildAgentSearchResult(rawResult),
-        searchResult: buildDebugSearchResultSnapshot(rawResult),
+        searchResult: includeDebug ? buildDebugSearchResultSnapshot(rawResult) : null,
+        includeDebug,
       });
     });
   });
@@ -278,7 +288,7 @@ function buildHandlerMap(includedTrees) {
   return handlerMap;
 }
 
-function buildTreeSearchContextResult(treeList) {
+function buildTreeSearchContextResult(treeList, { includeDebug = false } = {}) {
   const availableTrees = treeList.map((tree) => ({ ...tree }));
 
   applyStoredToolDescriptions(availableTrees);
@@ -294,7 +304,7 @@ function buildTreeSearchContextResult(treeList) {
     includedTrees,
     excludedTrees: buildExcludedTrees(availableTrees),
     tools: includedTrees.map((tree) => buildToolDefinition(tree)),
-    handlerMap: buildHandlerMap(includedTrees),
+    handlerMap: buildHandlerMap(includedTrees, { includeDebug }),
   };
 }
 
@@ -306,7 +316,9 @@ export async function buildTreeSearchContext(options = {}) {
   };
   const treeList = await getTreeList(accessOptions);
 
-  return buildTreeSearchContextResult(treeList);
+  return buildTreeSearchContextResult(treeList, {
+    includeDebug: Boolean(options.includeDebug),
+  });
 }
 
 function buildTreeToolPreview(availableTrees) {

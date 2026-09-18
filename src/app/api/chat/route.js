@@ -95,6 +95,7 @@ export async function POST(request) {
       principal,
       visibility,
       followUpSelection,
+      includeDebug,
     });
 
     await logTrace(

@@ -41,17 +41,22 @@ function normalizeHistory(history) {
     .filter(Boolean);
 }
 
-function normalizeToolHandlerResult(result) {
-  if (result && typeof result === 'object' && 'toolOutput' in result && 'debug' in result) {
-    return result;
+function normalizeToolHandlerResult(result, includeDebug = false) {
+  if (result && typeof result === 'object' && 'toolOutput' in result) {
+    return {
+      toolOutput: result.toolOutput,
+      debug: includeDebug ? (result.debug ?? null) : null,
+    };
   }
 
   return {
     toolOutput: result,
-    debug: {
-      searchResult: null,
-      toolOutput: result,
-    },
+    debug: includeDebug
+      ? {
+        searchResult: null,
+        toolOutput: result,
+      }
+      : null,
   };
 }
 
@@ -71,7 +76,7 @@ async function createAgentResponse(openAIClient, agentName, payload) {
 // and if synthesis contains no further tool calls, the loop terminates.
 // the previous_response_id is used to maintain context across tool rounds,
 // however, there is usually only one tool round as it is
-async function runToolLoop({ response, openAIClient, agentName, handlerMap, debugRounds }) {
+async function runToolLoop({ response, openAIClient, agentName, handlerMap, debugRounds = null, includeDebug = false }) {
   const toolInvocations = [];
   const modelCalls = [];
   let currentResponse = response;
@@ -90,7 +95,7 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
     }
 
     const functionOutputs = [];
-    const roundDebug = [];
+    const roundDebug = includeDebug ? [] : null;
 
     for (const functionCall of functionCalls) {
       const toolName = functionCall.name;
@@ -113,7 +118,7 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
             error: `No handler is registered for tool ${toolName}.`,
           };
         } else {
-          const handlerResult = normalizeToolHandlerResult(await handler(parsedArguments));
+          const handlerResult = normalizeToolHandlerResult(await handler(parsedArguments), includeDebug);
           output = handlerResult.toolOutput;
           toolDebug = handlerResult.debug;
         }
@@ -135,19 +140,21 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
         arguments: functionCall.arguments || '{}',
         output,
       });
-      roundDebug.push({
-        round: round + 1,
-        callId: functionCall.call_id ?? null,
-        toolName,
-        startedAt: toolStartedAt,
-        completedAt: new Date().toISOString(),
-        durationMs: Date.now() - toolStartedAtMs,
-        parsedArguments: serializeDebugValue(parsedArguments),
-        searchResult: serializeDebugValue(toolDebug.searchResult),
-        toolOutput: serializeDebugValue(output),
-        agentToolInput: serializeDebugValue(functionCallOutput),
-        error: executionError,
-      });
+      if (roundDebug) {
+        roundDebug.push({
+          round: round + 1,
+          callId: functionCall.call_id ?? null,
+          toolName,
+          startedAt: toolStartedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - toolStartedAtMs,
+          parsedArguments: serializeDebugValue(parsedArguments),
+          searchResult: serializeDebugValue(toolDebug?.searchResult),
+          toolOutput: serializeDebugValue(output),
+          agentToolInput: serializeDebugValue(functionCallOutput),
+          error: executionError,
+        });
+      }
       functionOutputs.push(functionCallOutput);
     }
 
@@ -157,16 +164,18 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
       input: functionOutputs,
       previous_response_id: currentResponse.id,
     });
-    modelCalls.push({
-      phase: 'tool_round_synthesis',
-      round: round + 1,
-      startedAt: modelCallStartedAt,
-      completedAt: new Date().toISOString(),
-      durationMs: Date.now() - modelCallStartedAtMs,
-      responseId: currentResponse?.id ?? null,
-      status: currentResponse?.status ?? null,
-    });
-    debugRounds.push(...roundDebug);
+    if (includeDebug) {
+      modelCalls.push({
+        phase: 'tool_round_synthesis',
+        round: round + 1,
+        startedAt: modelCallStartedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - modelCallStartedAtMs,
+        responseId: currentResponse?.id ?? null,
+        status: currentResponse?.status ?? null,
+      });
+      debugRounds.push(...roundDebug);
+    }
   }
 
   throw new Error('The agent exceeded the maximum number of tool rounds');
@@ -175,7 +184,7 @@ async function runToolLoop({ response, openAIClient, agentName, handlerMap, debu
 // runs initial agent invocation
 // starts the tool loop
 // and classifies the turn type (eg. default, no_result_offer_broadening, broader_answer)
-export async function invokeTreeSearchAgent({ message, history = [], principal = null, visibility = 'public', followUpSelection = null }) {
+export async function invokeTreeSearchAgent({ message, history = [], principal = null, visibility = 'public', followUpSelection = null, includeDebug = false }) {
   const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
   const normalizedMessage = String(message ?? '').trim();
 
@@ -190,6 +199,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
     principal,
     visibility,
     enforceAccess: true,
+    includeDebug,
   });
   const normalizedHistory = normalizeHistory(history);
   const allowedToolInstruction = buildAllowedToolInstruction(includedTrees);
@@ -198,12 +208,14 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
     normalizedHistory,
     normalizedMessage,
   });
-  const debug = createAgentDebugState({
-    normalizedMessage,
-    normalizedFollowUpSelection,
-    initialInput,
-  });
-  const requestStartedAtMs = Date.now();
+  const debug = includeDebug
+    ? createAgentDebugState({
+      normalizedMessage,
+      normalizedFollowUpSelection,
+      initialInput,
+    })
+    : null;
+  const requestStartedAtMs = includeDebug ? Date.now() : null;
 
   try {
     const initialModelCallStartedAt = new Date().toISOString();
@@ -211,24 +223,29 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
     const initialResponse = await createAgentResponse(openAIClient, agent.name, {
       input: initialInput,
     });
-    debug.timings.modelCalls.push({
-      phase: 'initial_response',
-      round: 0,
-      startedAt: initialModelCallStartedAt,
-      completedAt: new Date().toISOString(),
-      durationMs: Date.now() - initialModelCallStartedAtMs,
-      responseId: initialResponse?.id ?? null,
-      status: initialResponse?.status ?? null,
-    });
+    if (debug) {
+      debug.timings.modelCalls.push({
+        phase: 'initial_response',
+        round: 0,
+        startedAt: initialModelCallStartedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - initialModelCallStartedAtMs,
+        responseId: initialResponse?.id ?? null,
+        status: initialResponse?.status ?? null,
+      });
+    }
 
     const { response, toolInvocations, modelCalls } = await runToolLoop({
       response: initialResponse,
       openAIClient,
       agentName: agent.name,
       handlerMap,
-      debugRounds: debug.toolCalls,
+      debugRounds: debug?.toolCalls ?? null,
+      includeDebug,
     });
-    debug.timings.modelCalls.push(...modelCalls);
+    if (debug) {
+      debug.timings.modelCalls.push(...modelCalls);
+    }
     const { answer, citations, shapedResponse } = await shapeTreeAgentTurn({
       finalResponse: response,
       finalToolInvocations: [...toolInvocations],
@@ -238,13 +255,17 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       debug,
       agent,
     });
-    debug.timings.requestCompletedAt = new Date().toISOString();
-    debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
+    if (debug) {
+      debug.timings.requestCompletedAt = new Date().toISOString();
+      debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
+    }
 
     return buildAgentResult({ answer, agent, shapedResponse, citations, principal, debug });
   } catch (error) {
-    debug.timings.requestCompletedAt = new Date().toISOString();
-    debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
+    if (debug) {
+      debug.timings.requestCompletedAt = new Date().toISOString();
+      debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
+    }
     throw attachDebugToError(error, debug);
   }
 }

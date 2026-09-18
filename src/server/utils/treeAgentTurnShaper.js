@@ -415,6 +415,10 @@ function createDebugTimingEntry(overrides = {}) {
 }
 
 export async function captureTimingEntry(timingEntry, action) {
+  if (!timingEntry) {
+    return action();
+  }
+
   timingEntry.startedAt = new Date().toISOString();
   const startedAtMs = Date.now();
 
@@ -427,6 +431,14 @@ export async function captureTimingEntry(timingEntry, action) {
 }
 
 export function attachDebugToError(error, debug) {
+  if (!debug) {
+    if (error instanceof Error) {
+      return error;
+    }
+
+    return new Error(String(error ?? 'Agent request failed'));
+  }
+
   const normalizedDebug = serializeDebugValue(debug);
 
   if (error instanceof Error) {
@@ -503,6 +515,7 @@ export function createAgentDebugState({ normalizedMessage, normalizedFollowUpSel
       requestCompletedAt: null,
       totalDurationMs: null,
       modelCalls: [],
+      broaderAnswerDetection: createDebugTimingEntry(),
       broaderAnswerReview: createDebugTimingEntry({ executed: false }),
       phases: {
         citationAssembly: createDebugTimingEntry(),
@@ -523,23 +536,26 @@ export async function shapeTreeAgentTurn({
 }) {
   const answer = extractAnswerText(finalResponse);
   const groundedResponseReviewSteps = [];
-  const permissionToBroadenDetection = await isPermissionToBroadenAnswer({
-    toolInvocations: finalToolInvocations,
-    answer,
-    openAIClient,
-    userMessage: normalizedMessage,
-    groundedResponseReviewSteps,
-    debugTiming: debug.timings.broaderAnswerReview,
-  });
+  const permissionToBroadenDetection = await captureTimingEntry(
+    debug?.timings?.broaderAnswerDetection ?? null,
+    async () => isPermissionToBroadenAnswer({
+      toolInvocations: finalToolInvocations,
+      answer,
+      openAIClient,
+      userMessage: normalizedMessage,
+      groundedResponseReviewSteps,
+      debugTiming: debug?.timings?.broaderAnswerReview ?? null,
+    }),
+  );
 
   const citations = await captureTimingEntry(
-    debug.timings.phases.citationAssembly,
+    debug?.timings?.phases?.citationAssembly ?? null,
     async () => dedupeCitations(
       finalToolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
     ),
   );
   const shapedResponse = await captureTimingEntry(
-    debug.timings.phases.responseShaping,
+    debug?.timings?.phases?.responseShaping ?? null,
     async () => {
       const followUpOptions = permissionToBroadenDetection.matches
         ? buildBroaderAnswerOption()
@@ -554,26 +570,28 @@ export async function shapeTreeAgentTurn({
           ? TURN_TYPE_NO_RESULT_OFFER
           : TURN_TYPE_DEFAULT;
 
-      debug.curatedAgentInput.toolMessages = serializeDebugValue(
-        debug.toolCalls.map((toolCall) => ({
-          type: 'function_call_output',
-          call_id: toolCall.callId ?? null,
-          output: `See step 2 Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
-        })),
-      );
-      debug.agentOutput = {
-        agent: {
-          id: agent.id,
-          name: agent.name,
-          version: agent.version ?? null,
-        },
-        response: buildResponseDebugSnapshot(finalResponse),
-        answer,
-        citations: serializeDebugValue(citations),
-        permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
-        groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
-        error: finalResponse?.error ?? null,
-      };
+      if (debug) {
+        debug.curatedAgentInput.toolMessages = serializeDebugValue(
+          debug.toolCalls.map((toolCall) => ({
+            type: 'function_call_output',
+            call_id: toolCall.callId ?? null,
+            output: `See step 2 Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
+          })),
+        );
+        debug.agentOutput = {
+          agent: {
+            id: agent.id,
+            name: agent.name,
+            version: agent.version ?? null,
+          },
+          response: buildResponseDebugSnapshot(finalResponse),
+          answer,
+          citations: serializeDebugValue(citations),
+          permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
+          groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
+          error: finalResponse?.error ?? null,
+        };
+      }
 
       return {
         followUpOptions,
@@ -611,6 +629,6 @@ export function buildAgentResult({ answer, agent, shapedResponse, citations, pri
         userDetails: principal.userDetails ?? null,
       }
       : null,
-    debug,
+    debug: debug ?? undefined,
   };
 }

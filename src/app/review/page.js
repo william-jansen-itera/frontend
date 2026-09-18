@@ -626,7 +626,7 @@ export default function ReviewPage() {
           <div className="appHeroCopy">
             <p className="appEyebrow">Review</p>
             <div className={styles.heroDescriptionStack}>
-              <p className="appPageDescription">Review items from approval-enabled trees only. Use this page for submitted approvals and rejected resubmissions.</p>
+              <p className="appPageDescription">Review items from approval-enabled trees only. Use this page for submitted approvals and rejected submissions.</p>
             </div>
           </div>
           <div className={styles.heroControls}>
