@@ -27,7 +27,6 @@ Required Foundry settings:
 Optional chat settings:
 
 - `AZURE_AI_AGENT_NAME` defaults to `tree-search-agent`
-- `AZURE_AI_AGENT_SYNC_TOKEN` enables manual `/api/chat/sync` protection
 - `APPLICATION_DEBUG` controls whether debug data is included in chat and search responses
 
 Optional Azure AI Search settings:

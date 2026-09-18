@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { invokeTreeSearchAgent } from '@/server/utils/chatService';
+import { invokeTreeSearchAgent } from '@/server/utils/treeAgentService';
 import { logException, logTrace } from '@/server/utils/logging';
 import { parseClientPrincipal } from '@/server/utils/auth';
 

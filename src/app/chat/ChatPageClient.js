@@ -15,6 +15,38 @@ import {
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
 
+function renderHighlightedText(text, keyPrefix) {
+  const normalizedText = String(text ?? "");
+  const parts = normalizedText.split("[[H]]");
+
+  return parts.flatMap((part, partIndex) => {
+    const [highlightedText, ...restSegments] = part.split("[[/H]]");
+    const nodes = [];
+
+    if (partIndex === 0) {
+      if (highlightedText) {
+        nodes.push(<span key={`${keyPrefix}-plain-${partIndex}`}>{highlightedText}</span>);
+      }
+
+      return nodes;
+    }
+
+    nodes.push(
+      <mark key={`${keyPrefix}-highlight-${partIndex}`} className={styles.resultHighlight}>
+        {highlightedText}
+      </mark>,
+    );
+
+    const trailingText = restSegments.join("[[/H]]");
+
+    if (trailingText) {
+      nodes.push(<span key={`${keyPrefix}-trailing-${partIndex}`}>{trailingText}</span>);
+    }
+
+    return nodes;
+  });
+}
+
 function buildFollowUpSubmissionMessage(optionId, fallbackLabel) {
   if (optionId === TURN_TYPE_BROADER_ANSWER) {
     return "Use broader knowledge";
@@ -315,6 +347,32 @@ function getCitationBreadcrumbItems(citation, visibility = "public") {
   }));
 }
 
+function CitationHighlightToggle({ matchSummary, summaryKey }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!matchSummary) {
+    return null;
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={styles.citationDisclosureToggle}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((currentValue) => !currentValue)}
+      >
+        Highlight from source
+      </button>
+      {isOpen ? (
+        <p className={styles.citationSummary}>
+          {renderHighlightedText(matchSummary, summaryKey)}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function CitationBreadcrumbs({ citations, visibility }) {
   if (!Array.isArray(citations) || citations.length === 0) {
     return null;
@@ -327,6 +385,7 @@ function CitationBreadcrumbs({ citations, visibility }) {
         {citations.map((citation, index) => {
           const breadcrumbItems = getCitationBreadcrumbItems(citation, visibility);
           const key = `${citation.treeId}-${citation.nodeId}-${index}`;
+          const matchSummary = String(citation?.matchSummary ?? "").trim();
 
           return (
             <div key={key} className={styles.citationCard}>
@@ -342,6 +401,7 @@ function CitationBreadcrumbs({ citations, visibility }) {
                     </Link>
                   </span>
                 ))}
+                <CitationHighlightToggle matchSummary={matchSummary} summaryKey={`${key}-summary`} />
               </div>
             </div>
           );

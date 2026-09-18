@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { generateTreeDescriptionDraft, publishStoredTreeDescriptions } from '@/server/utils/chatService';
+import { generateTreeDescriptionDraft } from '@/server/utils/treeDescriptionDraft';
+import { publishStoredTreeDescriptions } from '@/server/utils/treeAgentCatalog';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 import { getEntraUserByObjectId, searchEntraUsers } from '@/server/utils/swaRoleMapping';

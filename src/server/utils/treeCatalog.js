@@ -508,21 +508,6 @@ async function getScopedTreeAttachmentBlobs(treeId) {
   return result.recordset;
 }
 
-async function getScopedTreeNodeIds(treeId) {
-  const result = await new sql.Request()
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-    .query(`
-      SELECT CAST(tn.id AS VARCHAR(10)) AS id
-      FROM tree_nodes tn
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ti.id = @tree_instance_id
-        AND ai.app_identifier = @application_identifier;
-    `);
-
-  return result.recordset;
-}
 export async function getTreeList(options = {}) {
   const {
     principal = null,
@@ -1236,32 +1221,6 @@ export async function transitionTreeReviewStatus({ treeId, reviewAction, rejecti
   });
 }
 
-export async function updateTreeDescriptions(treeDescriptions) {
-  const normalizedUpdates = Array.isArray(treeDescriptions)
-    ? treeDescriptions
-      .map((entry) => ({
-        treeId: Number.parseInt(String(entry?.treeId ?? ''), 10),
-        description: normalizeTreeDescription(entry?.description),
-      }))
-      .filter((entry) => Number.isFinite(entry.treeId))
-    : [];
-
-  if (normalizedUpdates.length === 0) {
-    return [];
-  }
-
-  return withSqlConnection(async () => {
-    for (const entry of normalizedUpdates) {
-      await updateTreeDescription(entry);
-    }
-
-    return normalizedUpdates.map((entry) => ({
-      treeId: String(entry.treeId),
-      description: entry.description,
-    }));
-  });
-}
-
 export async function updateTreeDescriptionPublishedStates(treeStates) {
   const normalizedStates = Array.isArray(treeStates)
     ? treeStates
@@ -1306,6 +1265,44 @@ export async function updateTreeDescriptionPublishedStates(treeStates) {
   });
 }
 
+async function restoreDeletedTreeAttachmentBlobs(blobNames) {
+  for (const blobName of blobNames) {
+    await restoreNodeAttachmentBlobIfDeleted(blobName);
+  }
+}
+
+async function softDeleteScopedTree(treeId, deletedAt) {
+  const deleteResult = await new sql.Request()
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .input('deleted_at', sql.DateTime2, deletedAt)
+    .query(`
+      UPDATE ti
+      SET deleted_at = COALESCE(ti.deleted_at, @deleted_at),
+          updated_at = @deleted_at
+      FROM tree_instance ti
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ti.id = @tree_instance_id
+        AND ai.app_identifier = @application_identifier
+        AND ti.deleted_at IS NULL;
+
+      UPDATE files
+      SET deleted_at = COALESCE(files.deleted_at, @deleted_at),
+          updated_at = @deleted_at
+      FROM tree_node_detail_files files
+      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ti.id = @tree_instance_id
+        AND ai.app_identifier = @application_identifier
+        AND files.deleted_at IS NULL;
+    `);
+
+  if (!deleteResult.rowsAffected[0]) {
+    throw new Error('Tree was not found for the active application instance');
+  }
+}
+
 export async function deleteTree({ treeId, principal = null, enforceAccess = false }) {
   return withSqlConnection(async () => {
     await assertScopedTree(treeId, {
@@ -1326,42 +1323,11 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
         }
       }
 
-    const deletedAt = new Date();
-    const deleteResult = await new sql.Request()
-      .input('tree_instance_id', sql.Int, Number(treeId))
-      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-      .input('deleted_at', sql.DateTime2, deletedAt)
-      .query(`
-        UPDATE ti
-        SET deleted_at = COALESCE(ti.deleted_at, @deleted_at),
-            updated_at = @deleted_at
-        FROM tree_instance ti
-        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-        WHERE ti.id = @tree_instance_id
-          AND ai.app_identifier = @application_identifier
-          AND ti.deleted_at IS NULL;
+      await softDeleteScopedTree(treeId, new Date());
 
-        UPDATE files
-        SET deleted_at = COALESCE(files.deleted_at, @deleted_at),
-            updated_at = @deleted_at
-        FROM tree_node_detail_files files
-        INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-        WHERE ti.id = @tree_instance_id
-          AND ai.app_identifier = @application_identifier
-          AND files.deleted_at IS NULL;
-      `);
-
-    if (!deleteResult.rowsAffected[0]) {
-      throw new Error('Tree was not found for the active application instance');
-    }
-
-    return { success: true };
+      return { success: true };
     } catch (error) {
-      for (const blobName of deletedBlobNames) {
-        await restoreNodeAttachmentBlobIfDeleted(blobName);
-      }
+      await restoreDeletedTreeAttachmentBlobs(deletedBlobNames);
 
       throw error;
     }
@@ -1424,14 +1390,8 @@ export async function appendGeneratedNodesToTree({ treeId, generatedNodes }) {
   });
 }
 
-export async function getTreeRoutingProfiles(options = {}) {
-  const treeList = await getTreeList(options);
-
-  if (treeList.length === 0) {
-    return [];
-  }
-
-  const nodeQuery = `
+function buildTreeRoutingNodeQuery({ singleTree = false } = {}) {
+  return `
     WITH RecursiveTree AS (
       SELECT
         ti.id AS tree_id,
@@ -1449,6 +1409,7 @@ export async function getTreeRoutingProfiles(options = {}) {
         AND ti.deleted_at IS NULL
         AND tn.deleted_at IS NULL
         AND tn.parent_id IS NULL
+        ${singleTree ? 'AND ti.id = @tree_instance_id' : ''}
 
       UNION ALL
 
@@ -1475,8 +1436,10 @@ export async function getTreeRoutingProfiles(options = {}) {
       path
     FROM RecursiveTree
     ORDER BY tree_id, path;`;
+}
 
-  const attachmentQuery = `
+function buildTreeRoutingAttachmentQuery({ singleTree = false } = {}) {
+  return `
     WITH RecursiveTree AS (
       SELECT
         ti.id AS tree_id,
@@ -1493,6 +1456,7 @@ export async function getTreeRoutingProfiles(options = {}) {
         AND ti.deleted_at IS NULL
         AND tn.deleted_at IS NULL
         AND tn.parent_id IS NULL
+        ${singleTree ? 'AND ti.id = @tree_instance_id' : ''}
 
       UNION ALL
 
@@ -1520,147 +1484,152 @@ export async function getTreeRoutingProfiles(options = {}) {
     INNER JOIN tree_node_detail_files files ON files.tree_node_id = rt.id
     WHERE files.deleted_at IS NULL
     ORDER BY rt.tree_id, rt.path, files.created_at DESC, files.id DESC;`;
+}
 
-  function uniqueByValue(values, maxItems) {
-    const uniqueValues = [];
-    const seenValues = new Set();
+function uniqueByValue(values, maxItems) {
+  const uniqueValues = [];
+  const seenValues = new Set();
 
-    values.forEach((value) => {
-      const normalizedValue = String(value ?? '').trim();
+  values.forEach((value) => {
+    const normalizedValue = String(value ?? '').trim();
 
-      if (!normalizedValue) {
-        return;
-      }
+    if (!normalizedValue) {
+      return;
+    }
 
-      const key = normalizedValue.toLowerCase();
+    const key = normalizedValue.toLowerCase();
 
-      if (seenValues.has(key)) {
-        return;
-      }
+    if (seenValues.has(key)) {
+      return;
+    }
 
-      seenValues.add(key);
-      uniqueValues.push(normalizedValue);
-    });
+    seenValues.add(key);
+    uniqueValues.push(normalizedValue);
+  });
 
-    return uniqueValues.slice(0, maxItems);
+  return uniqueValues.slice(0, maxItems);
+}
+
+async function queryTreeRoutingRows({ treeId = null } = {}) {
+  const nodeRequest = new sql.Request()
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier());
+  const attachmentRequest = new sql.Request()
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier());
+  const singleTree = Number.isFinite(Number(treeId));
+
+  if (singleTree) {
+    nodeRequest.input('tree_instance_id', sql.Int, Number(treeId));
+    attachmentRequest.input('tree_instance_id', sql.Int, Number(treeId));
   }
 
-  return withSqlConnection(async () => {
-    const [nodeResult, attachmentResult] = await Promise.all([
-      new sql.Request()
-      .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-        .query(nodeQuery),
-      new sql.Request()
-        .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
-        .query(attachmentQuery),
-    ]);
+  const [nodeResult, attachmentResult] = await Promise.all([
+    nodeRequest.query(buildTreeRoutingNodeQuery({ singleTree })),
+    attachmentRequest.query(buildTreeRoutingAttachmentQuery({ singleTree })),
+  ]);
 
-    const nodesByTreeId = new Map();
-    const attachmentsByTreeId = new Map();
+  return {
+    nodeRows: nodeResult.recordset,
+    attachmentRows: attachmentResult.recordset,
+  };
+}
 
-    nodeResult.recordset.forEach((row) => {
-      const treeId = String(row.treeId);
+function indexTreeRoutingNodes(nodeRows) {
+  const nodesByTreeId = new Map();
 
-      if (!nodesByTreeId.has(treeId)) {
-        nodesByTreeId.set(treeId, []);
-      }
+  nodeRows.forEach((row) => {
+    const treeId = String(row.treeId);
 
-      nodesByTreeId.get(treeId).push({
-        nodeId: String(row.nodeId),
-        depth: Number(row.depth),
-        text: String(row.text ?? '').trim(),
-        isLeafNode: Boolean(row.isLeafNode),
-        breadcrumb: String(row.breadcrumb ?? '').trim(),
-        path: String(row.path ?? ''),
-      });
-    });
+    if (!nodesByTreeId.has(treeId)) {
+      nodesByTreeId.set(treeId, []);
+    }
 
-    attachmentResult.recordset.forEach((row) => {
-      const treeId = String(row.treeId);
-
-      if (!attachmentsByTreeId.has(treeId)) {
-        attachmentsByTreeId.set(treeId, []);
-      }
-
-      attachmentsByTreeId.get(treeId).push({
-        nodeId: String(row.nodeId),
-        nodeText: String(row.nodeText ?? '').trim(),
-        breadcrumb: String(row.breadcrumb ?? '').trim(),
-        depth: Number(row.depth),
-        fileName: String(row.fileName ?? '').trim(),
-      });
-    });
-
-    return treeList.map((tree) => {
-      const nodes = nodesByTreeId.get(String(tree.id)) ?? [];
-      const attachments = attachmentsByTreeId.get(String(tree.id)) ?? [];
-      const topLevelTopics = nodes
-        .filter((node) => node.depth === 1)
-        .map((node) => node.text)
-        .filter(Boolean)
-        .slice(0, 6);
-      const supportingTopics = nodes
-        .filter((node) => node.depth === 2)
-        .map((node) => node.text)
-        .filter(Boolean)
-        .slice(0, 10);
-      const nonLeafTitles = uniqueByValue(
-        nodes.filter((node) => !node.isLeafNode).map((node) => node.text),
-        MAX_NON_LEAF_TITLES,
-      );
-      const leafNodes = [...nodes]
-        .filter((node) => node.isLeafNode)
-        .sort((left, right) => {
-          if (right.depth !== left.depth) {
-            return right.depth - left.depth;
-          }
-
-          return String(left.path ?? '').localeCompare(String(right.path ?? ''));
-        });
-      const leafTitleExemplars = uniqueByValue(leafNodes.map((node) => node.text), MAX_LEAF_TITLE_EXEMPLARS);
-      const breadcrumbExemplars = uniqueByValue(leafNodes.map((node) => node.breadcrumb), MAX_BREADCRUMB_EXEMPLARS);
-      const attachmentFileNameExemplars = uniqueByValue(
-        attachments.map((attachment) => attachment.fileName),
-        MAX_ATTACHMENT_FILE_NAME_EXEMPLARS,
-      );
-
-      return {
-        ...tree,
-        topLevelTopics,
-        supportingTopics,
-        nonLeafTitles,
-        leafTitleExemplars,
-        breadcrumbExemplars,
-        attachmentFileNameExemplars,
-      };
+    nodesByTreeId.get(treeId).push({
+      nodeId: String(row.nodeId),
+      depth: Number(row.depth),
+      text: String(row.text ?? '').trim(),
+      isLeafNode: Boolean(row.isLeafNode),
+      breadcrumb: String(row.breadcrumb ?? '').trim(),
+      path: String(row.path ?? ''),
     });
   });
+
+  return nodesByTreeId;
+}
+
+function indexTreeRoutingAttachments(attachmentRows) {
+  const attachmentsByTreeId = new Map();
+
+  attachmentRows.forEach((row) => {
+    const treeId = String(row.treeId);
+
+    if (!attachmentsByTreeId.has(treeId)) {
+      attachmentsByTreeId.set(treeId, []);
+    }
+
+    attachmentsByTreeId.get(treeId).push({
+      nodeId: String(row.nodeId),
+      nodeText: String(row.nodeText ?? '').trim(),
+      breadcrumb: String(row.breadcrumb ?? '').trim(),
+      depth: Number(row.depth),
+      fileName: String(row.fileName ?? '').trim(),
+    });
+  });
+
+  return attachmentsByTreeId;
+}
+
+function buildTreeRoutingProfile(tree, nodes = [], attachments = []) {
+  const topLevelTopics = nodes
+    .filter((node) => node.depth === 1)
+    .map((node) => node.text)
+    .filter(Boolean)
+    .slice(0, 6);
+  const supportingTopics = nodes
+    .filter((node) => node.depth === 2)
+    .map((node) => node.text)
+    .filter(Boolean)
+    .slice(0, 10);
+  const nonLeafTitles = uniqueByValue(
+    nodes.filter((node) => !node.isLeafNode).map((node) => node.text),
+    MAX_NON_LEAF_TITLES,
+  );
+  const leafNodes = [...nodes]
+    .filter((node) => node.isLeafNode)
+    .sort((left, right) => {
+      if (right.depth !== left.depth) {
+        return right.depth - left.depth;
+      }
+
+      return String(left.path ?? '').localeCompare(String(right.path ?? ''));
+    });
+  const leafTitleExemplars = uniqueByValue(leafNodes.map((node) => node.text), MAX_LEAF_TITLE_EXEMPLARS);
+  const breadcrumbExemplars = uniqueByValue(leafNodes.map((node) => node.breadcrumb), MAX_BREADCRUMB_EXEMPLARS);
+  const attachmentFileNameExemplars = uniqueByValue(
+    attachments.map((attachment) => attachment.fileName),
+    MAX_ATTACHMENT_FILE_NAME_EXEMPLARS,
+  );
+
+  return {
+    ...tree,
+    topLevelTopics,
+    supportingTopics,
+    nonLeafTitles,
+    leafTitleExemplars,
+    breadcrumbExemplars,
+    attachmentFileNameExemplars,
+  };
 }
 
 export async function getTreeRoutingProfile(treeId, options = {}) {
   const scopedTree = await assertScopedTree(treeId, options);
-  const treeProfiles = await getTreeRoutingProfiles(options);
-  const matchingTree = treeProfiles.find((tree) => String(tree.id) === String(treeId));
 
-  if (!matchingTree) {
-    return {
-      id: String(scopedTree.id),
-      name: String(scopedTree.displayName ?? '').trim() || `Tree ${treeId}`,
-      description: normalizeTreeDescription(scopedTree.description),
-      isPrivate: Boolean(scopedTree.isPrivate),
-      ownerObjectId: scopedTree.ownerObjectId ?? null,
-      ownerUserDetails: scopedTree.ownerUserDetails ?? null,
-      ownerDisplayName: scopedTree.ownerDisplayName ?? null,
-      topLevelTopics: [],
-      supportingTopics: [],
-      nonLeafTitles: [],
-      leafTitleExemplars: [],
-      breadcrumbExemplars: [],
-      attachmentFileNameExemplars: [],
-    };
-  }
+  return withSqlConnection(async () => {
+    const { nodeRows, attachmentRows } = await queryTreeRoutingRows({ treeId });
+    const nodes = indexTreeRoutingNodes(nodeRows).get(String(treeId)) ?? [];
+    const attachments = indexTreeRoutingAttachments(attachmentRows).get(String(treeId)) ?? [];
 
-  return matchingTree;
+    return buildTreeRoutingProfile(scopedTree, nodes, attachments);
+  });
 }
 
 export async function listTreeEditors({ treeId, principal = null, enforceAccess = false }) {

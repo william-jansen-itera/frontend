@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateTreeNodesFromDescription } from '@/server/utils/chatService';
+import { generateTreeNodesFromDescription } from '@/server/utils/treeGenerationService';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { appendGeneratedNodesToTree, assertTreeAccess, getTreeForPopulation, getTreeList } from '@/server/utils/treeCatalog';
 

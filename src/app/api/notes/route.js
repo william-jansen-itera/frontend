@@ -11,7 +11,7 @@ import {
   generateLeafNotesFromChatAnswer,
   generateLeafNotesDraft,
   selectChatLeafAnchorCandidate,
-} from '@/server/utils/chatService';
+} from '@/server/utils/treeGenerationService';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import {
   requestTreeSqlIndexerRun,
