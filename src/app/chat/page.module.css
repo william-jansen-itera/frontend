@@ -427,10 +427,9 @@
 }
 
 .attachmentPreviewRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: start;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.8rem;
   margin-top: 0.45rem;
   padding-top: 0.4rem;
   border-top: 1px solid rgba(148, 163, 184, 0.2);
@@ -440,7 +439,6 @@
   display: grid;
   gap: 0.2rem;
   min-width: 0;
-  flex: 1 1 12rem;
 }
 
 .attachmentPreviewFileName {
@@ -452,15 +450,19 @@
 }
 
 .attachmentPreviewFrame {
-  flex: 0 0 10rem;
-  width: 10rem;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .attachmentPreviewImage {
   display: block;
   width: 100%;
-  max-width: 10rem;
-  max-height: 6.5rem;
+  max-width: none;
+  max-height: 24rem;
   object-fit: contain;
 }
 
