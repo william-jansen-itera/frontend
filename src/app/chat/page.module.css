@@ -412,6 +412,11 @@
   white-space: pre-wrap;
 }
 
+.messageContent {
+  display: grid;
+  gap: 0.8rem;
+}
+
 .messageTextPending {
   margin-top: 0.3rem;
   line-height: 1.55;
@@ -419,6 +424,74 @@
 
 .messageTextThinking {
   color: #0f172a;
+}
+
+.attachmentPreviewRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 1rem;
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.attachmentPreviewDetails {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.attachmentPreviewFileName {
+  color: #0f172a;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.attachmentPreviewFrame {
+  flex: 0 0 10rem;
+  width: 10rem;
+}
+
+.attachmentPreviewImage {
+  display: block;
+  width: 100%;
+  max-width: 10rem;
+  max-height: 6.5rem;
+  object-fit: contain;
+}
+
+.attachmentOpenLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  line-height: 1;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.attachmentOpenLink:hover,
+.attachmentOpenLink:focus-visible {
+  background-color: #eef2f7;
+  border-color: #94a3b8;
+  text-decoration: none;
+}
+
+.attachmentOpenLink:focus-visible {
+  outline: 2px solid rgba(14, 116, 144, 0.2);
+  outline-offset: 3px;
+  border-radius: 8px;
 }
 
 @keyframes pendingResponsePanelPulse {

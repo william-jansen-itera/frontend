@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +15,146 @@ import {
 
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
+const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
+
+function getImageExtension(candidate) {
+  const normalizedCandidate = String(candidate ?? "").trim().toLowerCase();
+
+  if (!normalizedCandidate) {
+    return "";
+  }
+
+  const sanitizedCandidate = normalizedCandidate.split("?")[0].split("#")[0];
+
+  if (!sanitizedCandidate.includes(".")) {
+    return "";
+  }
+
+  return sanitizedCandidate.slice(sanitizedCandidate.lastIndexOf(".") + 1);
+}
+
+function isImageUrlCandidate(candidate) {
+  return IMAGE_FILE_EXTENSIONS.has(getImageExtension(candidate));
+}
+
+function getInternalAttachmentContentUrl(rawUrl) {
+  try {
+    const parsedUrl = new URL(String(rawUrl ?? ""));
+    const pathSegments = parsedUrl.pathname.split("/").map((part) => part.trim()).filter(Boolean);
+
+    if (!parsedUrl.hostname.endsWith(".blob.core.windows.net")) {
+      return null;
+    }
+
+    if (pathSegments[0] !== "node-attachments" || pathSegments.length < 2) {
+      return null;
+    }
+
+    const blobName = pathSegments.slice(1).join("/");
+
+    if (!blobName) {
+      return null;
+    }
+
+    return `/api/attachments/content?blobName=${encodeURIComponent(blobName)}`;
+  } catch {
+    return null;
+  }
+}
+
+function getAttachmentFileNameFromUrl(rawUrl) {
+  try {
+    const parsedUrl = new URL(String(rawUrl ?? ""));
+    const pathSegments = parsedUrl.pathname.split("/").map((part) => part.trim()).filter(Boolean);
+    return pathSegments[pathSegments.length - 1] || "Attachment preview";
+  } catch {
+    return "Attachment preview";
+  }
+}
+
+function buildAgentAnswerBlocks(answer) {
+  const normalizedAnswer = String(answer ?? "");
+  const imagePattern = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+  const blocks = [];
+  let cursor = 0;
+  let match = imagePattern.exec(normalizedAnswer);
+
+  while (match) {
+    const [fullMatch, altText, imageUrl] = match;
+    const contentUrl = getInternalAttachmentContentUrl(imageUrl);
+
+    if (contentUrl && isImageUrlCandidate(imageUrl)) {
+      const textBefore = normalizedAnswer.slice(cursor, match.index);
+
+      if (textBefore.trim()) {
+        blocks.push({
+          type: "text",
+          content: textBefore,
+        });
+      }
+
+      blocks.push({
+        type: "image",
+        alt: String(altText ?? "").trim() || "Attachment preview",
+        src: contentUrl,
+        fileName: getAttachmentFileNameFromUrl(imageUrl),
+      });
+      cursor = match.index + fullMatch.length;
+    }
+
+    match = imagePattern.exec(normalizedAnswer);
+  }
+
+  const trailingText = normalizedAnswer.slice(cursor);
+
+  if (trailingText.trim()) {
+    blocks.push({
+      type: "text",
+      content: trailingText,
+    });
+  }
+
+  return blocks.length > 0 ? blocks : [{ type: "text", content: normalizedAnswer }];
+}
+
+function renderAgentAnswerContent(answer, keyPrefix, textClassName) {
+  return buildAgentAnswerBlocks(answer).map((block, index) => {
+    if (block.type === "image") {
+      return (
+        <div key={`${keyPrefix}-image-${index}`} className={styles.attachmentPreviewRow}>
+          <div className={styles.attachmentPreviewDetails}>
+            <span className={styles.attachmentPreviewFileName}>{block.alt}</span>
+          </div>
+          <div className={styles.attachmentPreviewFrame}>
+            <Image
+              src={block.src}
+              alt={block.alt}
+              width={240}
+              height={180}
+              sizes="240px"
+              className={styles.attachmentPreviewImage}
+              unoptimized
+            />
+          </div>
+          <a
+            href={block.src}
+            target="_blank"
+            rel="noreferrer"
+            className={styles.attachmentOpenLink}
+          >
+            Open
+          </a>
+        </div>
+      );
+    }
+
+    return (
+      <p key={`${keyPrefix}-text-${index}`} className={textClassName}>
+        {block.content}
+      </p>
+    );
+  });
+}
 
 function renderHighlightedText(text, keyPrefix) {
   const normalizedText = String(text ?? "");
@@ -1290,9 +1431,21 @@ export default function ChatPageClient({ includeDebug }) {
                             );
                           })}
                         </div>
-                        <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""} ${turn.isPending ? styles.messageTextThinking : ""}`}>
-                          {turn.isPending ? "Waiting for response..." : turn.error ? turn.error : turn.answer || "No answer returned."}
-                        </p>
+                        <div className={styles.messageContent}>
+                          {turn.isPending ? (
+                            <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""} ${turn.isPending ? styles.messageTextThinking : ""}`}>
+                              Waiting for response...
+                            </p>
+                          ) : turn.error ? (
+                            <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>
+                              {turn.error}
+                            </p>
+                          ) : renderAgentAnswerContent(
+                            turn.answer || "No answer returned.",
+                            `${turn.id}-answer`,
+                            `${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`,
+                          )}
+                        </div>
                         {addActionState?.turnId === turn.id ? (
                           <div className={styles.addActionPanel}>
                             <p className={addActionState.status === "error" ? styles.addActionError : styles.addActionStatus}>
