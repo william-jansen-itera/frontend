@@ -1,0 +1,253 @@
+.heroCard,
+.formCard,
+.infoCard {
+  border: var(--surface-border);
+  border-radius: var(--surface-radius-hero);
+  background: var(--surface-card-background);
+  box-shadow: var(--surface-card-shadow-hero);
+  backdrop-filter: blur(14px);
+}
+
+.heroCard {
+  max-width: var(--page-content-width);
+  margin: 0 auto 1.5rem;
+  padding: 2rem;
+}
+
+.title {
+  max-width: 900px;
+}
+
+.contentGrid {
+  max-width: var(--page-content-width);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.42fr) minmax(0, 0.58fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.infoCard,
+.formCard {
+  padding: 1.4rem;
+}
+
+.infoCard {
+  display: grid;
+  gap: 0.9rem;
+  border-color: rgba(148, 163, 184, 0.22);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 252, 0.95));
+}
+
+.formCard {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.formIntro,
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.profileFieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.profileOptionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.profileOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: calc(var(--ui-control-radius) + 2px);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profileOption input {
+  margin: 0;
+}
+
+.cardEyebrow {
+  margin: 0;
+  color: var(--ui-eyebrow-color);
+  font-size: var(--ui-eyebrow-size);
+  font-weight: var(--ui-eyebrow-weight);
+  letter-spacing: var(--ui-eyebrow-spacing);
+  text-transform: uppercase;
+}
+
+.fieldLabel {
+  margin: 0;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cardTitle {
+  margin: 0;
+  color: var(--ui-title-color);
+  font-size: 1.35rem;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.cardText {
+  margin: 0;
+  color: var(--ui-body-color);
+  font-size: var(--ui-body-size);
+  line-height: var(--ui-body-line-height);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.fieldFull,
+.statusMessage,
+.errorMessage,
+.actionsRow {
+  grid-column: 1 / -1;
+}
+
+.fieldPlaceholder {
+  min-height: 0;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: calc(var(--ui-control-radius) + 2px);
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 11rem;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: 2px solid rgba(8, 145, 178, 0.2);
+  outline-offset: 2px;
+  border-color: #0891b2;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: start;
+  gap: 0.75rem;
+  color: #0f172a;
+  line-height: 1.5;
+  padding-top: 2rem;
+}
+
+.checkboxRow input {
+  margin-top: 0.15rem;
+}
+
+.statusMessage,
+.errorMessage {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border-radius: var(--surface-radius-card);
+  font-weight: 600;
+}
+
+.statusMessage {
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(236, 253, 245, 0.95);
+  color: #166534;
+}
+
+.errorMessage {
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  background: rgba(254, 242, 242, 0.95);
+  color: #991b1b;
+}
+
+.actionsRow {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.submitButton,
+.secondaryLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.9rem 1.15rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.submitButton {
+  border: 0;
+  background: linear-gradient(135deg, #0f766e, #0369a1);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.submitButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.secondaryLink {
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+}
+
+.secondaryLink:hover,
+.secondaryLink:focus-visible,
+.submitButton:hover,
+.submitButton:focus-visible {
+  filter: brightness(1.04);
+  outline: none;
+}
+
+@media (max-width: 980px) {
+  .contentGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .fieldPlaceholder {
+    display: none;
+  }
+
+  .checkboxRow {
+    padding-top: 0;
+  }
+}

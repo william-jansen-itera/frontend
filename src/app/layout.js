@@ -32,6 +32,7 @@ const navLinks = [
   { href: "/me", label: "Me", requiresAuthenticated: true },
   { href: "/admin", label: "Admin", requiresRole: "mdsadmins" },
   { href: "/about", label: "About" },
+  { href: "/contact", label: "Contact" },
   { href: "/architecture", label: "Architecture", requiresRole: "mdsadmins" },
 ];
 
@@ -57,6 +58,10 @@ function getPageSurfaceClassName(pathname) {
   }
 
   if (pathname === "/about") {
+    return "appPageSurface appPageSurfaceAbout";
+  }
+
+  if (pathname === "/contact") {
     return "appPageSurface appPageSurfaceAbout";
   }
 

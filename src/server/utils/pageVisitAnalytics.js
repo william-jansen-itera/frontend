@@ -1,6 +1,7 @@
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { setTimeout as delay } from 'timers/promises';
 import { confirmSqlIsResponsive, getRequiredApplicationIdentifier, isLikelySleepingSqlError, sql, withSqlConnection } from '@/server/utils/sql';
+import { classifyBrowserFamily, classifyDeviceClass } from '@/server/utils/userAgent';
 import { isLocalDevelopmentHost } from '@/shared/clientPrincipal';
 
 const ALLOWED_PAGE_PATHS = new Set(['/', '/about']);
@@ -43,54 +44,6 @@ function getReferrerHost(referer) {
   } catch {
     return 'direct';
   }
-}
-
-function classifyDeviceClass(userAgent) {
-  const normalizedUserAgent = String(userAgent ?? '').toLowerCase();
-
-  if (!normalizedUserAgent) {
-    return 'unknown';
-  }
-
-  if (/ipad|tablet|kindle|silk|playbook/.test(normalizedUserAgent) || (/android/.test(normalizedUserAgent) && !/mobile/.test(normalizedUserAgent))) {
-    return 'tablet';
-  }
-
-  if (/iphone|ipod|android.*mobile|windows phone|mobile/.test(normalizedUserAgent)) {
-    return 'mobile';
-  }
-
-  return 'desktop';
-}
-
-function classifyBrowserFamily(userAgent) {
-  const normalizedUserAgent = String(userAgent ?? '').toLowerCase();
-
-  if (!normalizedUserAgent) {
-    return 'unknown';
-  }
-
-  if (normalizedUserAgent.includes('edg/')) {
-    return 'edge';
-  }
-
-  if (normalizedUserAgent.includes('firefox/')) {
-    return 'firefox';
-  }
-
-  if (normalizedUserAgent.includes('electron/')) {
-    return 'electron';
-  }
-
-  if (normalizedUserAgent.includes('chrome/') || normalizedUserAgent.includes('crios/') || normalizedUserAgent.includes('chromium/')) {
-    return 'chrome';
-  }
-
-  if (normalizedUserAgent.includes('safari/') && !normalizedUserAgent.includes('chrome/') && !normalizedUserAgent.includes('chromium/')) {
-    return 'safari';
-  }
-
-  return 'unknown';
 }
 
 function isLocalRequest(request) {
