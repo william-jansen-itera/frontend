@@ -4,7 +4,7 @@ import { confirmSqlIsResponsive, getRequiredApplicationIdentifier, isLikelySleep
 import { classifyBrowserFamily, classifyDeviceClass } from '@/server/utils/userAgent';
 import { isLocalDevelopmentHost } from '@/shared/clientPrincipal';
 
-const ALLOWED_PAGE_PATHS = new Set(['/', '/about']);
+const ALLOWED_PAGE_PATHS = new Set(['/', '/about', '/contact']);
 const SQL_WAKE_RETRY_DELAY_MS = 10_000;
 const SQL_WAKE_MAX_RETRIES = 3;
 
