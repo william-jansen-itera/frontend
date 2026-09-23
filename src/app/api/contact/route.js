@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { logException, logTrace } from '@/server/utils/logging';
 import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
 import { buildUserAgentSummary } from '@/server/utils/userAgent';
+import { parseClientPrincipal } from '@/server/utils/auth';
+import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 
 function normalizeText(value) {
   return String(value ?? '').trim();
@@ -24,6 +26,54 @@ function normalizeContactProfile(value) {
   }
 
   return '';
+}
+
+function assertAdminPrincipal(principal) {
+  if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
+    throw new Error('Admin role mdsadmins is required');
+  }
+}
+
+export async function GET(request) {
+  try {
+    const principal = parseClientPrincipal(request);
+    assertAdminPrincipal(principal);
+
+    const result = await withSqlConnection(async () => new sql.Request()
+      .input('app_identifier', sql.NVarChar(128), getRequiredApplicationIdentifier())
+      .query(`
+        SELECT
+          id,
+          contact_profile AS contactProfile,
+          name,
+          company,
+          email,
+          phone,
+          wants_call AS wantsCall,
+          message,
+          user_agent AS userAgent,
+          created_at AS createdAt
+        FROM dbo.contact_requests
+        WHERE app_identifier = @app_identifier
+          AND created_at >= DATEADD(DAY, -30, SYSUTCDATETIME())
+        ORDER BY created_at DESC, id DESC;
+      `));
+
+    return NextResponse.json({
+      requests: result.recordset,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Admin role mdsadmins is required') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    await logException(error);
+
+    return NextResponse.json(
+      { error: 'Contact requests could not be loaded right now.' },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(request) {

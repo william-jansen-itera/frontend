@@ -1,6 +1,7 @@
 .heroCard,
 .formCard,
-.infoCard {
+.infoCard,
+.requestsCard {
   border: var(--surface-border);
   border-radius: var(--surface-radius-hero);
   background: var(--surface-card-background);
@@ -32,6 +33,14 @@
   padding: 1.4rem;
 }
 
+.requestsCard {
+  max-width: var(--page-content-width);
+  margin: 1rem auto 0;
+  padding: 1.4rem;
+  display: grid;
+  gap: 1rem;
+}
+
 .infoCard {
   display: grid;
   gap: 0.9rem;
@@ -50,31 +59,43 @@
   gap: 0.45rem;
 }
 
+.field,
+.profileFieldset,
+.checkboxRow {
+  align-self: start;
+}
+
 .profileFieldset {
   margin: 0;
   padding: 0;
   border: 0;
-  display: grid;
-  gap: 0.7rem;
 }
 
 .profileOptionRow {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
 .profileOption {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.85rem 1rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.95rem 1rem;
   border: 1px solid rgba(148, 163, 184, 0.4);
   border-radius: calc(var(--ui-control-radius) + 2px);
   background: rgba(255, 255, 255, 0.96);
   color: #0f172a;
   font-weight: 600;
+  line-height: 1.5;
   cursor: pointer;
+}
+
+.profileFieldset legend {
+  padding: 0;
+  margin-bottom: 0.45rem;
 }
 
 .profileOption input {
@@ -196,6 +217,61 @@
   flex-wrap: wrap;
 }
 
+.requestList {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.requestItem {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: var(--surface-radius-card);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.requestHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.requestTitle,
+.requestMeta,
+.requestMessage,
+.requestDetails p {
+  margin: 0;
+}
+
+.requestTitle {
+  color: var(--ui-title-color);
+  font-size: 1.05rem;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.requestMeta {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.requestDetails {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--ui-body-color);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.requestMessage {
+  color: #0f172a;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 .submitButton,
 .secondaryLink {
   display: inline-flex;
@@ -240,6 +316,10 @@
   }
 
   .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .profileOptionRow {
     grid-template-columns: 1fr;
   }
 

@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import PageVisitTracker from "../PageVisitTracker";
+import { useAuth } from "../useAuth";
+import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import styles from "./page.module.css";
 
 const INITIAL_FORM = {
@@ -27,11 +29,30 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value ?? "").trim());
 }
 
+function formatSubmittedAt(value) {
+  if (!value) {
+    return "Unknown time";
+  }
+
+  const parsedValue = new Date(value);
+
+  if (Number.isNaN(parsedValue.getTime())) {
+    return "Unknown time";
+  }
+
+  return parsedValue.toLocaleString();
+}
+
 export default function ContactPage() {
+  const { user, isAuthResolved } = useAuth();
+  const isAdmin = hasClientPrincipalRole(user, "mdsadmins");
   const [form, setForm] = useState(INITIAL_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [contactRequests, setContactRequests] = useState([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  const [requestsErrorMessage, setRequestsErrorMessage] = useState("");
   const isFormComplete = Boolean(
     form.contactProfile
       && String(form.name ?? "").trim()
@@ -40,6 +61,59 @@ export default function ContactPage() {
       && (form.contactProfile !== "company" || String(form.company ?? "").trim())
       && (!form.wantsCall || String(form.phone ?? "").trim()),
   );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!isAuthResolved) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    if (!isAdmin) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    Promise.resolve().then(async () => {
+      if (!isCancelled) {
+        setIsLoadingRequests(true);
+      }
+
+      try {
+        const response = await fetch("/api/contact", { cache: "no-store" });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Requests could not be loaded.");
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        setContactRequests(Array.isArray(payload?.requests) ? payload.requests : []);
+        setRequestsErrorMessage("");
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        setContactRequests([]);
+        setRequestsErrorMessage(getErrorMessage(error, "Requests could not be loaded."));
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingRequests(false);
+        }
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAdmin, isAuthResolved]);
 
   function handleFieldChange(event) {
     const { name, value, type, checked } = event.target;
@@ -231,6 +305,45 @@ export default function ContactPage() {
           </form>
         </section>
       </section>
+
+      {isAdmin ? (
+        <section className={styles.requestsCard}>
+          <div className={styles.formIntro}>
+            <p className={styles.cardEyebrow}>Admin</p>
+            <h2 className={styles.cardTitle}>Requests received in the last 30 days</h2>
+          </div>
+
+          {requestsErrorMessage ? <p className={styles.errorMessage}>{requestsErrorMessage}</p> : null}
+
+          {isLoadingRequests ? (
+            <p className={styles.cardText}>Loading requests...</p>
+          ) : contactRequests.length > 0 ? (
+            <div className={styles.requestList}>
+              {contactRequests.map((request) => (
+                <article key={request.id} className={styles.requestItem}>
+                  <div className={styles.requestHeader}>
+                    <h3 className={styles.requestTitle}>{request.name}</h3>
+                    <p className={styles.requestMeta}>{formatSubmittedAt(request.createdAt)}</p>
+                  </div>
+
+                  <div className={styles.requestDetails}>
+                    <p><strong>Email:</strong> {request.email}</p>
+                    <p><strong>Using as:</strong> {request.contactProfile}</p>
+                    {request.company ? <p><strong>Company:</strong> {request.company}</p> : null}
+                    {request.phone ? <p><strong>Phone:</strong> {request.phone}</p> : null}
+                    <p><strong>Call requested:</strong> {request.wantsCall ? "Yes" : "No"}</p>
+                    {request.userAgent ? <p><strong>User agent:</strong> {request.userAgent}</p> : null}
+                  </div>
+
+                  <p className={styles.requestMessage}>{request.message}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.cardText}>No requests were received in the last 30 days.</p>
+          )}
+        </section>
+      ) : null}
     </main>
   );
 }
