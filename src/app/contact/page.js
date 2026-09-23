@@ -177,8 +177,7 @@ export default function ContactPage() {
 
         <section className={styles.formCard}>
           <div className={styles.formIntro}>
-            <p className={styles.cardEyebrow}>Request</p>
-            <h2 className={styles.cardTitle}>Leave your details</h2>
+            <p className={styles.cardEyebrow}>Leave your details</p>
           </div>
 
           <form onSubmit={handleSubmit} className={styles.formGrid}>
@@ -298,7 +297,7 @@ export default function ContactPage() {
 
             <div className={styles.actionsRow}>
               <button type="submit" className={styles.submitButton} disabled={isSubmitting || !isFormComplete}>
-                {isSubmitting ? "Sending..." : "Send request"}
+                {isSubmitting ? "Sending..." : "Send"}
               </button>
               <Link href="/about" className={styles.secondaryLink}>Read more first</Link>
             </div>
