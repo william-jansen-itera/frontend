@@ -288,7 +288,7 @@ function buildHandlerMap(includedTrees, { includeDebug = false } = {}) {
   return handlerMap;
 }
 
-function buildTreeSearchContextResult(treeList, { includeDebug = false } = {}) {
+function buildTreeSelection(treeList) {
   const availableTrees = treeList.map((tree) => ({ ...tree }));
 
   applyStoredToolDescriptions(availableTrees);
@@ -303,12 +303,10 @@ function buildTreeSearchContextResult(treeList, { includeDebug = false } = {}) {
     availableTrees,
     includedTrees,
     excludedTrees: buildExcludedTrees(availableTrees),
-    tools: includedTrees.map((tree) => buildToolDefinition(tree)),
-    handlerMap: buildHandlerMap(includedTrees, { includeDebug }),
   };
 }
 
-export async function buildTreeSearchContext(options = {}) {
+async function loadTreeSelection(options = {}) {
   const accessOptions = {
     principal: options.principal ?? null,
     visibility: options.visibility ?? 'both',
@@ -316,9 +314,27 @@ export async function buildTreeSearchContext(options = {}) {
   };
   const treeList = await getTreeList(accessOptions);
 
-  return buildTreeSearchContextResult(treeList, {
-    includeDebug: Boolean(options.includeDebug),
-  });
+  return buildTreeSelection(treeList);
+}
+
+async function buildPublishTreeToolContext(options = {}) {
+  const selection = await loadTreeSelection(options);
+
+  return {
+    ...selection,
+    tools: selection.includedTrees.map((tree) => buildToolDefinition(tree)),
+  };
+}
+
+export async function buildRuntimeTreeToolContext(options = {}) {
+  const selection = await loadTreeSelection(options);
+
+  return {
+    includedTrees: selection.includedTrees,
+    handlerMap: buildHandlerMap(selection.includedTrees, {
+      includeDebug: Boolean(options.includeDebug),
+    }),
+  };
 }
 
 function buildTreeToolPreview(availableTrees) {
@@ -344,28 +360,28 @@ function buildPublishedDescriptionStates(availableTrees) {
   }));
 }
 
-async function finalizePublishedTreeTools(context, agent) {
+async function finalizePublishedTreeTools(publishContext, agent) {
   await updateTreeDescriptionPublishedStates(
-    buildPublishedDescriptionStates(context.availableTrees),
+    buildPublishedDescriptionStates(publishContext.availableTrees),
   );
 
   return {
     agent,
-    availableTrees: context.availableTrees,
-    includedTrees: context.includedTrees,
-    excludedTrees: context.excludedTrees,
-    tools: context.tools,
+    availableTrees: publishContext.availableTrees,
+    includedTrees: publishContext.includedTrees,
+    excludedTrees: publishContext.excludedTrees,
+    tools: publishContext.tools,
   };
 }
 
-async function publishTreeToolsFromContext(context) {
+async function publishTreeTools(publishContext) {
   const project = getProjectClient();
   const { agentName, modelDeploymentName } = getRequiredFoundryConfig();
   const definition = {
     kind: 'prompt',
     model: modelDeploymentName,
     instructions: buildAgentInstructions(),
-    tools: context.tools,
+    tools: publishContext.tools,
   };
 
   try {
@@ -373,7 +389,7 @@ async function publishTreeToolsFromContext(context) {
       foundryFeatures: AGENT_PREVIEW_FEATURES,
     });
 
-    return finalizePublishedTreeTools(context, agent);
+    return finalizePublishedTreeTools(publishContext, agent);
   } catch (error) {
     if (!isNotFoundError(error)) {
       throw error;
@@ -383,7 +399,7 @@ async function publishTreeToolsFromContext(context) {
       foundryFeatures: AGENT_PREVIEW_FEATURES,
     });
 
-    return finalizePublishedTreeTools(context, agent);
+    return finalizePublishedTreeTools(publishContext, agent);
   }
 }
 
@@ -407,12 +423,12 @@ export async function getHostedAgent() {
 }
 
 export async function publishStoredTreeDescriptions() {
-  const syncResult = await publishTreeToolsFromContext(await buildTreeSearchContext());
+  const publishResult = await publishTreeTools(await buildPublishTreeToolContext());
 
   return {
-    agent: syncResult.agent,
-    tools: buildTreeToolPreview(syncResult.availableTrees),
+    agent: publishResult.agent,
+    tools: buildTreeToolPreview(publishResult.availableTrees),
     syncMode: 'publish-stored-descriptions',
-    excludedTrees: Array.isArray(syncResult.excludedTrees) ? syncResult.excludedTrees : [],
+    excludedTrees: Array.isArray(publishResult.excludedTrees) ? publishResult.excludedTrees : [],
   };
 }

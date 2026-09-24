@@ -1,7 +1,7 @@
 import { getProjectClient } from '@/server/utils/foundryAgentClient';
 import {
   buildAllowedToolInstruction,
-  buildTreeSearchContext,
+  buildRuntimeTreeToolContext,
   getHostedAgent,
 } from '@/server/utils/treeAgentCatalog';
 import {
@@ -195,7 +195,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const agent = await getHostedAgent();
-  const { handlerMap, includedTrees } = await buildTreeSearchContext({
+  const { handlerMap, includedTrees } = await buildRuntimeTreeToolContext({
     principal,
     visibility,
     enforceAccess: true,
