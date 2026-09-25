@@ -305,6 +305,8 @@ The chat architecture currently supports two execution modes for agent families.
 
 `agent_reference` uses a hosted Foundry agent by name. In this mode, the application sends the turn to a persisted agent definition that already exists in Azure AI Foundry. That hosted agent owns its published instructions and published tool definitions, while the application still runs the local tool loop and sends function outputs back through the Responses API. The current `treeGrounding` family uses this mode.
 
+Within the `treeGrounding` family, dynamic tool generation still stays centralized in `src/server/utils/agent/treeGrounding/treeAgentCatalog.js`, while lower-level search-result shaping and debug payload construction now live in `src/server/utils/agent/treeGrounding/treeToolSearchResults.js`.
+
 `direct_model` calls the model deployment directly and sends instructions plus tool definitions inline on each request. In this mode, the application itself is the source of truth for the family's instructions and tool schema for that turn. The model can still emit function calls, and the server executes those through the same local handler map and tool loop used by hosted-agent mode. The current `investment` family uses this mode.
 
 In short:
