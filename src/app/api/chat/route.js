@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { invokeTreeSearchAgent } from '@/server/utils/treeAgentService';
+import {
+  invokeAgentFamily,
+  normalizeAgentFamilySelection,
+} from '@/server/utils/agent/agentFamilyInvoker';
 import { logException, logTrace } from '@/server/utils/logging';
 import { parseClientPrincipal } from '@/server/utils/auth';
 
@@ -77,6 +80,7 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     const message = String(payload?.message ?? '').trim();
+    const family = normalizeAgentFamilySelection(payload?.family);
     const visibility = String(payload?.visibility ?? '').trim() || 'public';
     const followUpSelection = normalizeFollowUpSelection(payload?.followUpSelection);
 
@@ -89,7 +93,8 @@ export async function POST(request) {
 
     const history = normalizeHistory(payload?.history);
     const principal = parseClientPrincipal(request);
-    const result = await invokeTreeSearchAgent({
+    const result = await invokeAgentFamily({
+      family,
       message,
       history,
       principal,
@@ -101,6 +106,7 @@ export async function POST(request) {
     await logTrace(
       JSON.stringify({
         event: 'hosted_agent_invoke_success',
+        family,
         agentName: result.agent.name,
         toolNames: result.toolsUsed,
         userDetails: principal?.userDetails ?? null,

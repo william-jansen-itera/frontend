@@ -9,6 +9,9 @@ import {
   getRequiredFoundryConfig,
   isNotFoundError,
 } from '@/server/utils/foundryAgentClient';
+import { buildAgentToolResult } from '@/server/utils/agent/agentToolResult';
+
+export const TREE_GROUNDING_FAMILY = 'treeGrounding';
 
 function normalizeWhitespace(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -218,18 +221,37 @@ function buildDebugSearchResultSnapshot(rawResult) {
   };
 }
 
-function buildToolHandlerResult({ toolOutput, searchResult = null, includeDebug = false }) {
+function buildToolHandlerResult({ toolName, toolOutput, searchResult = null, includeDebug = false }) {
+  const wrappedToolOutput = buildAgentToolResult({
+    sourceToolFamily: TREE_GROUNDING_FAMILY,
+    toolName,
+    toolResultType: 'search_results',
+    data: toolOutput,
+    meta: {
+      resultCount: Number(toolOutput?.count ?? 0),
+      supportsCitations: true,
+      generatedAt: new Date().toISOString(),
+    },
+    ...(includeDebug
+      ? {
+        debug: {
+          searchResult,
+        },
+      }
+      : {}),
+  });
+
   if (!includeDebug) {
     return {
-      toolOutput,
+      toolOutput: wrappedToolOutput,
     };
   }
 
   return {
-    toolOutput,
+    toolOutput: wrappedToolOutput,
     debug: {
       searchResult,
-      toolOutput,
+      toolOutput: wrappedToolOutput,
     },
   };
 }
@@ -254,6 +276,7 @@ function buildHandlerMap(includedTrees, { includeDebug = false } = {}) {
 
       if (!normalizedQuery) {
         return buildToolHandlerResult({
+          toolName,
           toolOutput: {
             count: 0,
             results: [],
@@ -278,6 +301,7 @@ function buildHandlerMap(includedTrees, { includeDebug = false } = {}) {
       });
 
       return buildToolHandlerResult({
+        toolName,
         toolOutput: buildAgentSearchResult(rawResult),
         searchResult: includeDebug ? buildDebugSearchResultSnapshot(rawResult) : null,
         includeDebug,

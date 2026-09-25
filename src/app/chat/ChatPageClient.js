@@ -16,6 +16,25 @@ import {
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
+const CHAT_FAMILY_OPTIONS = ["treeGrounding", "investment"];
+const DEFAULT_CHAT_FAMILY = "treeGrounding";
+
+function normalizeChatFamily(value) {
+  const normalizedValue = String(value ?? "").trim();
+
+  return CHAT_FAMILY_OPTIONS.includes(normalizedValue) ? normalizedValue : DEFAULT_CHAT_FAMILY;
+}
+
+function setChatFamilySearchParam(searchParams, family) {
+  const normalizedFamily = normalizeChatFamily(family);
+
+  if (normalizedFamily === DEFAULT_CHAT_FAMILY) {
+    searchParams.delete("family");
+    return;
+  }
+
+  searchParams.set("family", normalizedFamily);
+}
 
 function getImageExtension(candidate) {
   const normalizedCandidate = String(candidate ?? "").trim().toLowerCase();
@@ -341,6 +360,16 @@ function formatTimingLabel(value) {
     .toLowerCase();
 }
 
+function getTimingSortValue(value) {
+  if (!value) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const timestamp = new Date(value).getTime();
+
+  return Number.isFinite(timestamp) ? timestamp : Number.POSITIVE_INFINITY;
+}
+
 function buildTimingDebugEntries({ timings, toolCalls }) {
   if (!timings || typeof timings !== "object") {
     return [];
@@ -374,9 +403,9 @@ function buildTimingDebugEntries({ timings, toolCalls }) {
     })),
     ...executedToolCalls.map((toolCall, index) => ({
       key: `run-tools-${toolCall.callId || toolCall.toolName || "tool-call"}-${index}`,
-      label: `run tools: ${toolCall.toolName || "tool call"}`,
-      headerLabel: "run tools",
-      objectName: `run tools ${index + 1}`,
+      label: `run tool: ${toolCall.toolName || "tool call"}`,
+      headerLabel: "run tool",
+      objectName: `run tool ${index + 1}`,
       durationMs: toolCall.durationMs,
       startedAt: toolCall.startedAt,
       completedAt: toolCall.completedAt,
@@ -734,6 +763,7 @@ function TurnDebugPanel({ turn }) {
 
   const toolCalls = Array.isArray(turn.debug.toolCalls) ? turn.debug.toolCalls : [];
   const timings = turn?.debug?.timings;
+  const turnClassification = turn?.debug?.turnClassification;
   const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
   const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
   const turnType = String(turn?.turnType ?? "default").trim() || "default";
@@ -757,7 +787,15 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">2. Execution Timing</p>
+          <p className="appSectionEyebrow">2. Turn Classification</p>
+          <h2 className={styles.sectionTitle}>Shared grounded-vs-broader decision</h2>
+        </div>
+        <pre className={styles.jsonBlock}>{formatJson(turnClassification)}</pre>
+      </section>
+
+      <section className={styles.debugSection}>
+        <div className={styles.sectionHeader}>
+          <p className="appSectionEyebrow">3. Execution Timing</p>
           <h2 className={styles.sectionTitle}>Where the time went</h2>
         </div>
         <ExecutionTimingSummary timings={timings} toolCalls={toolCalls} />
@@ -765,7 +803,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">3. Tool Calls</p>
+          <p className="appSectionEyebrow">4. Tool Calls</p>
           <h2 className={styles.sectionTitle}>{toolCalls.length} invocation{toolCalls.length === 1 ? "" : "s"}</h2>
         </div>
         {toolCalls.length === 0 ? (
@@ -825,7 +863,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">4. Curated Agent Input</p>
+          <p className="appSectionEyebrow">5. Curated Agent Input</p>
           <h2 className={styles.sectionTitle}>Messages passed back to the model</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.curatedAgentInput)}</pre>
@@ -833,7 +871,7 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">5. Agent Output</p>
+          <p className="appSectionEyebrow">6. Agent Output</p>
           <h2 className={styles.sectionTitle}>Model response and answer</h2>
         </div>
         {permissionToBroadenSource ? (
@@ -875,6 +913,7 @@ export default function ChatPageClient({ includeDebug }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedVisibilityParam = searchParams.get("visibility");
+  const requestedFamilyParam = searchParams.get("family");
   const {
     visibility,
     isReady: isVisibilityReady,
@@ -889,6 +928,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [dismissedFollowUpTurnId, setDismissedFollowUpTurnId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
+  const [chatFamily, setChatFamily] = useState(() => normalizeChatFamily(requestedFamilyParam));
   const [addActionState, setAddActionState] = useState(null);
   const [writableTreeIds, setWritableTreeIds] = useState([]);
   const chatFeedRef = useRef(null);
@@ -913,6 +953,15 @@ export default function ChatPageClient({ includeDebug }) {
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   };
 
+  const handleChatFamilyChange = (event) => {
+    const nextFamily = normalizeChatFamily(event.target.value);
+    setChatFamily(nextFamily);
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    setChatFamilySearchParam(nextSearchParams, nextFamily);
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  };
+
   useEffect(() => {
     if (!isVisibilityReady) {
       return;
@@ -931,6 +980,26 @@ export default function ChatPageClient({ includeDebug }) {
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, visibility]);
+
+  useEffect(() => {
+    const normalizedRequestedFamily = normalizeChatFamily(requestedFamilyParam);
+
+    if (chatFamily !== normalizedRequestedFamily) {
+      setChatFamily(normalizedRequestedFamily);
+      return;
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    setChatFamilySearchParam(nextSearchParams, chatFamily);
+    const currentQueryString = searchParams.toString();
+    const nextQueryString = nextSearchParams.toString();
+
+    if (nextQueryString === currentQueryString) {
+      return;
+    }
+
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  }, [chatFamily, pathname, requestedFamilyParam, router, searchParams]);
 
   useEffect(() => {
     if (!isVisibilityReady) {
@@ -1010,6 +1079,7 @@ export default function ChatPageClient({ includeDebug }) {
         body: JSON.stringify({
           message,
           history,
+          family: chatFamily,
           visibility,
           followUpSelection,
         }),
@@ -1309,6 +1379,16 @@ export default function ChatPageClient({ includeDebug }) {
                   <option value="public">Public</option>
                   <option value="private">Private</option>
                   <option value="both">Both</option>
+                </select>
+              </label>
+              <label className={styles.toolbarLabel}>
+                <select
+                  value={chatFamily}
+                  onChange={handleChatFamilyChange}
+                  disabled={isSubmitting}
+                >
+                  <option value="treeGrounding">treeGrounding</option>
+                  <option value="investment">investment</option>
                 </select>
               </label>
               {isPromptInOptionMode ? null : (

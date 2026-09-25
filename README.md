@@ -299,6 +299,49 @@ The agent runtime then decides:
 
 In other words, tool-choice behavior is not hardcoded in the application, but it is strongly shaped by the tool definitions, instructions, and history that the application sends to the agent.
 
+### Agent execution modes
+
+The chat architecture currently supports two execution modes for agent families.
+
+`agent_reference` uses a hosted Foundry agent by name. In this mode, the application sends the turn to a persisted agent definition that already exists in Azure AI Foundry. That hosted agent owns its published instructions and published tool definitions, while the application still runs the local tool loop and sends function outputs back through the Responses API. The current `treeGrounding` family uses this mode.
+
+`direct_model` calls the model deployment directly and sends instructions plus tool definitions inline on each request. In this mode, the application itself is the source of truth for the family's instructions and tool schema for that turn. The model can still emit function calls, and the server executes those through the same local handler map and tool loop used by hosted-agent mode. The current `investment` family uses this mode.
+
+In short:
+
+- use `agent_reference` when the family should exist as a published, named Foundry agent with stable hosted configuration
+- use `direct_model` when the family is local, dynamic, or still evolving in application code
+
+After that initial configuration difference, both modes follow the same local execution loop in application code:
+
+1. send the request to the model or hosted agent
+2. receive model output
+3. detect function calls in the response
+4. run the matching local handlers on the server
+5. send the tool outputs back through the Responses API
+6. receive the final answer when the model stops calling tools
+
+So the main difference is where the instructions and tool definitions come from at request start. The downstream tool-call loop is shared.
+
+### Agent Code Flow
+
+Investment family example:
+
+1. `src/app/api/chat/route.js` receives the chat request, normalizes the payload, and hands the request off to the agent-family dispatcher.
+2. `src/server/utils/agent/agentFamilyInvoker.js` normalizes the selected family name and dispatches the request to the registered family service.
+3. `src/server/utils/agent/agentFamilyRegistry.js` maps the family name `investment` to the `invokeInvestmentAgent` entry point.
+4. `src/server/utils/agent/investment/investmentAgentService.js` is the investment-family entry point that prepares the request, builds runtime context, calls the shared executor, and then shapes the final result.
+5. `src/server/utils/agent/investment/investmentAgentCatalog.js` defines the investment tool registry, instructions, and handler map used by the investment service.
+6. `src/server/utils/agent/investment/tools/` contains one module per investment tool, plus a small shared helper module for code that is genuinely reused across those tool implementations.
+7. `src/server/utils/agent/agentConversationInput.js` builds the initial message array that is sent to the model.
+8. `src/server/utils/agent/agentDebug.js` creates the shared debug state that tracks timing, tool calls, and other execution details.
+9. `src/server/utils/agent/agentFamilyExecution.js` runs the shared model/tool loop by sending input to the model, detecting function calls, executing handlers, and sending tool outputs back.
+10. `src/server/utils/agent/investment/investmentAgentCatalog.js` is consulted again during the tool loop because its registered tool handlers are looked up from the `handlerMap`, and those handlers now live under `src/server/utils/agent/investment/tools/`.
+11. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` converts the final model response and tool history into the normalized investment-family result, derives the latest recommendation, and then wraps everything in the top-level response schema.
+12. `src/server/utils/agent/agentTurnClassifier.js` classifies the final turn and extracts the normalized answer, tool usage, and follow-up options.
+13. `src/server/utils/agent/agentFamilyResult.js` builds the shared result envelope that all agent families return in a consistent shape.
+14. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` also builds the investment agent descriptor used in the top-level response, so the catalog remains focused on registry and runtime setup.
+
 ### Chat History vs. `priorToolInvocations`
 
 The application uses two different continuity mechanisms for follow-up behavior, and they serve different purposes.

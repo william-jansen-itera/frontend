@@ -1,9 +1,18 @@
 import { getRequiredFoundryConfig } from '@/server/utils/foundryAgentClient';
+import {
+  captureTimingEntry,
+  serializeDebugValue,
+} from '@/server/utils/agent/agentDebug';
+import {
+  getAgentToolResultData,
+  getAgentToolResultMeta,
+} from '@/server/utils/agent/agentToolResult';
 
-const TURN_TYPE_DEFAULT = 'default';
-const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer_broadening';
-const TURN_TYPE_BROADER_ANSWER = 'broader_answer';
-const FOLLOW_UP_OPTION_BROADER_ANSWER = 'broader_answer';
+export const TURN_TYPE_DEFAULT = 'default';
+export const TURN_TYPE_NO_RESULT_OFFER = 'no_result_offer_broadening';
+export const TURN_TYPE_BROADER_ANSWER = 'broader_answer';
+export const FOLLOW_UP_OPTION_BROADER_ANSWER = 'broader_answer';
+
 const ENABLE_PERMISSION_TO_BROADER_MODEL_REVIEW = true;
 
 const GROUNDED_RESPONSE_REVIEW_SCHEMA = {
@@ -142,34 +151,6 @@ function normalizeWhitespace(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function buildCitationEntries(result, toolName) {
-  return (result?.results ?? []).map((entry) => ({
-    toolName,
-    treeId: entry.treeId,
-    nodeId: entry.nodeId,
-    title: entry.title,
-    breadcrumb: entry.breadcrumb,
-    nodeIdPath: entry.nodeIdPath,
-    treeDisplayName: entry.treeDisplayName,
-    matchSummary: entry.matchSummary ?? null,
-    attachmentFileNames: entry.attachmentFileNames ?? [],
-  }));
-}
-
-function dedupeCitations(citations) {
-  const citationsByKey = new Map();
-
-  citations.forEach((citation) => {
-    const key = `${citation.treeId}::${citation.nodeId}::${citation.toolName}`;
-
-    if (!citationsByKey.has(key)) {
-      citationsByKey.set(key, citation);
-    }
-  });
-
-  return Array.from(citationsByKey.values());
-}
-
 function extractAnswerText(response) {
   if (typeof response?.output_text === 'string' && response.output_text.trim()) {
     return response.output_text.trim();
@@ -190,28 +171,31 @@ function extractAnswerText(response) {
     .join('\n\n');
 }
 
-function getFollowUpOptionLabel(optionId) {
-  if (optionId === FOLLOW_UP_OPTION_BROADER_ANSWER) {
-    return 'Answer more broadly';
+function getToolInvocationResultCount(invocation) {
+  const metaResultCount = Number(getAgentToolResultMeta(invocation?.output)?.resultCount);
+
+  if (Number.isFinite(metaResultCount)) {
+    return metaResultCount;
   }
 
-  return '';
-}
+  const toolData = getAgentToolResultData(invocation?.output);
 
-function buildBroaderAnswerOption() {
-  return [
-    {
-      optionId: FOLLOW_UP_OPTION_BROADER_ANSWER,
-      label: getFollowUpOptionLabel(FOLLOW_UP_OPTION_BROADER_ANSWER),
-    },
-  ];
+  if (Number.isFinite(Number(toolData?.count))) {
+    return Number(toolData.count);
+  }
+
+  if (Array.isArray(toolData?.priceHistory)) {
+    return toolData.priceHistory.length;
+  }
+
+  return toolData ? 1 : 0;
 }
 
 function buildResponseToolInvocations(toolInvocations) {
   return toolInvocations.map((invocation) => ({
     toolName: invocation.toolName,
     arguments: invocation.arguments,
-    resultCount: invocation.output?.count ?? 0,
+    resultCount: getToolInvocationResultCount(invocation),
   }));
 }
 
@@ -227,7 +211,7 @@ function buildPriorToolInvocations(normalizedFollowUpSelection) {
 
 function hasToolResults(toolInvocations) {
   return Array.isArray(toolInvocations)
-    && toolInvocations.some((invocation) => Number(invocation?.output?.count ?? 0) > 0);
+    && toolInvocations.some((invocation) => getToolInvocationResultCount(invocation) > 0);
 }
 
 function mentionsBroadening(answer) {
@@ -250,6 +234,23 @@ function mentionsPermission(answer) {
   return CONSENT_ASK_PATTERNS.some((pattern) => pattern.test(normalizedAnswer));
 }
 
+function getFollowUpOptionLabel(optionId) {
+  if (optionId === FOLLOW_UP_OPTION_BROADER_ANSWER) {
+    return 'Answer more broadly';
+  }
+
+  return '';
+}
+
+function buildBroaderAnswerOption() {
+  return [
+    {
+      optionId: FOLLOW_UP_OPTION_BROADER_ANSWER,
+      label: getFollowUpOptionLabel(FOLLOW_UP_OPTION_BROADER_ANSWER),
+    },
+  ];
+}
+
 async function reviewIsPermissionToBroadenResponse({ openAIClient, userMessage, assistantAnswer }) {
   const { modelDeploymentName } = getRequiredFoundryConfig();
   const response = await openAIClient.responses.create({
@@ -259,7 +260,7 @@ async function reviewIsPermissionToBroadenResponse({ openAIClient, userMessage, 
         type: 'message',
         role: 'system',
         content: [
-          'You are reviewing an assistant response from a grounded tree-search workflow.',
+          'You are reviewing an assistant response from a grounded tool workflow.',
           'Determine whether the assistant response is a request-permission message.',
           'Return isRequestPermission=true only when the assistant is asking whether to broaden the search or provide a general background explanation without already answering from background knowledge.',
           'This includes cases where no grounded tool path was established and cases where grounded results were returned but did not meaningfully answer the question.',
@@ -311,9 +312,6 @@ async function reviewIsPermissionToBroadenResponse({ openAIClient, userMessage, 
   };
 }
 
-// if response mentions broadening and asks for permission
-// or if only mentions broadening but is also classified by model as requesting permission
-// then the assistant is considered as requesting permission to broaden the answer.
 async function isPermissionToBroadenAnswer({
   toolInvocations,
   answer,
@@ -379,78 +377,6 @@ async function isPermissionToBroadenAnswer({
   };
 }
 
-export function serializeDebugValue(value) {
-  if (value === undefined) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(JSON.stringify(value));
-  } catch {
-    return {
-      serializationError: 'Value could not be serialized for debug output.',
-      valueType: typeof value,
-      stringValue: String(value),
-    };
-  }
-}
-
-function buildResponseDebugSnapshot(response) {
-  return serializeDebugValue({
-    id: response?.id ?? null,
-    status: response?.status ?? null,
-    usage: response?.usage ?? null,
-    error: response?.error ?? null,
-    incomplete_details: response?.incomplete_details ?? null,
-  });
-}
-
-function createDebugTimingEntry(overrides = {}) {
-  return {
-    startedAt: null,
-    completedAt: null,
-    durationMs: null,
-    ...overrides,
-  };
-}
-
-export async function captureTimingEntry(timingEntry, action) {
-  if (!timingEntry) {
-    return action();
-  }
-
-  timingEntry.startedAt = new Date().toISOString();
-  const startedAtMs = Date.now();
-
-  try {
-    return await action();
-  } finally {
-    timingEntry.completedAt = new Date().toISOString();
-    timingEntry.durationMs = Date.now() - startedAtMs;
-  }
-}
-
-export function attachDebugToError(error, debug) {
-  if (!debug) {
-    if (error instanceof Error) {
-      return error;
-    }
-
-    return new Error(String(error ?? 'Agent request failed'));
-  }
-
-  const normalizedDebug = serializeDebugValue(debug);
-
-  if (error instanceof Error) {
-    error.debug = normalizedDebug;
-    return error;
-  }
-
-  const wrappedError = new Error(String(error ?? 'Agent request failed'));
-  wrappedError.debug = normalizedDebug;
-  return wrappedError;
-}
-
 export function normalizeFollowUpSelection(selection) {
   if (!selection || typeof selection !== 'object' || Array.isArray(selection)) {
     return null;
@@ -480,59 +406,13 @@ export function normalizeFollowUpSelection(selection) {
   };
 }
 
-export function buildInitialAgentInput({ allowedToolInstruction, normalizedHistory, normalizedMessage }) {
-  return [
-    ...(allowedToolInstruction
-      ? [{
-        type: 'message',
-        role: 'system',
-        content: allowedToolInstruction,
-      }]
-      : []),
-    ...normalizedHistory,
-    {
-      type: 'message',
-      role: 'user',
-      content: normalizedMessage,
-    },
-  ];
-}
-
-export function createAgentDebugState({ normalizedMessage, normalizedFollowUpSelection, initialInput }) {
-  return {
-    userQuery: {
-      message: normalizedMessage,
-      followUpSelection: serializeDebugValue(normalizedFollowUpSelection),
-    },
-    toolCalls: [],
-    curatedAgentInput: {
-      initialMessages: serializeDebugValue(initialInput),
-      toolMessages: [],
-    },
-    agentOutput: null,
-    timings: {
-      requestStartedAt: new Date().toISOString(),
-      requestCompletedAt: null,
-      totalDurationMs: null,
-      modelCalls: [],
-      broaderAnswerDetection: createDebugTimingEntry(),
-      broaderAnswerReview: createDebugTimingEntry({ executed: false }),
-      phases: {
-        citationAssembly: createDebugTimingEntry(),
-        responseShaping: createDebugTimingEntry(),
-      },
-    },
-  };
-}
-
-export async function shapeTreeAgentTurn({
+export async function classifyAgentTurn({
   finalResponse,
   finalToolInvocations,
   normalizedFollowUpSelection,
   openAIClient,
   normalizedMessage,
-  debug,
-  agent,
+  debug = null,
 }) {
   const answer = extractAnswerText(finalResponse);
   const groundedResponseReviewSteps = [];
@@ -547,88 +427,42 @@ export async function shapeTreeAgentTurn({
       debugTiming: debug?.timings?.broaderAnswerReview ?? null,
     }),
   );
+  const followUpOptions = permissionToBroadenDetection.matches
+    ? buildBroaderAnswerOption()
+    : [];
+  const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations);
+  const priorToolInvocations = buildPriorToolInvocations(normalizedFollowUpSelection);
+  const staysInBroaderLane = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
+    && responseToolInvocations.length === 0;
+  const turnType = staysInBroaderLane
+    ? TURN_TYPE_BROADER_ANSWER
+    : followUpOptions.length > 0
+      ? TURN_TYPE_NO_RESULT_OFFER
+      : TURN_TYPE_DEFAULT;
+  const usedBroaderKnowledge = turnType === TURN_TYPE_BROADER_ANSWER;
+  const isGrounded = !usedBroaderKnowledge;
 
-  const citations = await captureTimingEntry(
-    debug?.timings?.phases?.citationAssembly ?? null,
-    async () => dedupeCitations(
-      finalToolInvocations.flatMap((invocation) => buildCitationEntries(invocation.output, invocation.toolName)),
-    ),
-  );
-  const shapedResponse = await captureTimingEntry(
-    debug?.timings?.phases?.responseShaping ?? null,
-    async () => {
-      const followUpOptions = permissionToBroadenDetection.matches
-        ? buildBroaderAnswerOption()
-        : [];
-      const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations);
-      const priorToolInvocations = buildPriorToolInvocations(normalizedFollowUpSelection);
-      const staysInBroaderLane = normalizedFollowUpSelection?.optionId === FOLLOW_UP_OPTION_BROADER_ANSWER
-        && responseToolInvocations.length === 0;
-      const turnType = staysInBroaderLane
-        ? TURN_TYPE_BROADER_ANSWER
-        : followUpOptions.length > 0
-          ? TURN_TYPE_NO_RESULT_OFFER
-          : TURN_TYPE_DEFAULT;
-
-      if (debug) {
-        debug.curatedAgentInput.toolMessages = serializeDebugValue(
-          debug.toolCalls.map((toolCall) => ({
-            type: 'function_call_output',
-            call_id: toolCall.callId ?? null,
-            output: `See step 2 Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
-          })),
-        );
-        debug.agentOutput = {
-          agent: {
-            id: agent.id,
-            name: agent.name,
-            version: agent.version ?? null,
-          },
-          response: buildResponseDebugSnapshot(finalResponse),
-          answer,
-          citations: serializeDebugValue(citations),
-          permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
-          groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
-          error: finalResponse?.error ?? null,
-        };
-      }
-
-      return {
-        followUpOptions,
-        responseToolInvocations,
-        priorToolInvocations,
-        turnType,
-      };
-    },
-  );
+  if (debug) {
+    debug.turnClassification = serializeDebugValue({
+      turnType,
+      isGrounded,
+      usedBroaderKnowledge,
+      permissionToBroadenDetection,
+      groundedResponseReview: groundedResponseReviewSteps,
+      responseToolInvocations,
+      priorToolInvocations,
+    });
+  }
 
   return {
     answer,
-    citations,
-    shapedResponse,
-  };
-}
-
-export function buildAgentResult({ answer, agent, shapedResponse, citations, principal, debug }) {
-  return {
-    answer,
-    agent: {
-      id: agent.id,
-      name: agent.name,
-      version: agent.version ?? null,
-    },
-    toolsUsed: Array.from(new Set(shapedResponse.responseToolInvocations.map((invocation) => invocation.toolName))),
-    toolInvocations: shapedResponse.responseToolInvocations,
-    priorToolInvocations: shapedResponse.priorToolInvocations,
-    turnType: shapedResponse.turnType,
-    followUpOptions: shapedResponse.followUpOptions,
-    citations,
-    principal: principal
-      ? {
-        userId: principal.userId ?? null,
-        userDetails: principal.userDetails ?? null,
-      }
-      : null,
-    debug: debug ?? undefined,
+    turnType,
+    isGrounded,
+    usedBroaderKnowledge,
+    permissionToBroadenDetection,
+    groundedResponseReviewSteps,
+    followUpOptions,
+    responseToolInvocations,
+    priorToolInvocations,
   };
 }
