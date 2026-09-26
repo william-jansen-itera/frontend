@@ -19,11 +19,11 @@ const DEFAULT_GENERAL_VOLATILITY_CONFIG = Object.freeze({
   use_ma_gate: true,
   ma_period: 200,
   max_history_days: DEFAULT_MAX_HISTORY_DAYS,
-  volatility_threshold: 0.06,
 });
 
 const DEFAULT_TICKER_VOLATILITY_CONFIG = Object.freeze({
   start_share_count: 20,
+  volatility_threshold: 0.06,
 });
 
 function normalizeInteger(value, keyName, { minimum = 0, required = true } = {}) {
@@ -175,6 +175,8 @@ export async function loadVolatilityRuntimeConfig(ticker) {
     ...generalConfig,
     ...tickerConfig,
   };
+  const volatilityThresholdValue = tickerConfig.volatility_threshold
+    ?? generalConfig.volatility_threshold;
   const useMaGate = normalizeBoolean(effectiveConfig.use_ma_gate, 'use_ma_gate', false);
   const maPeriod = effectiveConfig.ma_period === undefined || effectiveConfig.ma_period === null || effectiveConfig.ma_period === ''
     ? null
@@ -193,7 +195,7 @@ export async function loadVolatilityRuntimeConfig(ticker) {
     maxHistoryDays: effectiveConfig.max_history_days === undefined || effectiveConfig.max_history_days === null || effectiveConfig.max_history_days === ''
       ? DEFAULT_MAX_HISTORY_DAYS
       : normalizeInteger(effectiveConfig.max_history_days, 'max_history_days', { minimum: 1 }),
-    volatilityThreshold: normalizeNumber(effectiveConfig.volatility_threshold, 'volatility_threshold', { minimum: 0 }),
+    volatilityThreshold: normalizeNumber(volatilityThresholdValue, 'volatility_threshold', { minimum: 0 }),
     startShareCount: normalizeInteger(effectiveConfig.start_share_count, 'start_share_count', { minimum: 0 }),
     raw: {
       sources: {

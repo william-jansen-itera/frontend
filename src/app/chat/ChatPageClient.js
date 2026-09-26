@@ -1196,6 +1196,15 @@ export default function ChatPageClient({ includeDebug }) {
     });
   }
 
+  function handlePromptKeyDown(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
   async function handleFollowUpOptionClick(option) {
     if (!activeNoResultOfferTurn || isSubmitting) {
       return;
@@ -1462,6 +1471,7 @@ export default function ChatPageClient({ includeDebug }) {
                   <textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
+                    onKeyDown={handlePromptKeyDown}
                     placeholder={buildChatPlaceholder()}
                     className={styles.textArea}
                     rows={4}

@@ -57,7 +57,7 @@ Use this tool's for factual claims about buy, sell, or hold.
 When the user asks for a recommendation, always use this tool to determine the signal.
 Always state signal, rationale, whatToLookFor, and analyzedWindow.
 Also include finalState where relevant.
-When you answer a recommendation request, end by asking whether the user wants to see the latest volatility events.
+When you answer a recommendation request, end by asking whether the user wants to see the latest rotation events.
 Field meanings:
 - signal: engine recommendation for the latest day
 - noOfShares: shares to trade now, not the current simulated position
@@ -74,7 +74,7 @@ This tool loads the latest persisted recommendation state JSON for the ticker an
 Use reviewType active_episode for the latest active volatility episode.
 Use reviewType rotation_events for both rotation and re-rotation events.
 When using reviewType rotation_events, never ask for more than maxRotations + 1 events with latest, because an episode can contain at most maxRotations buy rotations plus one re-rotation.
-Use reviewType episode_low_updates for episode-low detail rows.
+Use reviewType episode_low_updates for event rows in the latest active volatility episode whose details mention episode low, including rotation rows.
 Use reviewType ma_gate_events for MA-gate rows.
 Use reviewType blocked_triggers for blocked MA-gate trigger rows.
 Use reviewType all_days only when the user explicitly wants every day.
@@ -86,6 +86,7 @@ Use fromDate and toDate only when the user asked for a date range; otherwise pas
 Event details are important evidence. When answering from returned events, include the relevant details text rather than paraphrasing it away.
 If an event detail is a single pipe-delimited summary string, preserve the important segments from that string in the answer.
 If returned events is empty, say no matching volatility events were found.
+When you answer an event request, end by asking whether the user wants to see events using a different filter, mentioning filter options.
 
 If the latest close is still below rerotationThreshold and rotationsUsed equals maxRotations, say the episode is open and the next action is a re-rotation, not another buy rotation.
 `.trim();

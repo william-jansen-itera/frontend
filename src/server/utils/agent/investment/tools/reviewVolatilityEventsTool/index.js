@@ -12,7 +12,6 @@ import { readSingleInvestmentTextAttachmentByFileName } from '@/server/utils/age
 export const GET_VOLATILITY_EVENTS_TOOL = 'get_volatility_events';
 
 const REVIEW_TYPES = Object.freeze([
-  'all_noteworthy',
   'rotation_events',
   'episode_low_updates',
   'ma_gate_events',
@@ -270,7 +269,7 @@ function buildReviewFilterConfig({ reviewType, eventTypes, detailKeywords, inclu
     case 'rotation_events':
       return { eventTypes: ['rotation', 're-rotation'], detailKeywords: [], includeNoneWithDetails: false, activeEpisodeOnly: false };
     case 'episode_low_updates':
-      return { eventTypes: ['none'], detailKeywords: ['episode low updated to'], includeNoneWithDetails: true, activeEpisodeOnly: false };
+      return { eventTypes: [], detailKeywords: ['episode low'], includeNoneWithDetails: true, activeEpisodeOnly: true };
     case 'ma_gate_events':
       return { eventTypes: ['none'], detailKeywords: ['Blocked by MA gate', 'MA gate skipped - insufficient data'], includeNoneWithDetails: true, activeEpisodeOnly: false };
     case 'blocked_triggers':
@@ -286,7 +285,6 @@ function buildReviewFilterConfig({ reviewType, eventTypes, detailKeywords, inclu
         includeNoneWithDetails: Boolean(includeNoneWithDetails),
         activeEpisodeOnly: false,
       };
-    case 'all_noteworthy':
     default:
       return { eventTypes: ['rotation', 're-rotation'], detailKeywords: [], includeNoneWithDetails: true, activeEpisodeOnly: false };
   }
@@ -379,7 +377,7 @@ export function buildReviewVolatilityEventsHandler({ includeDebug = false } = {}
         eventType: ['rotation', 're-rotation', 'none'].includes(entry?.eventType) ? entry.eventType : 'none',
       }))
       : [];
-    const normalizedReviewType = REVIEW_TYPES.includes(reviewType) ? reviewType : 'all_noteworthy';
+    const normalizedReviewType = REVIEW_TYPES.includes(reviewType) ? reviewType : 'rotation_events';
     const normalizedFromDate = normalizeOptionalDate(fromDate);
     const normalizedToDate = normalizeOptionalDate(toDate);
     const normalizedLatest = normalizeLatest(latest);
