@@ -1,5 +1,5 @@
 import { performance } from 'node:perf_hooks';
-import { getAgentToolResultDebug, isAgentToolResult } from '@/server/utils/agent/agentToolResult';
+import { getAgentToolResultData, getAgentToolResultDebug, getAgentToolResultMeta, isAgentToolResult } from '@/server/utils/agent/agentToolResult';
 
 const MAX_TOOL_ROUNDS = 5;
 
@@ -11,6 +11,33 @@ function getElapsedDurationMs(startedAtMs) {
   }
 
   return Number(elapsedMs.toFixed(1));
+}
+
+function getToolOutputMetaData(result) {
+  if (!isAgentToolResult(result)) {
+    return null;
+  }
+
+  return {
+    schemaVersion: result.schemaVersion,
+    sourceToolFamily: result.sourceToolFamily,
+    toolName: result.toolName,
+    toolResultType: result.toolResultType,
+    meta: getAgentToolResultMeta(result),
+  };
+}
+
+function buildModelFacingToolOutput(result) {
+  const toolData = getAgentToolResultData(result);
+
+  if (isAgentToolResult(result)) {
+    return {
+      ...result,
+      data: toolData,
+    };
+  }
+
+  return toolData;
 }
 
 function normalizeToolHandlerResult(result, includeDebug = false) {
@@ -140,10 +167,12 @@ export async function runAgentFamilyExecution({
         };
       }
 
+      const modelFacingOutput = buildModelFacingToolOutput(output);
+
       const functionCallOutput = {
         type: 'function_call_output',
         call_id: functionCall.call_id,
-        output: JSON.stringify(output),
+        output: JSON.stringify(modelFacingOutput),
       };
 
       toolInvocations.push({
@@ -161,7 +190,8 @@ export async function runAgentFamilyExecution({
           durationMs: getElapsedDurationMs(toolStartedAtMs),
           parsedArguments: parsedArguments,
           searchResult: toolDebug?.searchResult ?? null,
-          toolOutput: output,
+          toolMetaData: getToolOutputMetaData(output),
+          toolOutput: getAgentToolResultData(output),
           agentToolInput: functionCallOutput,
           error: executionError,
         });

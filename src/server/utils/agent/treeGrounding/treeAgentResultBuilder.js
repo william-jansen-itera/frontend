@@ -98,11 +98,6 @@ export async function buildTreeGroundingFamilyResult({
       agent,
       response: finalResponse,
       answer,
-      extra: {
-        citations: serializeDebugValue(citations),
-        permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
-        groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
-      },
     });
   }
 

@@ -45,6 +45,8 @@ const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   '.webp',
   '.xls',
   '.xlsx',
+  '.yaml',
+  '.yml',
 ]);
 
 function createStatusError(message, status) {

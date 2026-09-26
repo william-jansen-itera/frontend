@@ -15,7 +15,13 @@ export function buildInvestmentToolResult({ toolName, toolResultType, data, incl
     meta: {
       resultCount: Array.isArray(data?.priceHistory)
         ? data.priceHistory.length
-        : Array.isArray(data?.signals)
+        : Array.isArray(data?.events)
+          ? data.events.length
+        : Array.isArray(data?.matches)
+          ? data.matches.length
+          : Array.isArray(data?.eventEntries)
+            ? data.eventEntries.length
+            : Array.isArray(data?.signals)
           ? data.signals.length
           : 1,
       supportsCitations: false,

@@ -123,7 +123,7 @@ export function setCuratedToolMessages(debug) {
     debug.toolCalls.map((toolCall) => ({
       type: 'function_call_output',
       call_id: toolCall.callId ?? null,
-      output: `See step 2 Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
+      output: `See 4. Tool Calls > Tool output for round ${toolCall.round}${toolCall.toolName ? ` (${toolCall.toolName})` : ''}.`,
     })),
   );
 }

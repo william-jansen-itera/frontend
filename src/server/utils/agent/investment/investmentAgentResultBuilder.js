@@ -15,8 +15,8 @@ import {
   INVESTMENT_FAMILY,
 } from '@/server/utils/agent/investment/investmentAgentCatalog';
 import {
-  GET_BUY_SELL_RECOMMENDATION_TOOL,
-} from '@/server/utils/agent/investment/tools/getBuySellRecommendationTool';
+  GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
+} from '@/server/utils/agent/investment/tools/getBuySellVolatilityRecommendationTool';
 
 function buildInvestmentAgentDescriptor() {
   const { modelDeploymentName } = getRequiredFoundryConfig();
@@ -31,7 +31,7 @@ function buildInvestmentAgentDescriptor() {
 function getLatestRecommendation(toolInvocations) {
   const latestRecommendation = [...(toolInvocations ?? [])]
     .reverse()
-    .find((invocation) => invocation?.toolName === GET_BUY_SELL_RECOMMENDATION_TOOL);
+    .find((invocation) => invocation?.toolName === GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL);
 
   return getAgentToolResultData(latestRecommendation?.output) ?? null;
 }
@@ -74,10 +74,6 @@ export async function buildInvestmentFamilyResult({
       agent: buildInvestmentAgentDescriptor(),
       response: finalResponse,
       answer,
-      extra: {
-        recommendation: serializeDebugValue(recommendation),
-        permissionToBroadenDetection: serializeDebugValue(turnClassification.permissionToBroadenDetection),
-      },
     });
   }
 

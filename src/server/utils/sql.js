@@ -1,4 +1,6 @@
-import * as sql from 'mssql';
+import mssql from 'mssql';
+
+const sql = mssql;
 
 const config = {
   user: process.env.AZURE_SQL_USER,

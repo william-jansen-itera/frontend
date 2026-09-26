@@ -18,11 +18,34 @@ const TURN_TYPE_BROADER_ANSWER = "broader_answer";
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
 const CHAT_FAMILY_OPTIONS = ["treeGrounding", "investment"];
 const DEFAULT_CHAT_FAMILY = "treeGrounding";
+const CHAT_FAMILY_LABELS = Object.freeze({
+  treeGrounding: "trees and attachments",
+  investment: "investments",
+});
 
 function normalizeChatFamily(value) {
   const normalizedValue = String(value ?? "").trim();
 
   return CHAT_FAMILY_OPTIONS.includes(normalizedValue) ? normalizedValue : DEFAULT_CHAT_FAMILY;
+}
+
+function buildChatPlaceholder() {
+  const familyLabels = CHAT_FAMILY_OPTIONS
+    .map((family) => CHAT_FAMILY_LABELS[family])
+    .filter(Boolean);
+
+  if (familyLabels.length === 0) {
+    return "Ask the agent a question";
+  }
+
+  if (familyLabels.length === 1) {
+    return `Ask the agent about ${familyLabels[0]}`;
+  }
+
+  const leadingLabels = familyLabels.slice(0, -1).join(", ");
+  const trailingLabel = familyLabels[familyLabels.length - 1];
+
+  return `Ask the agent about ${leadingLabels}, or ${trailingLabel}`;
 }
 
 function setChatFamilySearchParam(searchParams, family) {
@@ -722,14 +745,14 @@ function getTurnToolBadgeState(turn) {
         toolName,
         label: `Add to: ${toolName}`,
       })),
-      statusLabel: "NO TOOL FOUND",
+      statusLabel: "NO TOOL USED",
     };
   }
 
   return {
     toolLabels: [],
     addTargets: [],
-    statusLabel: "NO TOOL FOUND",
+    statusLabel: "NO TOOL USED",
   };
 }
 
@@ -823,7 +846,7 @@ function TurnDebugPanel({ turn }) {
                   {toolCall.error ? <span className={styles.toolErrorBadge}>Error</span> : null}
                 </div>
 
-                <details className={styles.debugDetail} open>
+                <details className={styles.debugDetail}>
                   <summary>Parsed arguments</summary>
                   <pre className={styles.jsonBlock}>{formatJson(toolCall.parsedArguments)}</pre>
                 </details>
@@ -848,6 +871,13 @@ function TurnDebugPanel({ turn }) {
                   <summary>Tool output</summary>
                   <pre className={styles.jsonBlock}>{formatJson(toolCall.toolOutput)}</pre>
                 </details>
+
+                {toolCall.toolMetaData ? (
+                  <details className={styles.debugDetail}>
+                    <summary>Tool meta data</summary>
+                    <pre className={styles.jsonBlock}>{formatJson(toolCall.toolMetaData)}</pre>
+                  </details>
+                ) : null}
 
                 {toolCall.error ? (
                   <details className={styles.debugDetail} open>
@@ -1432,7 +1462,7 @@ export default function ChatPageClient({ includeDebug }) {
                   <textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
-                    placeholder="Ask agent about a topic from a tree node or attachment"
+                    placeholder={buildChatPlaceholder()}
                     className={styles.textArea}
                     rows={4}
                   />
