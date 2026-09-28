@@ -3,11 +3,8 @@ import {
   normalizeTicker,
 } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import {
-  buildVolatilityAnalysisPath,
-  getRequiredInvestmentPersistenceTreeId,
-  VOLATILITY_ANALYSIS_STATE_FILE_NAME,
 } from '@/server/utils/agent/investment/investmentPersistenceConfig';
-import { readSingleInvestmentTextAttachmentByFileName } from '@/server/utils/agent/investment/investmentTreeRepository';
+import { loadStoredRecommendationEventEntries } from '@/server/utils/agent/investment/tools/getBuySellVolatilityRecommendationTool/recommendationRepository';
 
 export const GET_VOLATILITY_EVENTS_TOOL = 'get_volatility_events';
 
@@ -185,22 +182,7 @@ export const reviewVolatilityEventsToolDefinition = {
 };
 
 async function loadPersistedEventEntries(normalizedTicker) {
-  const persistedDocument = await readSingleInvestmentTextAttachmentByFileName({
-    treeId: getRequiredInvestmentPersistenceTreeId(),
-    pathSegments: buildVolatilityAnalysisPath(normalizedTicker),
-    fileName: VOLATILITY_ANALYSIS_STATE_FILE_NAME,
-  });
-
-  if (!persistedDocument?.text) {
-    return [];
-  }
-
-  try {
-    const parsedDocument = JSON.parse(persistedDocument.text);
-    return Array.isArray(parsedDocument?.eventEntries) ? parsedDocument.eventEntries : [];
-  } catch {
-    return [];
-  }
+  return loadStoredRecommendationEventEntries(normalizedTicker);
 }
 
 function normalizeLatest(value) {

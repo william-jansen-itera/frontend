@@ -3,21 +3,17 @@ import {
   normalizeTicker,
 } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import {
-  buildVolatilityAnalysisPath,
-  getRequiredInvestmentPersistenceTreeId,
   VOLATILITY_ANALYSIS_LOG_FILE_NAME,
   VOLATILITY_ANALYSIS_STATE_FILE_NAME,
 } from '@/server/utils/agent/investment/investmentPersistenceConfig';
 import { loadVolatilityRuntimeConfig } from '@/server/utils/agent/investment/volatilityConfigRepository';
 import {
-  readSingleInvestmentTextAttachmentByFileName,
-  replaceInvestmentLeafAttachment,
-} from '@/server/utils/agent/investment/investmentTreeRepository';
-import {
-  getLatestExpectedTradingCloseDate,
-  loadStoredPriceHistory,
-} from '@/server/utils/agent/investment/tools/getStockPriceTool/stockPriceRepository';
+  loadStoredRecommendationArtifacts,
+  persistStoredRecommendationArtifacts,
+} from '@/server/utils/agent/investment/tools/getBuySellVolatilityRecommendationTool/recommendationRepository';
+import { loadStoredPriceHistory } from '@/server/utils/agent/investment/tools/getStockPriceTool/stockPriceRepository';
 import { runVolatilityHarvestAnalysis } from '@/server/utils/agent/investment/tools/getBuySellVolatilityRecommendationTool/volatilityEngine';
+import { getLatestExpectedTradingCloseDate } from '@/server/utils/agent/investment/tradingCalendar';
 
 export const GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL = 'get_buy_sell_volatility_recommendation';
 
@@ -236,17 +232,6 @@ function buildRecommendationStateDocument(output) {
   return JSON.stringify(output, null, 2);
 }
 
-function parseStoredRecommendationState(text) {
-  try {
-    const parsedState = JSON.parse(String(text ?? ''));
-    return parsedState && typeof parsedState === 'object' && !Array.isArray(parsedState)
-      ? parsedState
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 function hasMatchingEffectiveConfiguration(storedState, runtimeConfig) {
   const effectiveConfiguration = storedState?.effectiveConfiguration;
 
@@ -349,14 +334,9 @@ export function buildGetBuySellVolatilityRecommendationHandler({ includeDebug = 
     const requestedHistory = Array.isArray(priceHistory) ? priceHistory : [];
     const runtimeConfig = await loadVolatilityRuntimeConfig(normalizedTicker);
     const expectedAnalysisDate = getLatestExpectedTradingCloseDate();
-    const recommendationPath = buildVolatilityAnalysisPath(normalizedTicker);
-    const persistenceTreeId = getRequiredInvestmentPersistenceTreeId();
-    const existingStateDocument = await readSingleInvestmentTextAttachmentByFileName({
-      treeId: persistenceTreeId,
-      pathSegments: recommendationPath,
-      fileName: VOLATILITY_ANALYSIS_STATE_FILE_NAME,
-    });
-    const parsedStoredState = parseStoredRecommendationState(existingStateDocument?.text);
+    const storedArtifacts = await loadStoredRecommendationArtifacts(normalizedTicker);
+    const existingStateDocument = storedArtifacts.stateDocument;
+    const parsedStoredState = storedArtifacts.parsedState;
 
     if (shouldReuseStoredRecommendation({
       storedState: parsedStoredState,
@@ -424,32 +404,14 @@ export function buildGetBuySellVolatilityRecommendationHandler({ includeDebug = 
     };
     const nextLogContent = buildRecommendationLogText({ ticker: normalizedTicker, output });
     const nextStateContent = buildRecommendationStateDocument(output);
-    const existingLogDocument = await readSingleInvestmentTextAttachmentByFileName({
-      treeId: persistenceTreeId,
-      pathSegments: recommendationPath,
-      fileName: VOLATILITY_ANALYSIS_LOG_FILE_NAME,
+    await persistStoredRecommendationArtifacts({
+      ticker: normalizedTicker,
+      stateText: nextStateContent,
+      logText: nextLogContent,
+      updatedBy,
+      existingStateText: existingStateDocument?.text ?? null,
+      existingLogText: storedArtifacts.logDocument?.text ?? null,
     });
-
-    if (existingLogDocument?.text !== nextLogContent) {
-      await replaceInvestmentLeafAttachment({
-        treeId: persistenceTreeId,
-        pathSegments: recommendationPath,
-        fileName: VOLATILITY_ANALYSIS_LOG_FILE_NAME,
-        contentType: 'text/plain; charset=utf-8',
-        content: nextLogContent,
-        updatedBy,
-      });
-    }
-    if (existingStateDocument?.text !== nextStateContent) {
-      await replaceInvestmentLeafAttachment({
-        treeId: persistenceTreeId,
-        pathSegments: recommendationPath,
-        fileName: VOLATILITY_ANALYSIS_STATE_FILE_NAME,
-        contentType: 'application/json; charset=utf-8',
-        content: nextStateContent,
-        updatedBy,
-      });
-    }
 
     return buildInvestmentToolResult({
       toolName: GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
