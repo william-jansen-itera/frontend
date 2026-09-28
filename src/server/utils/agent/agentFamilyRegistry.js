@@ -1,9 +1,15 @@
 import { invokeTreeSearchAgent } from '@/server/utils/agent/treeGrounding/treeAgentService';
 import { invokeInvestmentAgent } from '@/server/utils/agent/investment/investmentAgentService';
-import { INVESTMENT_FAMILY } from '@/server/utils/agent/investment/investmentAgentCatalog';
 import {
-  getHostedTreeGroundingPublishStatus,
-  publishHostedTreeGroundingAgent,
+  INVESTMENT_FAMILY,
+  getInvestmentPromptAgentPublishStatus,
+  listDefinedInvestmentTools,
+  publishInvestmentPromptAgent,
+} from '@/server/utils/agent/investment/investmentAgentCatalog';
+import {
+  getTreeGroundingPromptAgentPublishStatus,
+  listDefinedTreeGroundingTools,
+  publishTreeGroundingPromptAgent,
   TREE_GROUNDING_FAMILY,
 } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
 
@@ -32,10 +38,11 @@ function buildFamilyRegistration({
   label,
   description,
   orchestratorToolName,
-  supportsHostedPublishing,
+  supportsPromptAgentPublishing,
   invoke,
-  getHostedPublishStatus,
-  publishHostedAgent,
+  listDefinedTools,
+  getPromptAgentPublishStatus,
+  publishPromptAgent,
 }) {
   return {
     family,
@@ -45,10 +52,11 @@ function buildFamilyRegistration({
       name: orchestratorToolName,
       description,
     }),
-    supportsHostedPublishing,
+    supportsPromptAgentPublishing,
     invoke,
-    getHostedPublishStatus,
-    publishHostedAgent,
+    listDefinedTools,
+    getPromptAgentPublishStatus,
+    publishPromptAgent,
   };
 }
 
@@ -58,18 +66,22 @@ const FAMILY_REGISTRY = new Map([
     label: 'Investment',
     description: 'A deterministic investment tool that returns cached prices, recommendations, and event review results.',
     orchestratorToolName: 'ask_investment_family',
-    supportsHostedPublishing: false,
+    supportsPromptAgentPublishing: true,
     invoke: invokeInvestmentAgent,
+    listDefinedTools: listDefinedInvestmentTools,
+    getPromptAgentPublishStatus: getInvestmentPromptAgentPublishStatus,
+    publishPromptAgent: publishInvestmentPromptAgent,
   })],
   [TREE_GROUNDING_FAMILY, buildFamilyRegistration({
     family: TREE_GROUNDING_FAMILY,
     label: 'Tree Grounding',
-    description: 'A hosted tree-backed search tool that returns grounded results from published trees with detailed descriptions.',
+    description: 'A tree-backed prompt tool that returns grounded results from published trees with detailed descriptions.',
     orchestratorToolName: 'ask_tree_grounding_family',
-    supportsHostedPublishing: true,
+    supportsPromptAgentPublishing: true,
     invoke: invokeTreeSearchAgent,
-    getHostedPublishStatus: getHostedTreeGroundingPublishStatus,
-    publishHostedAgent: publishHostedTreeGroundingAgent,
+    listDefinedTools: listDefinedTreeGroundingTools,
+    getPromptAgentPublishStatus: getTreeGroundingPromptAgentPublishStatus,
+    publishPromptAgent: publishTreeGroundingPromptAgent,
   })],
 ]);
 

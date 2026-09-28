@@ -2,6 +2,7 @@ import { AIProjectClient } from '@azure/ai-projects';
 import { DefaultAzureCredential } from '@azure/identity';
 
 const DEFAULT_AGENT_NAME = 'tree-search-agent';
+const DEFAULT_INVESTMENT_AGENT_NAME = 'investment-agent';
 export const AGENT_PREVIEW_FEATURES = 'WorkflowAgents=V1Preview';
 
 let cachedProjectClient;
@@ -24,6 +25,20 @@ export function getRequiredFoundryConfig() {
     modelDeploymentName,
     agentName,
   };
+}
+
+export function getRequiredFoundryFamilyConfig(family) {
+  const baseConfig = getRequiredFoundryConfig();
+  const normalizedFamily = String(family ?? '').trim();
+
+  if (normalizedFamily === 'investment') {
+    return {
+      ...baseConfig,
+      agentName: process.env.AZURE_AI_INVESTMENT_AGENT_NAME || DEFAULT_INVESTMENT_AGENT_NAME,
+    };
+  }
+
+  return baseConfig;
 }
 
 export function getProjectClient() {

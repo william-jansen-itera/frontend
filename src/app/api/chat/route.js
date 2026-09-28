@@ -105,7 +105,7 @@ export async function POST(request) {
 
     await logTrace(
       JSON.stringify({
-        event: 'hosted_agent_invoke_success',
+        event: 'prompt_agent_invoke_success',
         family,
         agentName: result.agent.name,
         toolNames: result.toolsUsed,

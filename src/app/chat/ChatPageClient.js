@@ -381,8 +381,8 @@ async function fetchAgentFamilyManagementState() {
   return Array.isArray(payload?.families) ? payload.families : [];
 }
 
-function getFamilyStatusClassName(stylesheet, hostedStatus) {
-  switch (String(hostedStatus ?? "").trim()) {
+function getFamilyStatusClassName(stylesheet, promptAgentStatus) {
+  switch (String(promptAgentStatus ?? "").trim()) {
     case "published":
       return stylesheet.agentFamilyStatusPublished;
     case "not_published":
@@ -400,8 +400,8 @@ function getFamilyStatusClassName(stylesheet, hostedStatus) {
   }
 }
 
-function formatFamilyHostedStatus(hostedStatus) {
-  switch (String(hostedStatus ?? "").trim()) {
+function formatFamilyPromptAgentStatus(promptAgentStatus) {
+  switch (String(promptAgentStatus ?? "").trim()) {
     case "published":
       return "Published";
     case "not_published":
@@ -420,28 +420,28 @@ function formatFamilyHostedStatus(hostedStatus) {
 }
 
 function buildFamilyPublishLabel(family) {
-  return String(family?.hostedStatus ?? "").trim() === "published" ? "Re-publish" : "Publish";
+  return String(family?.promptAgentStatus ?? "").trim() === "published" ? "Re-publish" : "Publish";
 }
 
 function formatFamilyPublishMessage(family, publishStatus) {
   const familyLabel = String(family?.label ?? family?.family ?? "This family").trim();
-  const hostedAgentName = String(publishStatus?.hostedAgentName ?? family?.hostedAgentName ?? "").trim();
+  const promptAgentName = String(publishStatus?.promptAgentName ?? family?.promptAgentName ?? "").trim();
   const publishedAt = publishStatus?.lastPublishedAt ?? family?.lastPublishedAt ?? null;
   const publishedSuffix = publishedAt ? ` at ${formatDateTimeTimestamp(publishedAt)}` : "";
 
-  return hostedAgentName
-    ? `${familyLabel} hosted agent published as ${hostedAgentName}${publishedSuffix}.`
-    : `${familyLabel} hosted agent published${publishedSuffix}.`;
+  return promptAgentName
+    ? `${familyLabel} prompt agent published as ${promptAgentName}${publishedSuffix}.`
+    : `${familyLabel} prompt agent published${publishedSuffix}.`;
 }
 
 function formatFamilyLastPublished(family) {
-  const hostedStatus = String(family?.hostedStatus ?? "").trim();
+  const promptAgentStatus = String(family?.promptAgentStatus ?? "").trim();
 
   if (family?.lastPublishedAt) {
     return formatDateTimeTimestamp(family.lastPublishedAt);
   }
 
-  switch (hostedStatus) {
+  switch (promptAgentStatus) {
     case "not_published":
       return "Never";
     case "unsupported":
@@ -454,6 +454,14 @@ function formatFamilyLastPublished(family) {
     default:
       return "Unknown";
   }
+}
+
+function getFamilyDefinedTools(family) {
+  if (!Array.isArray(family?.tools)) {
+    return [];
+  }
+
+  return family.tools.filter((tool) => tool && (tool.name || tool.description));
 }
 
 function getCitationBreadcrumbItems(citation, visibility = "public") {
@@ -1425,11 +1433,11 @@ export default function ChatPageClient({ includeDebug }) {
     const normalizedFamily = String(family?.family ?? "").trim();
     const familyLabel = String(family?.label ?? normalizedFamily).trim();
 
-    if (!normalizedFamily || !family?.supportsHostedPublishing) {
+    if (!normalizedFamily || !family?.supportsPromptAgentPublishing) {
       return;
     }
 
-    const confirmed = window.confirm(`${buildFamilyPublishLabel(family)} hosted agent for "${familyLabel}"?`);
+    const confirmed = window.confirm(`${buildFamilyPublishLabel(family)} prompt agent for "${familyLabel}"?`);
 
     if (!confirmed) {
       return;
@@ -1454,13 +1462,13 @@ export default function ChatPageClient({ includeDebug }) {
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload?.error || `Hosted agent for ${familyLabel} could not be published`);
+        throw new Error(payload?.error || `Prompt agent for ${familyLabel} could not be published`);
       }
 
       setAgentFamiliesStatusMessage(formatFamilyPublishMessage(family, payload?.publish));
       await loadAgentFamilies();
     } catch (error) {
-      setAgentFamiliesError(getErrorMessage(error, `Hosted agent for ${familyLabel} could not be published`));
+      setAgentFamiliesError(getErrorMessage(error, `Prompt agent for ${familyLabel} could not be published`));
     } finally {
       setAgentFamilyPending(pendingKey, false);
     }
@@ -1685,7 +1693,7 @@ export default function ChatPageClient({ includeDebug }) {
               </div>
               <div className={styles.agentManagementBody}>
                 <p className={styles.agentManagementIntro}>
-                  View registered agent families and publish or re-publish hosted agents for supported families.
+                  View registered agent families and publish or re-publish Azure prompt agents for supported families.
                 </p>
 
                 {agentFamiliesStatusMessage ? <p className={styles.agentManagementStatus}>{agentFamiliesStatusMessage}</p> : null}
@@ -1694,7 +1702,7 @@ export default function ChatPageClient({ includeDebug }) {
                 {isAgentFamiliesLoading ? (
                   <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
                     <h3>Loading agent families</h3>
-                    <p>Checking hosted publishing status for the registered families.</p>
+                    <p>Checking prompt agent publishing status for the registered families.</p>
                   </div>
                 ) : agentFamilies.length === 0 ? (
                   <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
@@ -1706,6 +1714,7 @@ export default function ChatPageClient({ includeDebug }) {
                     {agentFamilies.map((family) => {
                       const pendingKey = `publish:${family.family}`;
                       const isPending = Boolean(agentFamilyPendingItems[pendingKey]);
+                      const definedTools = getFamilyDefinedTools(family);
 
                       return (
                         <article key={family.family} className={styles.agentFamilyCard}>
@@ -1714,8 +1723,8 @@ export default function ChatPageClient({ includeDebug }) {
                               <h3 className={styles.agentFamilyTitle}>{family.label || family.family}</h3>
                               {family.description ? <p className={styles.agentFamilyDescription}>{family.description}</p> : null}
                             </div>
-                            <span className={`${styles.agentFamilyStatusBadge} ${getFamilyStatusClassName(styles, family.hostedStatus)}`}>
-                              {formatFamilyHostedStatus(family.hostedStatus)}
+                            <span className={`${styles.agentFamilyStatusBadge} ${getFamilyStatusClassName(styles, family.promptAgentStatus)}`}>
+                              {formatFamilyPromptAgentStatus(family.promptAgentStatus)}
                             </span>
                           </div>
 
@@ -1725,23 +1734,53 @@ export default function ChatPageClient({ includeDebug }) {
                               <span className={styles.agentFamilyMetaValue}>{family.family}</span>
                             </p>
                             <p className={styles.agentFamilyMetaItem}>
-                              <span className={styles.agentFamilyMetaLabel}>Hosted agent</span>
-                              <span className={styles.agentFamilyMetaValue}>{family.hostedAgentName || "Not set"}</span>
+                              <span className={styles.agentFamilyMetaLabel}>Prompt agent</span>
+                              <span className={styles.agentFamilyMetaValue}>{family.promptAgentName || "Not set"}</span>
                             </p>
                             <p className={styles.agentFamilyMetaItem}>
                               <span className={styles.agentFamilyMetaLabel}>Last published</span>
                               <span className={styles.agentFamilyMetaValue}>{formatFamilyLastPublished(family)}</span>
                             </p>
                             <p className={styles.agentFamilyMetaItem}>
-                              <span className={styles.agentFamilyMetaLabel}>Hosted publishing</span>
-                              <span className={styles.agentFamilyMetaValue}>{family.supportsHostedPublishing ? "Supported" : "Not supported yet"}</span>
+                              <span className={styles.agentFamilyMetaLabel}>Prompt agent publishing</span>
+                              <span className={styles.agentFamilyMetaValue}>{family.supportsPromptAgentPublishing ? "Supported" : "Not supported yet"}</span>
                             </p>
+                          </div>
+
+                          <div className={styles.agentFamilyMetaItemStack}>
+                            <div className={styles.agentFamilyMetaItem}>
+                              <span className={styles.agentFamilyMetaLabel}>Defined tools</span>
+                              <span className={styles.agentFamilyMetaValue}>{definedTools.length}</span>
+                            </div>
+
+                            {definedTools.length > 0 ? (
+                              <div className={styles.agentFamilyToolsList}>
+                                {definedTools.map((tool) => (
+                                  <article
+                                    key={`${family.family}-${tool.name || tool.description}`}
+                                    className={styles.agentFamilyToolCard}
+                                  >
+                                    <div className={styles.agentFamilyToolHeader}>
+                                      <p className={styles.agentFamilyToolName}>{tool.name || "Unnamed tool"}</p>
+                                      {tool.sourceLabel ? (
+                                        <span className={styles.agentFamilyToolSource}>{tool.sourceLabel}</span>
+                                      ) : null}
+                                    </div>
+                                    {tool.description ? (
+                                      <p className={styles.agentFamilyToolDescription}>{tool.description}</p>
+                                    ) : null}
+                                  </article>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className={styles.agentFamilyToolsEmpty}>No tool definitions are available for this family.</p>
+                            )}
                           </div>
 
                           {family.statusError ? <p className={styles.agentFamilyRowError}>{family.statusError}</p> : null}
 
                           <div className={styles.agentFamilyActions}>
-                            {family.supportsHostedPublishing ? (
+                            {family.supportsPromptAgentPublishing ? (
                               <button
                                 type="button"
                                 className="appCompactActionButton appCompactActionButtonNeutral"
@@ -1751,7 +1790,7 @@ export default function ChatPageClient({ includeDebug }) {
                                 {isPending ? "Publishing..." : buildFamilyPublishLabel(family)}
                               </button>
                             ) : (
-                              <span className={styles.agentFamilyUnsupportedNote}>Hosted publishing is not supported for this family yet.</span>
+                              <span className={styles.agentFamilyUnsupportedNote}>Prompt agent publishing is not supported for this family yet.</span>
                             )}
                           </div>
                         </article>

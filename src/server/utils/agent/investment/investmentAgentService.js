@@ -1,4 +1,4 @@
-import { getProjectClient, getRequiredFoundryConfig } from '@/server/utils/foundryAgentClient';
+import { getProjectClient } from '@/server/utils/foundryAgentClient';
 import { buildInitialAgentInput } from '@/server/utils/agent/agentConversationInput';
 import {
   attachDebugToError,
@@ -7,7 +7,7 @@ import {
 import { runAgentFamilyExecution } from '@/server/utils/agent/agentFamilyExecution';
 import { normalizeFollowUpSelection } from '@/server/utils/agent/agentTurnClassifier';
 import {
-  buildInvestmentAgentInstructions,
+  getPublishedInvestmentPromptAgent,
   INVESTMENT_FAMILY,
   buildInvestmentRuntimeContext,
 } from '@/server/utils/agent/investment/investmentAgentCatalog';
@@ -58,7 +58,7 @@ export async function invokeInvestmentAgent({
 
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const agent = await getPublishedInvestmentPromptAgent();
   const { handlerMap, tools } = buildInvestmentRuntimeContext({ includeDebug });
   const normalizedHistory = normalizeHistory(history);
   const initialInput = buildInitialAgentInput({
@@ -85,10 +85,8 @@ export async function invokeInvestmentAgent({
     const { response, toolInvocations, modelCalls } = await runAgentFamilyExecution({
       openAIClient,
       responseConfig: {
-        type: 'direct_model',
-        model: modelDeploymentName,
-        instructions: buildInvestmentAgentInstructions(),
-        tools,
+        type: 'agent_reference',
+        agentName: agent.name,
       },
       initialInput,
       handlerMap,
@@ -109,6 +107,7 @@ export async function invokeInvestmentAgent({
       openAIClient,
       normalizedMessage,
       debug,
+      agent,
     });
 
     return buildInvestmentResponse({ familyResult, principal, debug });

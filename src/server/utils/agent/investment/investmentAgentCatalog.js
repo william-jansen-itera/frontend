@@ -1,4 +1,10 @@
 import {
+  AGENT_PREVIEW_FEATURES,
+  getProjectClient,
+  getRequiredFoundryFamilyConfig,
+  isNotFoundError,
+} from '@/server/utils/foundryAgentClient';
+import {
   buildGetBuySellVolatilityRecommendationHandler,
   getBuySellVolatilityRecommendationToolDefinition,
   GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
@@ -16,12 +22,144 @@ import {
 
 export const INVESTMENT_FAMILY = 'investment';
 
+function normalizePromptAgentName(agent, fallbackAgentName = null) {
+  return String(agent?.name ?? agent?.id ?? fallbackAgentName ?? '').trim() || null;
+}
+
+function normalizePromptAgentTimestamp(agent) {
+  return agent?.updatedAt
+    ?? agent?.updated_at
+    ?? agent?.updatedOn
+    ?? agent?.updated_on
+    ?? agent?.lastModifiedAt
+    ?? agent?.last_modified_at
+    ?? agent?.lastModified
+    ?? agent?.last_modified
+    ?? agent?.createdAt
+    ?? agent?.created_at
+    ?? agent?.createdOn
+    ?? agent?.created_on
+    ?? agent?.versions?.latest?.updatedAt
+    ?? agent?.versions?.latest?.updated_at
+    ?? agent?.versions?.latest?.updatedOn
+    ?? agent?.versions?.latest?.updated_on
+    ?? agent?.versions?.latest?.lastModifiedAt
+    ?? agent?.versions?.latest?.last_modified_at
+    ?? agent?.versions?.latest?.lastModified
+    ?? agent?.versions?.latest?.last_modified
+    ?? agent?.versions?.latest?.createdAt
+    ?? agent?.versions?.latest?.created_at
+    ?? agent?.versions?.latest?.createdOn
+    ?? agent?.versions?.latest?.created_on
+    ?? null;
+}
+
 function buildInvestmentToolDefinitions() {
   return [
     getStockPriceToolDefinition,
     getBuySellVolatilityRecommendationToolDefinition,
     reviewVolatilityEventsToolDefinition,
   ];
+}
+
+export function listDefinedInvestmentTools() {
+  return buildInvestmentToolDefinitions().map((toolDefinition) => ({
+    name: String(toolDefinition?.name ?? '').trim() || null,
+    description: String(toolDefinition?.description ?? '').trim() || null,
+    sourceType: 'static',
+    sourceLabel: 'Built-in',
+    includedInPromptAgent: true,
+  }));
+}
+
+function buildInvestmentPromptAgentDefinition() {
+  const { modelDeploymentName } = getRequiredFoundryFamilyConfig(INVESTMENT_FAMILY);
+
+  return {
+    kind: 'prompt',
+    model: modelDeploymentName,
+    instructions: buildInvestmentAgentInstructions(),
+    tools: buildInvestmentToolDefinitions(),
+  };
+}
+
+export async function getPublishedInvestmentPromptAgent() {
+  const project = getProjectClient();
+  const { agentName } = getRequiredFoundryFamilyConfig(INVESTMENT_FAMILY);
+
+  try {
+    return await project.agents.get(agentName, {
+      foundryFeatures: AGENT_PREVIEW_FEATURES,
+    });
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+
+    throw new Error(
+      `Foundry agent "${agentName}" was not found. Publish the investment family before calling /api/chat.`,
+    );
+  }
+}
+
+export async function getInvestmentPromptAgentPublishStatus() {
+  const { agentName } = getRequiredFoundryFamilyConfig(INVESTMENT_FAMILY);
+
+  try {
+    const agent = await getPublishedInvestmentPromptAgent();
+
+    return {
+      promptAgentStatus: 'published',
+      promptAgentName: normalizePromptAgentName(agent, agentName),
+      lastPublishedAt: normalizePromptAgentTimestamp(agent),
+      toolCount: buildInvestmentToolDefinitions().length,
+      excludedTreeCount: 0,
+      agent,
+    };
+  } catch (error) {
+    if (isNotFoundError(error) || String(error?.message ?? '').includes('was not found')) {
+      return {
+        promptAgentStatus: 'not_published',
+        promptAgentName: agentName,
+        lastPublishedAt: null,
+        toolCount: buildInvestmentToolDefinitions().length,
+        excludedTreeCount: 0,
+        agent: null,
+      };
+    }
+
+    throw error;
+  }
+}
+
+export async function publishInvestmentPromptAgent() {
+  const project = getProjectClient();
+  const { agentName } = getRequiredFoundryFamilyConfig(INVESTMENT_FAMILY);
+  const definition = buildInvestmentPromptAgentDefinition();
+  let agent;
+
+  try {
+    agent = await project.agents.update(agentName, definition, {
+      foundryFeatures: AGENT_PREVIEW_FEATURES,
+    });
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+
+    agent = await project.agents.create(agentName, definition, {
+      foundryFeatures: AGENT_PREVIEW_FEATURES,
+    });
+  }
+
+  return {
+    promptAgentStatus: 'published',
+    promptAgentName: normalizePromptAgentName(agent, agentName),
+    lastPublishedAt: normalizePromptAgentTimestamp(agent),
+    toolCount: buildInvestmentToolDefinitions().length,
+    excludedTreeCount: 0,
+    agent,
+  };
 }
 
 function buildInvestmentHandlerMap({ includeDebug = false } = {}) {

@@ -10,7 +10,7 @@ import { normalizeFollowUpSelection } from '@/server/utils/agent/agentTurnClassi
 import {
   buildAllowedToolInstruction,
   buildRuntimeTreeToolContext,
-  getHostedAgent,
+  getPublishedTreeGroundingPromptAgent,
 } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
 import {
   buildTreeGroundingFamilyResult,
@@ -56,7 +56,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
 
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const agent = await getHostedAgent();
+  const agent = await getPublishedTreeGroundingPromptAgent();
   const { handlerMap, includedTrees } = await buildRuntimeTreeToolContext({
     principal,
     visibility,

@@ -13,31 +13,35 @@ function assertAdminPrincipal(principal) {
 }
 
 async function buildFamilyStatus(registration) {
-  const supportsHostedPublishing = Boolean(registration?.supportsHostedPublishing);
+  const supportsPromptAgentPublishing = Boolean(registration?.supportsPromptAgentPublishing);
+  const definedTools = typeof registration?.listDefinedTools === 'function'
+    ? await registration.listDefinedTools()
+    : [];
   const baseStatus = {
     family: String(registration?.family ?? '').trim(),
     label: String(registration?.label ?? registration?.family ?? '').trim(),
     description: String(registration?.description ?? '').trim() || null,
-    supportsHostedPublishing,
-    hostedStatus: supportsHostedPublishing ? 'unknown' : 'unsupported',
-    hostedAgentName: null,
+    tools: Array.isArray(definedTools) ? definedTools : [],
+    supportsPromptAgentPublishing,
+    promptAgentStatus: supportsPromptAgentPublishing ? 'unknown' : 'unsupported',
+    promptAgentName: null,
     lastPublishedAt: null,
-    toolCount: null,
+    toolCount: Array.isArray(definedTools) ? definedTools.filter((tool) => tool?.includedInPromptAgent !== false).length : 0,
     excludedTreeCount: null,
     statusError: null,
   };
 
-  if (!supportsHostedPublishing || typeof registration?.getHostedPublishStatus !== 'function') {
+  if (!supportsPromptAgentPublishing || typeof registration?.getPromptAgentPublishStatus !== 'function') {
     return baseStatus;
   }
 
   try {
-    const status = await registration.getHostedPublishStatus();
+    const status = await registration.getPromptAgentPublishStatus();
 
     return {
       ...baseStatus,
-      hostedStatus: String(status?.hostedStatus ?? 'unknown').trim() || 'unknown',
-      hostedAgentName: String(status?.hostedAgentName ?? '').trim() || null,
+      promptAgentStatus: String(status?.promptAgentStatus ?? 'unknown').trim() || 'unknown',
+      promptAgentName: String(status?.promptAgentName ?? '').trim() || null,
       lastPublishedAt: status?.lastPublishedAt ?? null,
       toolCount: Number.isInteger(status?.toolCount) ? status.toolCount : null,
       excludedTreeCount: Number.isInteger(status?.excludedTreeCount) ? status.excludedTreeCount : null,
@@ -45,8 +49,8 @@ async function buildFamilyStatus(registration) {
   } catch (error) {
     return {
       ...baseStatus,
-      hostedStatus: 'status_error',
-      statusError: error instanceof Error ? error.message : 'Hosted agent status could not be loaded.',
+      promptAgentStatus: 'status_error',
+      statusError: error instanceof Error ? error.message : 'Prompt agent status could not be loaded.',
     };
   }
 }
@@ -89,25 +93,25 @@ export async function POST(request) {
       return NextResponse.json({ error: `Unsupported action "${action}".` }, { status: 400 });
     }
 
-    if (!registration.supportsHostedPublishing || typeof registration.publishHostedAgent !== 'function') {
-      return NextResponse.json({ error: `Hosted publishing is not supported for family "${family}".` }, { status: 400 });
+    if (!registration.supportsPromptAgentPublishing || typeof registration.publishPromptAgent !== 'function') {
+      return NextResponse.json({ error: `Prompt agent publishing is not supported for family "${family}".` }, { status: 400 });
     }
 
-    const publishStatus = await registration.publishHostedAgent();
+    const publishStatus = await registration.publishPromptAgent();
     const refreshedStatus = await buildFamilyStatus(registration);
 
     return NextResponse.json({
       family: refreshedStatus,
       publish: {
-        hostedStatus: String(publishStatus?.hostedStatus ?? refreshedStatus.hostedStatus ?? 'published'),
-        hostedAgentName: String(publishStatus?.hostedAgentName ?? refreshedStatus.hostedAgentName ?? '').trim() || null,
+        promptAgentStatus: String(publishStatus?.promptAgentStatus ?? refreshedStatus.promptAgentStatus ?? 'published'),
+        promptAgentName: String(publishStatus?.promptAgentName ?? refreshedStatus.promptAgentName ?? '').trim() || null,
         lastPublishedAt: publishStatus?.lastPublishedAt ?? refreshedStatus.lastPublishedAt ?? null,
         toolCount: Number.isInteger(publishStatus?.toolCount) ? publishStatus.toolCount : refreshedStatus.toolCount,
         excludedTreeCount: Number.isInteger(publishStatus?.excludedTreeCount) ? publishStatus.excludedTreeCount : refreshedStatus.excludedTreeCount,
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Hosted agent could not be published.';
+    const message = error instanceof Error ? error.message : 'Prompt agent could not be published.';
     const status = message === 'Admin role mdsadmins is required' ? 403 : 500;
 
     return NextResponse.json({ error: message }, { status });

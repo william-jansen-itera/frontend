@@ -17,11 +17,11 @@ import {
 
 export const TREE_GROUNDING_FAMILY = 'treeGrounding';
 
-function normalizeHostedAgentName(agent, fallbackAgentName = null) {
+function normalizePromptAgentName(agent, fallbackAgentName = null) {
   return String(agent?.name ?? agent?.id ?? fallbackAgentName ?? '').trim() || null;
 }
 
-function normalizeHostedAgentTimestamp(agent) {
+function normalizePromptAgentTimestamp(agent) {
   return agent?.updatedAt
     ?? agent?.updated_at
     ?? agent?.updatedOn
@@ -285,6 +285,21 @@ function buildTreeToolPreview(availableTrees) {
   }));
 }
 
+export async function listDefinedTreeGroundingTools() {
+  const publishContext = await buildPublishTreeToolContext();
+  return buildTreeToolPreview(publishContext.availableTrees)
+    .filter((tool) => Boolean(tool?.includedInToolSet))
+    .map((tool) => ({
+    name: String(tool?.name ?? '').trim() || null,
+    description: String(tool?.description ?? '').trim() || null,
+    sourceType: 'tree',
+    sourceLabel: tool?.descriptionSource === 'stored' ? 'Stored description' : 'Published tool',
+    includedInPromptAgent: Boolean(tool?.includedInToolSet),
+    treeId: tool?.treeId ?? null,
+    treeName: tool?.treeName ?? null,
+    }));
+}
+
 function buildPublishedDescriptionStates(availableTrees) {
   return availableTrees.map((tree) => ({
     treeId: tree.id,
@@ -335,7 +350,7 @@ async function publishTreeTools(publishContext) {
   }
 }
 
-export async function getHostedAgent() {
+export async function getPublishedTreeGroundingPromptAgent() {
   const project = getProjectClient();
   const { agentName } = getRequiredFoundryConfig();
 
@@ -354,23 +369,23 @@ export async function getHostedAgent() {
   }
 }
 
-export async function getHostedTreeGroundingPublishStatus() {
+export async function getTreeGroundingPromptAgentPublishStatus() {
   const { agentName } = getRequiredFoundryConfig();
 
   try {
-    const agent = await getHostedAgent();
+    const agent = await getPublishedTreeGroundingPromptAgent();
 
     return {
-      hostedStatus: 'published',
-      hostedAgentName: normalizeHostedAgentName(agent, agentName),
-      lastPublishedAt: normalizeHostedAgentTimestamp(agent),
+      promptAgentStatus: 'published',
+      promptAgentName: normalizePromptAgentName(agent, agentName),
+      lastPublishedAt: normalizePromptAgentTimestamp(agent),
       agent,
     };
   } catch (error) {
     if (isNotFoundError(error) || String(error?.message ?? '').includes('was not found')) {
       return {
-        hostedStatus: 'not_published',
-        hostedAgentName: agentName,
+        promptAgentStatus: 'not_published',
+        promptAgentName: agentName,
         lastPublishedAt: null,
         agent: null,
       };
@@ -380,13 +395,13 @@ export async function getHostedTreeGroundingPublishStatus() {
   }
 }
 
-export async function publishHostedTreeGroundingAgent() {
+export async function publishTreeGroundingPromptAgent() {
   const publishResult = await publishStoredTreeDescriptions();
 
   return {
-    hostedStatus: 'published',
-    hostedAgentName: normalizeHostedAgentName(publishResult?.agent, getRequiredFoundryConfig().agentName),
-    lastPublishedAt: normalizeHostedAgentTimestamp(publishResult?.agent),
+    promptAgentStatus: 'published',
+    promptAgentName: normalizePromptAgentName(publishResult?.agent, getRequiredFoundryConfig().agentName),
+    lastPublishedAt: normalizePromptAgentTimestamp(publishResult?.agent),
     toolCount: Array.isArray(publishResult?.tools) ? publishResult.tools.filter((tool) => tool?.includedInToolSet).length : 0,
     excludedTreeCount: Array.isArray(publishResult?.excludedTrees) ? publishResult.excludedTrees.length : 0,
     publishResult,
