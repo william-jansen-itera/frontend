@@ -341,6 +341,102 @@ function formatTimestamp(value) {
   }).format(dateValue);
 }
 
+function formatDuration(value) {
+  const durationMs = Number(value);
+
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    return "n/a";
+  }
+
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs)} ms`;
+  }
+
+  return `${(durationMs / 1000).toFixed(1)} s`;
+}
+
+function formatJson(value) {
+  if (value === undefined) {
+    return "undefined";
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return JSON.stringify({ serializationError: "Value could not be serialized." }, null, 2);
+  }
+}
+
+function buildTimingDebugEntries({ timings, toolCalls }) {
+  const phaseEntries = timings?.phases && typeof timings.phases === "object"
+    ? Object.entries(timings.phases).map(([phaseName, phaseTiming]) => ({
+      key: `phase-${phaseName}`,
+      label: phaseName,
+      startedAt: phaseTiming?.startedAt ?? null,
+      completedAt: phaseTiming?.completedAt ?? null,
+      durationMs: phaseTiming?.durationMs ?? null,
+      meta: "phase",
+    }))
+    : [];
+
+  const extraTimingEntries = Object.entries(timings ?? {})
+    .filter(([key, value]) => !["requestStartedAt", "requestCompletedAt", "totalDurationMs", "modelCalls", "phases"].includes(key))
+    .filter(([, value]) => value && typeof value === "object" && !Array.isArray(value) && ("startedAt" in value || "durationMs" in value))
+    .map(([key, value]) => ({
+      key: `extra-${key}`,
+      label: key,
+      startedAt: value?.startedAt ?? null,
+      completedAt: value?.completedAt ?? null,
+      durationMs: value?.durationMs ?? null,
+      meta: value?.executed === false ? "not executed" : "timing",
+    }));
+
+  const modelEntries = Array.isArray(timings?.modelCalls)
+    ? timings.modelCalls.map((entry, index) => ({
+      key: `model-${entry?.phase ?? index}-${entry?.round ?? 0}`,
+      label: entry?.phase ? String(entry.phase) : `model call ${index + 1}`,
+      startedAt: entry?.startedAt ?? null,
+      completedAt: entry?.completedAt ?? null,
+      durationMs: entry?.durationMs ?? null,
+      meta: entry?.round ? `round ${entry.round}` : null,
+    }))
+    : [];
+
+  const toolEntries = Array.isArray(toolCalls)
+    ? toolCalls.map((entry, index) => ({
+      key: `tool-${entry?.callId ?? index}`,
+      label: entry?.toolName ? `tool: ${entry.toolName}` : `tool call ${index + 1}`,
+      startedAt: entry?.startedAt ?? null,
+      completedAt: entry?.completedAt ?? null,
+      durationMs: entry?.durationMs ?? null,
+      meta: entry?.round ? `round ${entry.round}` : null,
+    }))
+    : [];
+
+  return [...phaseEntries, ...extraTimingEntries, ...modelEntries, ...toolEntries]
+    .filter((entry) => entry.startedAt || entry.completedAt || entry.durationMs !== null)
+    .sort((left, right) => {
+      const leftTime = left.startedAt ? new Date(left.startedAt).getTime() : Number.POSITIVE_INFINITY;
+      const rightTime = right.startedAt ? new Date(right.startedAt).getTime() : Number.POSITIVE_INFINITY;
+      return leftTime - rightTime;
+    });
+}
+
+function buildTimingDebugJson({ timings, toolCalls, orderedEntries }) {
+  return {
+    requestStartedAt: timings?.requestStartedAt ?? null,
+    requestCompletedAt: timings?.requestCompletedAt ?? null,
+    totalDurationMs: timings?.totalDurationMs ?? null,
+    phases: timings?.phases ?? null,
+    modelCalls: Array.isArray(timings?.modelCalls) ? timings.modelCalls : [],
+    toolCalls: Array.isArray(toolCalls) ? toolCalls : [],
+    orderedEntries,
+    extraTimings: Object.fromEntries(
+      Object.entries(timings ?? {}).filter(([key]) => !["requestStartedAt", "requestCompletedAt", "totalDurationMs", "modelCalls", "phases"].includes(key)),
+    ),
+  };
+}
+
 function formatDateTimeTimestamp(value) {
   if (!value) {
     return "n/a";
@@ -462,6 +558,20 @@ function getFamilyDefinedTools(family) {
   }
 
   return family.tools.filter((tool) => tool && (tool.name || tool.description));
+}
+
+function getCitationBreadcrumbParts(citation) {
+  const breadcrumb = String(citation?.breadcrumb ?? "").trim();
+
+  if (!breadcrumb) {
+    const fallbackLabel = String(citation?.treeDisplayName ?? citation?.treeId ?? citation?.nodeId ?? "").trim();
+    return fallbackLabel ? [fallbackLabel] : [];
+  }
+
+  return breadcrumb
+    .split(">")
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function getCitationBreadcrumbItems(citation, visibility = "public") {
