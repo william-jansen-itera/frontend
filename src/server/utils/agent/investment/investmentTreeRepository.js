@@ -31,6 +31,25 @@ function normalizePathSegments(pathSegments) {
   });
 }
 
+async function resolveInvestmentTreePathNodes({ treeId, pathSegments, transaction = null }) {
+  const normalizedPathSegments = normalizePathSegments(pathSegments);
+  const resolvedNodes = [];
+  let currentParentId = null;
+
+  for (const pathSegment of normalizedPathSegments) {
+    const currentNode = await findChildNode(treeId, currentParentId, pathSegment, transaction);
+
+    if (!currentNode) {
+      return null;
+    }
+
+    resolvedNodes.push(currentNode);
+    currentParentId = Number(currentNode.id);
+  }
+
+  return resolvedNodes;
+}
+
 async function queryConfiguredTree(treeId, transaction = null) {
   const result = await createSqlRequest(transaction)
     .input('tree_instance_id', sql.Int, Number(treeId))
@@ -264,21 +283,45 @@ async function createNodeRecord({ treeId, parentId, text, isLeafNode, transactio
 }
 
 export async function findInvestmentTreePathNode({ treeId, pathSegments, transaction = null }) {
-  const normalizedPathSegments = normalizePathSegments(pathSegments);
-  let currentParentId = null;
-  let currentNode = null;
+  const resolvedNodes = await resolveInvestmentTreePathNodes({ treeId, pathSegments, transaction });
 
-  for (const pathSegment of normalizedPathSegments) {
-    currentNode = await findChildNode(treeId, currentParentId, pathSegment, transaction);
+  return resolvedNodes?.[resolvedNodes.length - 1] ?? null;
+}
 
-    if (!currentNode) {
+export async function getInvestmentRepositoryCitation({ treeId, pathSegments, fileName }) {
+  return withSqlConnection(async () => {
+    const configuredTree = await queryConfiguredTree(treeId);
+
+    if (!configuredTree) {
       return null;
     }
 
-    currentParentId = Number(currentNode.id);
-  }
+    const resolvedNodes = await resolveInvestmentTreePathNodes({ treeId, pathSegments });
 
-  return currentNode;
+    if (!Array.isArray(resolvedNodes) || resolvedNodes.length === 0) {
+      return null;
+    }
+
+    const leafNode = resolvedNodes[resolvedNodes.length - 1];
+    const attachments = await listActiveNodeAttachments({ treeId, nodeId: leafNode.id });
+    const normalizedFileName = String(fileName ?? '').trim().toLowerCase();
+    const matchingAttachment = attachments.find((attachment) => String(attachment.fileName ?? '').trim().toLowerCase() === normalizedFileName);
+
+    if (!matchingAttachment) {
+      return null;
+    }
+
+    return {
+      treeId,
+      nodeId: leafNode.id,
+      title: leafNode.text,
+      breadcrumb: resolvedNodes.map((node) => String(node.text ?? '').trim()).filter(Boolean).join(' > '),
+      nodeIdPath: resolvedNodes.map((node) => String(node.id ?? '').trim()).filter(Boolean).join('/'),
+      treeDisplayName: configuredTree.displayName ?? null,
+      matchSummary: matchingAttachment.fileName ?? null,
+      attachmentFileNames: matchingAttachment.fileName ? [matchingAttachment.fileName] : [],
+    };
+  });
 }
 
 export async function ensureInvestmentTreePath({ treeId, pathSegments }) {

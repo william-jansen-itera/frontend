@@ -55,7 +55,7 @@ When the user only asked for prices, answer from this tool and stop.
 ## get_buy_sell_volatility_recommendation tool
 Use this tool's for factual claims about buy, sell, or hold.
 When the user asks for a recommendation, always use this tool to determine the signal.
-Always state signal, rationale, whatToLookFor, and analyzedWindow.
+Always state signal, noOfShares, rationale, whatToLookFor, and analyzedWindow.
 Also include finalState where relevant.
 When you answer a recommendation request, end by asking whether the user wants to see the latest rotation events.
 Field meanings:

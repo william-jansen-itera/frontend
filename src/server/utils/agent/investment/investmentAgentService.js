@@ -72,7 +72,7 @@ export async function invokeInvestmentAgent({
       normalizedMessage,
       normalizedFollowUpSelection,
       initialInput,
-      phaseNames: ['responseShaping'],
+      phaseNames: ['citationAssembly', 'responseShaping'],
       extraTimings: {
         broaderAnswerDetection: null,
         broaderAnswerReview: null,

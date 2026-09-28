@@ -13,9 +13,15 @@ import {
   readSingleInvestmentTextAttachmentByFileName,
   replaceInvestmentLeafAttachment,
 } from '@/server/utils/agent/investment/investmentTreeRepository';
+import {
+  getLatestExpectedTradingCloseDate,
+  loadStoredPriceHistory,
+} from '@/server/utils/agent/investment/tools/getStockPriceTool/stockPriceRepository';
 import { runVolatilityHarvestAnalysis } from '@/server/utils/agent/investment/tools/getBuySellVolatilityRecommendationTool/volatilityEngine';
 
 export const GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL = 'get_buy_sell_volatility_recommendation';
+
+const MINIMUM_RECOMMENDATION_PRICE_HISTORY_DAYS = 200;
 
 function buildEventLogLine(eventEntry) {
   const maSuffix = Number.isFinite(eventEntry?.movingAverage)
@@ -230,6 +236,49 @@ function buildRecommendationStateDocument(output) {
   return JSON.stringify(output, null, 2);
 }
 
+function parseStoredRecommendationState(text) {
+  try {
+    const parsedState = JSON.parse(String(text ?? ''));
+    return parsedState && typeof parsedState === 'object' && !Array.isArray(parsedState)
+      ? parsedState
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasMatchingEffectiveConfiguration(storedState, runtimeConfig) {
+  const effectiveConfiguration = storedState?.effectiveConfiguration;
+
+  if (!effectiveConfiguration || typeof effectiveConfiguration !== 'object') {
+    return false;
+  }
+
+  return Number(effectiveConfiguration.maxRotations) === Number(runtimeConfig.maxRotations)
+    && Number(effectiveConfiguration.rotationSize) === Number(runtimeConfig.rotationSize)
+    && Boolean(effectiveConfiguration.useMaGate) === Boolean(runtimeConfig.useMaGate)
+    && Number(effectiveConfiguration.maPeriod ?? null) === Number(runtimeConfig.maPeriod ?? null)
+    && Number(effectiveConfiguration.maxHistoryDays) === Number(runtimeConfig.maxHistoryDays)
+    && Number(effectiveConfiguration.volatilityThreshold) === Number(runtimeConfig.volatilityThreshold)
+    && Number(effectiveConfiguration.startShareCount) === Number(runtimeConfig.startShareCount);
+}
+
+function shouldReuseStoredRecommendation({ storedState, runtimeConfig, expectedAnalysisDate, ticker }) {
+  if (!storedState || typeof storedState !== 'object') {
+    return false;
+  }
+
+  if (String(storedState.ticker ?? '').trim().toUpperCase() !== ticker) {
+    return false;
+  }
+
+  if (String(storedState.analyzedEndDate ?? '').trim() !== String(expectedAnalysisDate ?? '').trim()) {
+    return false;
+  }
+
+  return hasMatchingEffectiveConfiguration(storedState, runtimeConfig);
+}
+
 function formatThresholdPrice(value) {
   return Number.isFinite(value) ? value.toFixed(2) : null;
 }
@@ -297,8 +346,36 @@ function deriveNoOfShares(recommendation, analysisState) {
 export function buildGetBuySellVolatilityRecommendationHandler({ includeDebug = false, updatedBy = null } = {}) {
   return async function getBuySellVolatilityRecommendationHandler({ ticker, priceHistory }) {
     const normalizedTicker = normalizeTicker(ticker);
-    const normalizedHistory = Array.isArray(priceHistory) ? priceHistory : [];
+    const requestedHistory = Array.isArray(priceHistory) ? priceHistory : [];
     const runtimeConfig = await loadVolatilityRuntimeConfig(normalizedTicker);
+    const expectedAnalysisDate = getLatestExpectedTradingCloseDate();
+    const recommendationPath = buildVolatilityAnalysisPath(normalizedTicker);
+    const persistenceTreeId = getRequiredInvestmentPersistenceTreeId();
+    const existingStateDocument = await readSingleInvestmentTextAttachmentByFileName({
+      treeId: persistenceTreeId,
+      pathSegments: recommendationPath,
+      fileName: VOLATILITY_ANALYSIS_STATE_FILE_NAME,
+    });
+    const parsedStoredState = parseStoredRecommendationState(existingStateDocument?.text);
+
+    if (shouldReuseStoredRecommendation({
+      storedState: parsedStoredState,
+      runtimeConfig,
+      expectedAnalysisDate,
+      ticker: normalizedTicker,
+    })) {
+      return buildInvestmentToolResult({
+        toolName: GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
+        toolResultType: 'recommendation',
+        data: parsedStoredState,
+        includeDebug,
+      });
+    }
+
+    const storedHistory = requestedHistory.length < MINIMUM_RECOMMENDATION_PRICE_HISTORY_DAYS
+      ? await loadStoredPriceHistory(normalizedTicker)
+      : [];
+    const normalizedHistory = storedHistory.length > 0 ? storedHistory : requestedHistory;
     const analysisResult = runVolatilityHarvestAnalysis(normalizedHistory, runtimeConfig);
     const recommendation = analysisResult.recommendation;
     const noOfShares = deriveNoOfShares(recommendation, analysisResult.state);
@@ -345,19 +422,12 @@ export function buildGetBuySellVolatilityRecommendationHandler({ includeDebug = 
       },
       eventEntries: analysisResult.state.events,
     };
-    const recommendationPath = buildVolatilityAnalysisPath(normalizedTicker);
-    const persistenceTreeId = getRequiredInvestmentPersistenceTreeId();
     const nextLogContent = buildRecommendationLogText({ ticker: normalizedTicker, output });
     const nextStateContent = buildRecommendationStateDocument(output);
     const existingLogDocument = await readSingleInvestmentTextAttachmentByFileName({
       treeId: persistenceTreeId,
       pathSegments: recommendationPath,
       fileName: VOLATILITY_ANALYSIS_LOG_FILE_NAME,
-    });
-    const existingStateDocument = await readSingleInvestmentTextAttachmentByFileName({
-      treeId: persistenceTreeId,
-      pathSegments: recommendationPath,
-      fileName: VOLATILITY_ANALYSIS_STATE_FILE_NAME,
     });
 
     if (existingLogDocument?.text !== nextLogContent) {
