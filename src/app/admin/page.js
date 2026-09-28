@@ -456,6 +456,44 @@ export default function AdminPage() {
     }
   };
 
+  const handlePurgeAllAttachments = async () => {
+    if (deletedAttachments.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm("Purge all deleted attachments permanently? This cannot be undone.");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPending("bulk:attachments", true);
+    setStatusMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/admin/deleted", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "purge-all-attachments" }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Deleted attachments could not be purged");
+      }
+
+      setStatusMessage(`Purged ${data?.purgedAttachmentCount ?? 0} deleted attachment${Number(data?.purgedAttachmentCount ?? 0) === 1 ? "" : "s"}.`);
+      await loadDeletedItems();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Deleted attachments could not be purged"));
+    } finally {
+      setPending("bulk:attachments", false);
+    }
+  };
+
   const handleIndexingAction = async (target, mode) => {
     const pendingKey = `indexing:${mode}:${target}`;
 
@@ -607,6 +645,14 @@ export default function AdminPage() {
                 <span className={styles.panelHeading}>Deleted Attachments</span>
                 <span className={styles.countLabel}>{deletedAttachments.length}</span>
               </div>
+              <button
+                type="button"
+                onClick={handlePurgeAllAttachments}
+                disabled={isLoading || deletedAttachments.length === 0 || Boolean(pendingItems["bulk:attachments"])}
+                className="appCompactActionButton appCompactActionButtonDanger"
+              >
+                {pendingItems["bulk:attachments"] ? "Purging..." : "Purge All"}
+              </button>
             </div>
             <div className={styles.panelBody}>
               {isLoading ? (

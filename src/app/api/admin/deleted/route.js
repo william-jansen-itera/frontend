@@ -430,7 +430,7 @@ export async function DELETE(request) {
     const payload = await request.json();
     const action = String(payload?.action ?? '').trim().toLowerCase();
 
-    if (action !== 'purge-all-trees' && action !== 'purge-all-nodes' && action !== 'purge-attachment') {
+    if (action !== 'purge-all-trees' && action !== 'purge-all-nodes' && action !== 'purge-all-attachments' && action !== 'purge-attachment') {
       return NextResponse.json({ error: 'Invalid request, a supported action is required' }, { status: 400 });
     }
 
