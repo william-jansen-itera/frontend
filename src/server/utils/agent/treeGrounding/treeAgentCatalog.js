@@ -17,6 +17,38 @@ import {
 
 export const TREE_GROUNDING_FAMILY = 'treeGrounding';
 
+function normalizeHostedAgentName(agent, fallbackAgentName = null) {
+  return String(agent?.name ?? agent?.id ?? fallbackAgentName ?? '').trim() || null;
+}
+
+function normalizeHostedAgentTimestamp(agent) {
+  return agent?.updatedAt
+    ?? agent?.updated_at
+    ?? agent?.updatedOn
+    ?? agent?.updated_on
+    ?? agent?.lastModifiedAt
+    ?? agent?.last_modified_at
+    ?? agent?.lastModified
+    ?? agent?.last_modified
+    ?? agent?.createdAt
+    ?? agent?.created_at
+    ?? agent?.createdOn
+    ?? agent?.created_on
+    ?? agent?.versions?.latest?.updatedAt
+    ?? agent?.versions?.latest?.updated_at
+    ?? agent?.versions?.latest?.updatedOn
+    ?? agent?.versions?.latest?.updated_on
+    ?? agent?.versions?.latest?.lastModifiedAt
+    ?? agent?.versions?.latest?.last_modified_at
+    ?? agent?.versions?.latest?.lastModified
+    ?? agent?.versions?.latest?.last_modified
+    ?? agent?.versions?.latest?.createdAt
+    ?? agent?.versions?.latest?.created_at
+    ?? agent?.versions?.latest?.createdOn
+    ?? agent?.versions?.latest?.created_on
+    ?? null;
+}
+
 function normalizeWhitespace(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -320,6 +352,45 @@ export async function getHostedAgent() {
       `Foundry agent "${agentName}" was not found. Publish stored tree descriptions before calling /api/chat.`,
     );
   }
+}
+
+export async function getHostedTreeGroundingPublishStatus() {
+  const { agentName } = getRequiredFoundryConfig();
+
+  try {
+    const agent = await getHostedAgent();
+
+    return {
+      hostedStatus: 'published',
+      hostedAgentName: normalizeHostedAgentName(agent, agentName),
+      lastPublishedAt: normalizeHostedAgentTimestamp(agent),
+      agent,
+    };
+  } catch (error) {
+    if (isNotFoundError(error) || String(error?.message ?? '').includes('was not found')) {
+      return {
+        hostedStatus: 'not_published',
+        hostedAgentName: agentName,
+        lastPublishedAt: null,
+        agent: null,
+      };
+    }
+
+    throw error;
+  }
+}
+
+export async function publishHostedTreeGroundingAgent() {
+  const publishResult = await publishStoredTreeDescriptions();
+
+  return {
+    hostedStatus: 'published',
+    hostedAgentName: normalizeHostedAgentName(publishResult?.agent, getRequiredFoundryConfig().agentName),
+    lastPublishedAt: normalizeHostedAgentTimestamp(publishResult?.agent),
+    toolCount: Array.isArray(publishResult?.tools) ? publishResult.tools.filter((tool) => tool?.includedInToolSet).length : 0,
+    excludedTreeCount: Array.isArray(publishResult?.excludedTrees) ? publishResult.excludedTrees.length : 0,
+    publishResult,
+  };
 }
 
 export async function publishStoredTreeDescriptions() {

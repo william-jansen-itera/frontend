@@ -1,3 +1,10 @@
+.chatColumnStack {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  align-content: start;
+}
+
 .chatColumnSurface {
   min-width: 0;
   border: var(--surface-border);
@@ -257,6 +264,168 @@
   padding-top: 0.15rem;
   display: grid;
   gap: 1rem;
+}
+
+.agentManagementPanel {
+  margin-top: 1rem;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.agentManagementBody {
+  padding: 1.35rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.agentManagementIntro {
+  margin: 0;
+  color: var(--ui-body-color);
+  font-size: var(--ui-body-size);
+  line-height: var(--ui-body-line-height);
+}
+
+.agentManagementStatus,
+.agentManagementError,
+.agentFamilyRowError,
+.agentFamilyUnsupportedNote,
+.agentFamilyDescription,
+.agentFamilyMetaItem {
+  margin: 0;
+}
+
+.agentManagementStatus,
+.agentManagementError {
+  padding: 0.8rem 0.95rem;
+  border-radius: var(--ui-control-radius);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.agentManagementStatus {
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: rgba(220, 252, 231, 0.85);
+  color: #166534;
+}
+
+.agentManagementError,
+.agentFamilyRowError {
+  border: 1px solid rgba(248, 113, 113, 0.22);
+  background: rgba(254, 226, 226, 0.88);
+  color: #991b1b;
+}
+
+.agentFamilyList {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.agentFamilyCard {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: var(--surface-radius-empty);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 252, 0.95));
+}
+
+.agentFamilyHeader,
+.agentFamilyActions,
+.agentFamilyMetaItem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.agentFamilyHeading {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.agentFamilyTitle {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.agentFamilyDescription {
+  color: #475569;
+  line-height: 1.55;
+}
+
+.agentFamilyStatusBadge {
+  padding: 0.32rem 0.72rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.agentFamilyStatusPublished {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.agentFamilyStatusPending {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.agentFamilyStatusUnsupported,
+.agentFamilyStatusUnknown {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.agentFamilyStatusError {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.agentFamilyMetaList {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.agentFamilyMetaItem {
+  padding: 0.72rem 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--ui-control-radius);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.agentFamilyMetaLabel {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agentFamilyMetaValue {
+  color: #0f172a;
+  font-size: 0.93rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.agentFamilyRowError {
+  padding: 0.72rem 0.85rem;
+  border-radius: var(--ui-control-radius);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.agentFamilyUnsupportedNote {
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .chatFeedSingleTurn {

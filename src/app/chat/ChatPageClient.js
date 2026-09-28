@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@/app/useAuth";
+import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import styles from "./page.module.css";
 import {
   ALL_VISIBILITY_VALUES,
@@ -339,182 +341,119 @@ function formatTimestamp(value) {
   }).format(dateValue);
 }
 
-function formatDuration(value) {
-  const durationMs = Number(value);
-
-  if (!Number.isFinite(durationMs)) {
+function formatDateTimeTimestamp(value) {
+  if (!value) {
     return "n/a";
   }
 
-  if (durationMs < 1000) {
-    return `${durationMs} ms`;
+  const dateValue = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(dateValue.getTime())) {
+    return "n/a";
   }
 
-  return `${(durationMs / 1000).toFixed(1)} s`;
+  return new Intl.DateTimeFormat("en-GB", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(dateValue);
 }
 
-function formatTimingLabel(value) {
-  if (!value) {
-    return "timing";
+function getErrorMessage(error, fallbackMessage) {
+  if (error instanceof Error && error.message) {
+    return error.message;
   }
 
-  const normalizedValue = String(value).trim();
-
-  if (normalizedValue === "initial_response") {
-    return "plan tools";
-  }
-
-  if (normalizedValue === "tool_round_synthesis") {
-    return "synthesize round";
-  }
-
-  if (normalizedValue === "citationAssembly") {
-    return "citation assembly";
-  }
-
-  if (normalizedValue === "responseShaping") {
-    return "response shaping";
-  }
-
-  return normalizedValue
-    .replaceAll(/([A-Z])/g, " $1")
-    .replaceAll("_", " ")
-    .trim()
-    .toLowerCase();
+  return fallbackMessage;
 }
 
-function getTimingSortValue(value) {
-  if (!value) {
-    return Number.POSITIVE_INFINITY;
+async function fetchAgentFamilyManagementState() {
+  const response = await fetch("/api/admin/agents", { cache: "no-store" });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload?.error || "Agent families could not be loaded");
   }
 
-  const timestamp = new Date(value).getTime();
-
-  return Number.isFinite(timestamp) ? timestamp : Number.POSITIVE_INFINITY;
+  return Array.isArray(payload?.families) ? payload.families : [];
 }
 
-function buildTimingDebugEntries({ timings, toolCalls }) {
-  if (!timings || typeof timings !== "object") {
-    return [];
+function getFamilyStatusClassName(stylesheet, hostedStatus) {
+  switch (String(hostedStatus ?? "").trim()) {
+    case "published":
+      return stylesheet.agentFamilyStatusPublished;
+    case "not_published":
+      return stylesheet.agentFamilyStatusUnknown;
+    case "publishing":
+    case "pending":
+      return stylesheet.agentFamilyStatusPending;
+    case "unsupported":
+      return stylesheet.agentFamilyStatusUnsupported;
+    case "status_error":
+    case "error":
+      return stylesheet.agentFamilyStatusError;
+    default:
+      return stylesheet.agentFamilyStatusUnknown;
   }
-
-  const modelCalls = Array.isArray(timings.modelCalls) ? timings.modelCalls : [];
-  const executedToolCalls = Array.isArray(toolCalls) ? toolCalls : [];
-  const broaderAnswerReview = timings.broaderAnswerReview && typeof timings.broaderAnswerReview === "object"
-    ? timings.broaderAnswerReview
-    : null;
-  const phaseEntries = timings.phases && typeof timings.phases === "object"
-    ? Object.entries(timings.phases)
-    : [];
-
-  return [
-    ...modelCalls.map((modelCall) => ({
-      key: `${modelCall.phase || "model_call"}-${Number(modelCall.round ?? 0)}-${modelCall.startedAt || ""}`,
-      label: formatTimingLabel(modelCall.phase || "model_call"),
-      headerLabel: formatTimingLabel(modelCall.phase || "model_call"),
-      objectName: formatTimingLabel(modelCall.phase || "model_call") === "synthesize round"
-        ? `synthesize round ${Number(modelCall.round ?? 0)}`
-        : formatTimingLabel(modelCall.phase || "model_call"),
-      durationMs: modelCall.durationMs,
-      startedAt: modelCall.startedAt,
-      completedAt: modelCall.completedAt,
-      details: {
-        round: modelCall.round ?? null,
-        responseId: modelCall.responseId ?? null,
-        status: modelCall.status ?? null,
-      },
-    })),
-    ...executedToolCalls.map((toolCall, index) => ({
-      key: `run-tools-${toolCall.callId || toolCall.toolName || "tool-call"}-${index}`,
-      label: `run tool: ${toolCall.toolName || "tool call"}`,
-      headerLabel: "run tool",
-      objectName: `run tool ${index + 1}`,
-      durationMs: toolCall.durationMs,
-      startedAt: toolCall.startedAt,
-      completedAt: toolCall.completedAt,
-      details: {
-        round: toolCall.round,
-        toolName: toolCall.toolName,
-        callId: toolCall.callId,
-        error: toolCall.error ?? null,
-      },
-    })),
-    ...(broaderAnswerReview?.executed ? [{
-      key: `review-broader-answer-permission-${broaderAnswerReview.startedAt || ""}`,
-      label: "review broader-answer permission",
-      headerLabel: "review broader-answer permission",
-      objectName: "review broader-answer permission",
-      durationMs: broaderAnswerReview.durationMs,
-      startedAt: broaderAnswerReview.startedAt,
-      completedAt: broaderAnswerReview.completedAt,
-      details: {
-        executed: broaderAnswerReview.executed ?? true,
-      },
-    }] : []),
-    ...phaseEntries.map(([phaseName, phaseTiming], index) => ({
-      key: `${phaseName}-${phaseTiming?.startedAt || ""}-${index}`,
-      label: formatTimingLabel(phaseName),
-      headerLabel: formatTimingLabel(phaseName),
-      objectName: formatTimingLabel(phaseName),
-      durationMs: phaseTiming?.durationMs,
-      startedAt: phaseTiming?.startedAt,
-      completedAt: phaseTiming?.completedAt,
-      details: null,
-    })),
-  ].sort((left, right) => {
-    const leftTime = Date.parse(left.startedAt || "") || 0;
-    const rightTime = Date.parse(right.startedAt || "") || 0;
-    return leftTime - rightTime;
-  });
 }
 
-function buildTimingDebugJson({ timings, toolCalls, orderedEntries }) {
-  const timingEntries = orderedEntries.reduce((result, entry) => {
-    result[entry.objectName] = {
-      startedAt: entry.startedAt,
-      completedAt: entry.completedAt,
-      durationMs: entry.durationMs,
-      ...(entry.details && typeof entry.details === "object"
-        ? Object.fromEntries(Object.entries(entry.details).filter(([, value]) => value !== null && value !== undefined))
-        : {}),
-    };
-    return result;
-  }, {});
-
-  return {
-    request: {
-      startedAt: timings?.requestStartedAt ?? null,
-      completedAt: timings?.requestCompletedAt ?? null,
-      durationMs: timings?.totalDurationMs ?? null,
-    },
-    ...timingEntries,
-  };
+function formatFamilyHostedStatus(hostedStatus) {
+  switch (String(hostedStatus ?? "").trim()) {
+    case "published":
+      return "Published";
+    case "not_published":
+      return "Not published";
+    case "publishing":
+    case "pending":
+      return "Publishing";
+    case "unsupported":
+      return "Unsupported";
+    case "status_error":
+    case "error":
+      return "Status error";
+    default:
+      return "Unknown";
+  }
 }
 
-function formatJson(value) {
-  if (value === undefined) {
-    return "";
-  }
-
-  return JSON.stringify(value, null, 2);
+function buildFamilyPublishLabel(family) {
+  return String(family?.hostedStatus ?? "").trim() === "published" ? "Re-publish" : "Publish";
 }
 
-function getCitationBreadcrumbParts(citation) {
-  const breadcrumb = String(citation?.breadcrumb || "").trim();
+function formatFamilyPublishMessage(family, publishStatus) {
+  const familyLabel = String(family?.label ?? family?.family ?? "This family").trim();
+  const hostedAgentName = String(publishStatus?.hostedAgentName ?? family?.hostedAgentName ?? "").trim();
+  const publishedAt = publishStatus?.lastPublishedAt ?? family?.lastPublishedAt ?? null;
+  const publishedSuffix = publishedAt ? ` at ${formatDateTimeTimestamp(publishedAt)}` : "";
 
-  if (!breadcrumb) {
-    return [citation?.treeDisplayName || `Tree ${citation?.treeId ?? ""}`.trim() || "Node"];
+  return hostedAgentName
+    ? `${familyLabel} hosted agent published as ${hostedAgentName}${publishedSuffix}.`
+    : `${familyLabel} hosted agent published${publishedSuffix}.`;
+}
+
+function formatFamilyLastPublished(family) {
+  const hostedStatus = String(family?.hostedStatus ?? "").trim();
+
+  if (family?.lastPublishedAt) {
+    return formatDateTimeTimestamp(family.lastPublishedAt);
   }
 
-  if (breadcrumb.includes(" / ")) {
-    return breadcrumb.split(" / ").map((part) => part.trim()).filter(Boolean);
+  switch (hostedStatus) {
+    case "not_published":
+      return "Never";
+    case "unsupported":
+      return "Not applicable";
+    case "published":
+      return "Unavailable";
+    case "status_error":
+    case "error":
+      return "Unknown";
+    default:
+      return "Unknown";
   }
-
-  if (breadcrumb.includes(" > ")) {
-    return breadcrumb.split(" > ").map((part) => part.trim()).filter(Boolean);
-  }
-
-  return [breadcrumb];
 }
 
 function getCitationBreadcrumbItems(citation, visibility = "public") {
@@ -939,6 +878,8 @@ function getLatestNoResultOfferTurn(turns, dismissedTurnId) {
 }
 
 export default function ChatPageClient({ includeDebug }) {
+  const { user, isAuthResolved } = useAuth();
+  const isAdmin = hasClientPrincipalRole(user, "mdsadmins");
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -961,6 +902,11 @@ export default function ChatPageClient({ includeDebug }) {
   const [chatFamily, setChatFamily] = useState(() => normalizeChatFamily(requestedFamilyParam));
   const [addActionState, setAddActionState] = useState(null);
   const [writableTreeIds, setWritableTreeIds] = useState([]);
+  const [agentFamilies, setAgentFamilies] = useState([]);
+  const [isAgentFamiliesLoading, setIsAgentFamiliesLoading] = useState(false);
+  const [agentFamiliesStatusMessage, setAgentFamiliesStatusMessage] = useState("");
+  const [agentFamiliesError, setAgentFamiliesError] = useState("");
+  const [agentFamilyPendingItems, setAgentFamilyPendingItems] = useState({});
   const chatFeedRef = useRef(null);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
@@ -974,6 +920,34 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugPending = includeDebug && Boolean(selectedTurn?.isPending);
   const isDebugEmpty = includeDebug && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
+
+  const setAgentFamilyPending = (key, isPending) => {
+    setAgentFamilyPendingItems((currentState) => ({
+      ...currentState,
+      [key]: isPending,
+    }));
+  };
+
+  const loadAgentFamilies = async () => {
+    if (!isAdmin) {
+      setAgentFamilies([]);
+      setIsAgentFamiliesLoading(false);
+      return;
+    }
+
+    setIsAgentFamiliesLoading(true);
+
+    try {
+      const families = await fetchAgentFamilyManagementState();
+      setAgentFamilies(families);
+      setAgentFamiliesError("");
+    } catch (error) {
+      setAgentFamilies([]);
+      setAgentFamiliesError(getErrorMessage(error, "Agent families could not be loaded"));
+    } finally {
+      setIsAgentFamiliesLoading(false);
+    }
+  };
 
   const handleVisibilityChange = (event) => {
     const nextVisibility = setVisibility(event.target.value);
@@ -1070,6 +1044,51 @@ export default function ChatPageClient({ includeDebug }) {
       isCancelled = true;
     };
   }, [isVisibilityReady]);
+
+  useEffect(() => {
+    if (!isAuthResolved) {
+      return undefined;
+    }
+
+    if (!isAdmin) {
+      setAgentFamilies([]);
+      setAgentFamiliesStatusMessage("");
+      setAgentFamiliesError("");
+      setIsAgentFamiliesLoading(false);
+      return undefined;
+    }
+
+    let isCancelled = false;
+
+    setIsAgentFamiliesLoading(true);
+
+    fetchAgentFamilyManagementState()
+      .then((families) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setAgentFamilies(families);
+        setAgentFamiliesError("");
+      })
+      .catch((error) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setAgentFamilies([]);
+        setAgentFamiliesError(getErrorMessage(error, "Agent families could not be loaded"));
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsAgentFamiliesLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAdmin, isAuthResolved]);
 
   const writableTreeIdSet = new Set(writableTreeIds);
 
@@ -1402,11 +1421,57 @@ export default function ChatPageClient({ includeDebug }) {
     }
   }
 
+  async function handlePublishAgentFamily(family) {
+    const normalizedFamily = String(family?.family ?? "").trim();
+    const familyLabel = String(family?.label ?? normalizedFamily).trim();
+
+    if (!normalizedFamily || !family?.supportsHostedPublishing) {
+      return;
+    }
+
+    const confirmed = window.confirm(`${buildFamilyPublishLabel(family)} hosted agent for "${familyLabel}"?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    const pendingKey = `publish:${normalizedFamily}`;
+    setAgentFamilyPending(pendingKey, true);
+    setAgentFamiliesStatusMessage("");
+    setAgentFamiliesError("");
+
+    try {
+      const response = await fetch("/api/admin/agents", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          family: normalizedFamily,
+          action: "publish",
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || `Hosted agent for ${familyLabel} could not be published`);
+      }
+
+      setAgentFamiliesStatusMessage(formatFamilyPublishMessage(family, payload?.publish));
+      await loadAgentFamilies();
+    } catch (error) {
+      setAgentFamiliesError(getErrorMessage(error, `Hosted agent for ${familyLabel} could not be published`));
+    } finally {
+      setAgentFamilyPending(pendingKey, false);
+    }
+  }
+
   return (
     <main className="appPageShell">
       <section className={`${styles.workspaceGrid} ${!includeDebug ? styles.workspaceGridSingle : ""}`}>
-        <div className={styles.chatColumnSurface}>
-          <section className={styles.heroCard}>
+        <div className={styles.chatColumnStack}>
+          <div className={styles.chatColumnSurface}>
+            <section className={styles.heroCard}>
             <div className={`appPanelTopBar ${styles.promptPanelHeader}`}>
               <p className="appEyebrow">Prompt</p>
               <label className={styles.toolbarLabel}>
@@ -1479,12 +1544,12 @@ export default function ChatPageClient({ includeDebug }) {
                 )}
               </label>
             </form>
-          </section>
+            </section>
 
-          {requestError ? <p className={`${styles.errorMessage} ${styles.errorMessageInline}`}>{requestError}</p> : null}
+            {requestError ? <p className={`${styles.errorMessage} ${styles.errorMessageInline}`}>{requestError}</p> : null}
 
-          <div className={`${styles.chatPanel} ${isSingleTurnLayout ? styles.chatPanelSingleTurn : ""} ${isInitialTransientState ? styles.chatPanelInitialPending : ""} ${isHistoryEmpty ? styles.chatPanelEmpty : ""}`}>
-            <div ref={chatFeedRef} className={`${styles.chatFeed} ${isSingleTurnLayout ? styles.chatFeedSingleTurn : ""} ${isInitialTransientState ? styles.chatFeedInitialPending : ""} ${isHistoryEmpty ? styles.chatFeedEmpty : ""}`}>
+            <div className={`${styles.chatPanel} ${isSingleTurnLayout ? styles.chatPanelSingleTurn : ""} ${isInitialTransientState ? styles.chatPanelInitialPending : ""} ${isHistoryEmpty ? styles.chatPanelEmpty : ""}`}>
+              <div ref={chatFeedRef} className={`${styles.chatFeed} ${isSingleTurnLayout ? styles.chatFeedSingleTurn : ""} ${isInitialTransientState ? styles.chatFeedInitialPending : ""} ${isHistoryEmpty ? styles.chatFeedEmpty : ""}`}>
               {turns.length === 0 ? (
                 <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
                   <h3>Start a turn</h3>
@@ -1607,8 +1672,96 @@ export default function ChatPageClient({ includeDebug }) {
                   );
                 })
               )}
+              </div>
             </div>
           </div>
+
+          {isAdmin ? (
+            <section className={`appPanelShell ${styles.agentManagementPanel}`}>
+              <div className={`appPanelTopBar ${styles.panelHeader}`}>
+                <div>
+                  <p className="appEyebrow">Agent Family Publishing</p>
+                </div>
+              </div>
+              <div className={styles.agentManagementBody}>
+                <p className={styles.agentManagementIntro}>
+                  View registered agent families and publish or re-publish hosted agents for supported families.
+                </p>
+
+                {agentFamiliesStatusMessage ? <p className={styles.agentManagementStatus}>{agentFamiliesStatusMessage}</p> : null}
+                {agentFamiliesError ? <p className={styles.agentManagementError}>{agentFamiliesError}</p> : null}
+
+                {isAgentFamiliesLoading ? (
+                  <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
+                    <h3>Loading agent families</h3>
+                    <p>Checking hosted publishing status for the registered families.</p>
+                  </div>
+                ) : agentFamilies.length === 0 ? (
+                  <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
+                    <h3>No families available</h3>
+                    <p>No agent families were returned for management.</p>
+                  </div>
+                ) : (
+                  <div className={styles.agentFamilyList}>
+                    {agentFamilies.map((family) => {
+                      const pendingKey = `publish:${family.family}`;
+                      const isPending = Boolean(agentFamilyPendingItems[pendingKey]);
+
+                      return (
+                        <article key={family.family} className={styles.agentFamilyCard}>
+                          <div className={styles.agentFamilyHeader}>
+                            <div className={styles.agentFamilyHeading}>
+                              <h3 className={styles.agentFamilyTitle}>{family.label || family.family}</h3>
+                              {family.description ? <p className={styles.agentFamilyDescription}>{family.description}</p> : null}
+                            </div>
+                            <span className={`${styles.agentFamilyStatusBadge} ${getFamilyStatusClassName(styles, family.hostedStatus)}`}>
+                              {formatFamilyHostedStatus(family.hostedStatus)}
+                            </span>
+                          </div>
+
+                          <div className={styles.agentFamilyMetaList}>
+                            <p className={styles.agentFamilyMetaItem}>
+                              <span className={styles.agentFamilyMetaLabel}>Family</span>
+                              <span className={styles.agentFamilyMetaValue}>{family.family}</span>
+                            </p>
+                            <p className={styles.agentFamilyMetaItem}>
+                              <span className={styles.agentFamilyMetaLabel}>Hosted agent</span>
+                              <span className={styles.agentFamilyMetaValue}>{family.hostedAgentName || "Not set"}</span>
+                            </p>
+                            <p className={styles.agentFamilyMetaItem}>
+                              <span className={styles.agentFamilyMetaLabel}>Last published</span>
+                              <span className={styles.agentFamilyMetaValue}>{formatFamilyLastPublished(family)}</span>
+                            </p>
+                            <p className={styles.agentFamilyMetaItem}>
+                              <span className={styles.agentFamilyMetaLabel}>Hosted publishing</span>
+                              <span className={styles.agentFamilyMetaValue}>{family.supportsHostedPublishing ? "Supported" : "Not supported yet"}</span>
+                            </p>
+                          </div>
+
+                          {family.statusError ? <p className={styles.agentFamilyRowError}>{family.statusError}</p> : null}
+
+                          <div className={styles.agentFamilyActions}>
+                            {family.supportsHostedPublishing ? (
+                              <button
+                                type="button"
+                                className="appCompactActionButton appCompactActionButtonNeutral"
+                                onClick={() => handlePublishAgentFamily(family)}
+                                disabled={isPending || isAgentFamiliesLoading}
+                              >
+                                {isPending ? "Publishing..." : buildFamilyPublishLabel(family)}
+                              </button>
+                            ) : (
+                              <span className={styles.agentFamilyUnsupportedNote}>Hosted publishing is not supported for this family yet.</span>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
         </div>
 
         {includeDebug ? (
