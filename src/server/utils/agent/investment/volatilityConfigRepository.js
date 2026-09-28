@@ -62,6 +62,20 @@ function normalizeNumber(value, keyName, { minimum = Number.NEGATIVE_INFINITY, r
   return normalizedValue;
 }
 
+function validateRotationSizing({ rotationSize, startShareCount }) {
+  if (!(rotationSize > 0)) {
+    throw new Error('Configuration value rotation_size must be greater than 0.');
+  }
+
+  if (!Number.isInteger(startShareCount) || startShareCount < 1) {
+    throw new Error('Configuration value start_share_count must be an integer greater than or equal to 1.');
+  }
+
+  if (!(startShareCount > (1 / rotationSize))) {
+    throw new Error('Configuration value start_share_count must be greater than 1 / rotation_size to guarantee non-zero triggered rotations.');
+  }
+}
+
 function normalizeBoolean(value, keyName, defaultValue = false) {
   if (value === undefined || value === null || value === '') {
     return defaultValue;
@@ -186,17 +200,25 @@ export async function loadVolatilityRuntimeConfig(ticker) {
     throw new Error('Configuration value ma_period is required when use_ma_gate is enabled.');
   }
 
+  const rotationSize = normalizeNumber(effectiveConfig.rotation_size, 'rotation_size', { minimum: 0 });
+  const startShareCount = normalizeInteger(effectiveConfig.start_share_count, 'start_share_count', { minimum: 0 });
+
+  validateRotationSizing({
+    rotationSize,
+    startShareCount,
+  });
+
   return {
     ticker: normalizedTicker,
     maxRotations: normalizeInteger(effectiveConfig.max_rotations, 'max_rotations', { minimum: 1 }),
-    rotationSize: normalizeNumber(effectiveConfig.rotation_size, 'rotation_size', { minimum: 0 }),
+    rotationSize,
     useMaGate,
     maPeriod,
     maxHistoryDays: effectiveConfig.max_history_days === undefined || effectiveConfig.max_history_days === null || effectiveConfig.max_history_days === ''
       ? DEFAULT_MAX_HISTORY_DAYS
       : normalizeInteger(effectiveConfig.max_history_days, 'max_history_days', { minimum: 1 }),
     volatilityThreshold: normalizeNumber(volatilityThresholdValue, 'volatility_threshold', { minimum: 0 }),
-    startShareCount: normalizeInteger(effectiveConfig.start_share_count, 'start_share_count', { minimum: 0 }),
+    startShareCount,
     raw: {
       sources: {
         general: generalYaml.source,
