@@ -957,6 +957,7 @@ function TreesPageContent() {
         resetNameTreeIds: [treeId],
         resetVisibilityTreeIds: [treeId],
       });
+      setDescriptionEditing(treeId, false);
 
       if (!Array.isArray(data?.trees) || !data.trees.some((entry) => String(entry.id) === treeId)) {
         setErrorMessage("Tree settings were updated, but the tree is outside the current visibility filter.");
@@ -1679,7 +1680,7 @@ function TreesPageContent() {
                           <button
                             type="button"
                             onClick={() => handleGenerateDescription(tree)}
-                            disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
+                            disabled={!canWriteTree || !isDescriptionEditing || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
                             {rowPendingState.generate ? "Generating..." : "Generate"}
