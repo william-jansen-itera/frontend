@@ -639,6 +639,25 @@
   white-space: pre-wrap;
 }
 
+.inlineAttachmentLink {
+  color: #0369a1;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+  word-break: break-word;
+}
+
+.inlineAttachmentLink:hover,
+.inlineAttachmentLink:focus-visible {
+  color: #075985;
+}
+
+.inlineAttachmentLink:focus-visible {
+  outline: 2px solid rgba(14, 116, 144, 0.2);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .messageContent {
   display: grid;
   gap: 0.8rem;
