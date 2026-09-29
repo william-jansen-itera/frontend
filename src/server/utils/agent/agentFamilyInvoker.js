@@ -2,22 +2,22 @@ import {
   getAgentFamilyRegistration,
   listRegisteredAgentFamilies,
 } from '@/server/utils/agent/agentFamilyRegistry';
-import { TREE_GROUNDING_FAMILY } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
+import { resolveAgentFamilySelection } from '@/server/utils/agent/agentFamilyAvailability';
+
+export { resolveAgentFamilySelection } from '@/server/utils/agent/agentFamilyAvailability';
 
 export function normalizeAgentFamilySelection(family) {
-  const normalizedFamily = String(family ?? '').trim();
-
-  return normalizedFamily || TREE_GROUNDING_FAMILY;
+  return String(family ?? '').trim();
 }
 
-export async function invokeAgentFamily({ family, ...options }) {
-  const normalizedFamily = normalizeAgentFamilySelection(family);
-  const registration = getAgentFamilyRegistration(normalizedFamily);
+export async function invokeAgentFamily({ family, familyStatus = null, ...options }) {
+  const resolvedFamily = familyStatus ?? await resolveAgentFamilySelection(family);
+  const registration = getAgentFamilyRegistration(resolvedFamily.family);
 
   if (!registration?.invoke) {
     const availableFamilies = listRegisteredAgentFamilies();
     throw new Error(
-      `Unsupported agent family "${normalizedFamily}". Available families: ${availableFamilies.join(', ')}`,
+      `Unsupported agent family "${resolvedFamily.family}". Available families: ${availableFamilies.join(', ')}`,
     );
   }
 

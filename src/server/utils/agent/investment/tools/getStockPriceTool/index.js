@@ -96,6 +96,9 @@ export function buildGetStockPriceHandler({ includeDebug = false, updatedBy = nu
       includeDebug,
       debug: includeDebug ? {
         cacheStatus: stockPriceResult.cacheStatus,
+        providerRequests: Array.isArray(stockPriceResult.providerRequests)
+          ? stockPriceResult.providerRequests
+          : [],
       } : null,
     });
   };

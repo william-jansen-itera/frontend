@@ -32,8 +32,8 @@ function getSqlConnection() {
 }
 
 export async function withSqlConnection(callback) {
-  await getSqlConnection();
-  return callback();
+  const connection = await getSqlConnection();
+  return callback(connection);
 }
 
 export function isLikelySleepingSqlError(error) {

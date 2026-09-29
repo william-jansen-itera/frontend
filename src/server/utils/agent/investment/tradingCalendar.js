@@ -22,6 +22,10 @@ export function shiftDays(date, offsetDays) {
 }
 
 export function parseIsoDate(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(value);
+  }
+
   const normalizedValue = String(value ?? '').trim();
 
   if (!normalizedValue) {

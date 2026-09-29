@@ -1,5 +1,6 @@
 import {
   AGENT_PREVIEW_FEATURES,
+  deleteProjectPromptAgent,
   getProjectClient,
   getRequiredFoundryFamilyConfig,
   isNotFoundError,
@@ -159,6 +160,27 @@ export async function publishInvestmentPromptAgent() {
     toolCount: buildInvestmentToolDefinitions().length,
     excludedTreeCount: 0,
     agent,
+  };
+}
+
+export async function unpublishInvestmentPromptAgent() {
+  const { agentName } = getRequiredFoundryFamilyConfig(INVESTMENT_FAMILY);
+
+  try {
+    await deleteProjectPromptAgent(agentName);
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+  }
+
+  return {
+    promptAgentStatus: 'not_published',
+    promptAgentName: agentName,
+    lastPublishedAt: null,
+    toolCount: buildInvestmentToolDefinitions().length,
+    excludedTreeCount: 0,
+    agent: null,
   };
 }
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   invokeAgentFamily,
-  normalizeAgentFamilySelection,
+  resolveAgentFamilySelection,
 } from '@/server/utils/agent/agentFamilyInvoker';
 import { logException, logTrace } from '@/server/utils/logging';
 import { parseClientPrincipal } from '@/server/utils/auth';
@@ -80,7 +80,8 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     const message = String(payload?.message ?? '').trim();
-    const family = normalizeAgentFamilySelection(payload?.family);
+    const resolvedFamily = await resolveAgentFamilySelection(payload?.family);
+    const family = resolvedFamily.family;
     const visibility = String(payload?.visibility ?? '').trim() || 'public';
     const followUpSelection = normalizeFollowUpSelection(payload?.followUpSelection);
 
@@ -95,6 +96,7 @@ export async function POST(request) {
     const principal = parseClientPrincipal(request);
     const result = await invokeAgentFamily({
       family,
+      familyStatus: resolvedFamily,
       message,
       history,
       principal,

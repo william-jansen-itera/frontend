@@ -54,3 +54,16 @@ export function isNotFoundError(error) {
   const statusCode = error?.statusCode || error?.code;
   return statusCode === 404 || String(error?.message || '').includes('404');
 }
+
+export async function deleteProjectPromptAgent(agentName) {
+  const project = getProjectClient();
+  const deleteAgent = project?.agents?.delete ?? project?.agents?.deleteAgent ?? null;
+
+  if (typeof deleteAgent !== 'function') {
+    throw new Error('The installed Foundry SDK does not expose prompt-agent deletion.');
+  }
+
+  return deleteAgent.call(project.agents, agentName, {
+    foundryFeatures: AGENT_PREVIEW_FEATURES,
+  });
+}

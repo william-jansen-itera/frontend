@@ -5,12 +5,14 @@ import {
   getInvestmentPromptAgentPublishStatus,
   listDefinedInvestmentTools,
   publishInvestmentPromptAgent,
+  unpublishInvestmentPromptAgent,
 } from '@/server/utils/agent/investment/investmentAgentCatalog';
 import {
   getTreeGroundingPromptAgentPublishStatus,
   listDefinedTreeGroundingTools,
   publishTreeGroundingPromptAgent,
   TREE_GROUNDING_FAMILY,
+  unpublishTreeGroundingPromptAgent,
 } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
 
 function buildFamilyToolDefinition({ name, description }) {
@@ -39,10 +41,12 @@ function buildFamilyRegistration({
   description,
   orchestratorToolName,
   supportsPromptAgentPublishing,
+  requiresPublishedPromptAgent,
   invoke,
   listDefinedTools,
   getPromptAgentPublishStatus,
   publishPromptAgent,
+  unpublishPromptAgent,
 }) {
   return {
     family,
@@ -53,10 +57,12 @@ function buildFamilyRegistration({
       description,
     }),
     supportsPromptAgentPublishing,
+    requiresPublishedPromptAgent,
     invoke,
     listDefinedTools,
     getPromptAgentPublishStatus,
     publishPromptAgent,
+    unpublishPromptAgent,
   };
 }
 
@@ -67,10 +73,12 @@ const FAMILY_REGISTRY = new Map([
     description: 'A deterministic investment tool that returns cached prices, recommendations, and event review results.',
     orchestratorToolName: 'ask_investment_family',
     supportsPromptAgentPublishing: true,
+    requiresPublishedPromptAgent: true,
     invoke: invokeInvestmentAgent,
     listDefinedTools: listDefinedInvestmentTools,
     getPromptAgentPublishStatus: getInvestmentPromptAgentPublishStatus,
     publishPromptAgent: publishInvestmentPromptAgent,
+    unpublishPromptAgent: unpublishInvestmentPromptAgent,
   })],
   [TREE_GROUNDING_FAMILY, buildFamilyRegistration({
     family: TREE_GROUNDING_FAMILY,
@@ -78,10 +86,12 @@ const FAMILY_REGISTRY = new Map([
     description: 'A tree-backed prompt tool that returns grounded results from published trees with detailed descriptions.',
     orchestratorToolName: 'ask_tree_grounding_family',
     supportsPromptAgentPublishing: true,
+    requiresPublishedPromptAgent: true,
     invoke: invokeTreeSearchAgent,
     listDefinedTools: listDefinedTreeGroundingTools,
     getPromptAgentPublishStatus: getTreeGroundingPromptAgentPublishStatus,
     publishPromptAgent: publishTreeGroundingPromptAgent,
+    unpublishPromptAgent: unpublishTreeGroundingPromptAgent,
   })],
 ]);
 

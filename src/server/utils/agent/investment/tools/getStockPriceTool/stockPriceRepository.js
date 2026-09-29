@@ -120,12 +120,12 @@ function isOneDayBehind(leftDate, rightDate) {
   return formatDate(shiftDays(leftParsedDate, 1)) === formatDate(rightParsedDate);
 }
 
-function isWindowCoveredWithinTolerance(earliestCachedDate, calendarWindowStartDate) {
-  if (!earliestCachedDate || !calendarWindowStartDate) {
+function doesCachedWindowStartCoverRequestedRange(earliestCachedDate, requiredWindowStartDate) {
+  if (!earliestCachedDate || !requiredWindowStartDate) {
     return false;
   }
 
-  const toleratedWindowStartDate = shiftDays(calendarWindowStartDate, CALENDAR_WINDOW_START_TOLERANCE_DAYS);
+  const toleratedWindowStartDate = shiftDays(requiredWindowStartDate, CALENDAR_WINDOW_START_TOLERANCE_DAYS);
 
   return earliestCachedDate <= toleratedWindowStartDate;
 }
@@ -137,21 +137,19 @@ function isCacheFreshEnough(priceHistory, days) {
 
   const calendarWindowStartDate = buildCalendarWindowStartDate(priceHistory, days);
   const earliestCachedDate = parseIsoDate(priceHistory[0]?.date);
-  const latestDate = priceHistory[priceHistory.length - 1]?.date;
-  const latestExpectedTradingCloseDate = getLatestExpectedTradingCloseDate();
+  const latestCachedDate = parseIsoDate(priceHistory[priceHistory.length - 1]?.date);
+  const latestExpectedTradingCloseDate = parseIsoDate(getLatestExpectedTradingCloseDate());
 
-  if (!latestDate || !calendarWindowStartDate || !earliestCachedDate || !latestExpectedTradingCloseDate) {
+  if (!calendarWindowStartDate || !earliestCachedDate || !latestCachedDate || !latestExpectedTradingCloseDate) {
     return false;
   }
 
-  const latestTime = new Date(latestDate).getTime();
-
-  if (Number.isNaN(latestTime)) {
-    return false;
-  }
-
-  return latestDate === latestExpectedTradingCloseDate
-    && isWindowCoveredWithinTolerance(earliestCachedDate, calendarWindowStartDate);
+  // Fresh means two separate conditions are true:
+  // 1. the cache reaches the latest trading close that should exist by now, and
+  // 2. the cache starts early enough to cover the requested calendar window,
+  //    allowing a small 5-day tolerance at the window start.
+  return latestCachedDate >= latestExpectedTradingCloseDate
+    && doesCachedWindowStartCoverRequestedRange(earliestCachedDate, calendarWindowStartDate);
 }
 
 async function loadCachedPriceHistory(treeId, ticker) {
@@ -202,6 +200,7 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
       currency: 'USD',
       priceHistory: sliceRecentHistory(existingHistory, normalizedDays),
       cacheStatus: 'hit',
+      providerRequests: [],
     };
   }
 
@@ -213,27 +212,56 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
     : null;
   const earliestCachedDate = parseIsoDate(existingHistory[0]?.date);
   const existingCalendarWindowStartDate = buildCalendarWindowStartDate(existingHistory, normalizedDays);
+
+  // This is a different 5-day rule from the start-of-window tolerance above.
+  // When we do need a provider refresh, we overlap the request by 5 days to make
+  // merges less brittle around missing or revised provider rows.
   const needsHistoryBackfill = !earliestCachedDate
     || !existingCalendarWindowStartDate
-    || !isWindowCoveredWithinTolerance(earliestCachedDate, existingCalendarWindowStartDate);
+    || !doesCachedWindowStartCoverRequestedRange(earliestCachedDate, existingCalendarWindowStartDate);
   const fetchStartDate = needsHistoryBackfill || !incrementalStartDate
     ? fallbackStartDate
     : incrementalStartDate;
-  let fetchedHistory = await fetcher({
+  const providerRequests = [];
+  let fetchResult = await fetcher({
     ticker: normalizedTicker,
     fromDate: fetchStartDate,
     toDate: fetchEndDate,
   });
+  let fetchedHistory = Array.isArray(fetchResult)
+    ? fetchResult
+    : Array.isArray(fetchResult?.priceHistory)
+      ? fetchResult.priceHistory
+      : [];
+
+  if (fetchResult?.request) {
+    providerRequests.push({
+      reason: needsHistoryBackfill || !incrementalStartDate ? 'window_backfill' : 'incremental_refresh',
+      ...fetchResult.request,
+    });
+  }
   const latestFetchedDate = fetchedHistory[fetchedHistory.length - 1]?.date ?? null;
 
   if (existingHistory.length > 0 && isOneDayBehind(latestCachedDate, latestFetchedDate)) {
     const repairStartDate = fallbackStartDate;
 
-    fetchedHistory = await fetcher({
+    fetchResult = await fetcher({
       ticker: normalizedTicker,
       fromDate: repairStartDate,
       toDate: fetchEndDate,
     });
+    fetchedHistory = Array.isArray(fetchResult)
+      ? fetchResult
+      : Array.isArray(fetchResult?.priceHistory)
+        ? fetchResult.priceHistory
+        : [];
+
+    if (fetchResult?.request) {
+      providerRequests.push({
+        reason: 'repair_gap',
+        ...fetchResult.request,
+      });
+    }
   }
 
   const mergedHistory = mergePriceHistory(existingHistory, fetchedHistory);
@@ -244,8 +272,9 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
 
   const existingCsv = stringifyCsv(existingHistory);
   const mergedCsv = stringifyCsv(mergedHistory);
+  const didUpdateStoredCsv = existingCsv !== mergedCsv;
 
-  if (existingCsv !== mergedCsv) {
+  if (didUpdateStoredCsv) {
     await ensureInvestmentTreePath({
       treeId,
       pathSegments: buildStockPricePath(normalizedTicker),
@@ -265,6 +294,9 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
     days: normalizedDays,
     currency: 'USD',
     priceHistory: sliceRecentHistory(mergedHistory, normalizedDays),
-    cacheStatus: existingHistory.length > 0 ? 'refreshed' : 'created',
+    cacheStatus: existingHistory.length > 0
+      ? (didUpdateStoredCsv ? 'refreshed' : 'validated')
+      : 'created',
+    providerRequests,
   };
 }

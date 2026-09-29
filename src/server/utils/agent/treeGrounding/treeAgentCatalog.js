@@ -5,6 +5,7 @@ import {
 } from '@/server/utils/treeCatalog';
 import {
   AGENT_PREVIEW_FEATURES,
+  deleteProjectPromptAgent,
   getProjectClient,
   getRequiredFoundryConfig,
   isNotFoundError,
@@ -416,5 +417,26 @@ export async function publishStoredTreeDescriptions() {
     tools: buildTreeToolPreview(publishResult.availableTrees),
     syncMode: 'publish-stored-descriptions',
     excludedTrees: Array.isArray(publishResult.excludedTrees) ? publishResult.excludedTrees : [],
+  };
+}
+
+export async function unpublishTreeGroundingPromptAgent() {
+  const { agentName } = getRequiredFoundryConfig();
+
+  try {
+    await deleteProjectPromptAgent(agentName);
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+  }
+
+  return {
+    promptAgentStatus: 'not_published',
+    promptAgentName: agentName,
+    lastPublishedAt: null,
+    toolCount: null,
+    excludedTreeCount: null,
+    agent: null,
   };
 }

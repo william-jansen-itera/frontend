@@ -8,6 +8,16 @@ function buildNasdaqHistoricalUrl({ ticker, fromDate, toDate }) {
   return url.toString();
 }
 
+function buildNasdaqHistoricalRequest({ ticker, fromDate, toDate }) {
+  return {
+    provider: 'nasdaq',
+    ticker,
+    fromDate,
+    toDate,
+    url: buildNasdaqHistoricalUrl({ ticker, fromDate, toDate }),
+  };
+}
+
 function normalizeNasdaqClose(rawClose) {
   const normalizedValue = Number(
     String(rawClose ?? '')
@@ -72,7 +82,12 @@ export async function fetchHistoricalClosingPrices({ ticker, fromDate, toDate })
     throw new Error('Ticker is required to fetch historical closing prices.');
   }
 
-  const response = await fetch(buildNasdaqHistoricalUrl({ ticker: normalizedTicker, fromDate, toDate }), {
+  const request = buildNasdaqHistoricalRequest({
+    ticker: normalizedTicker,
+    fromDate,
+    toDate,
+  });
+  const response = await fetch(request.url, {
     headers: {
       'user-agent': 'Mozilla/5.0',
       accept: 'application/json, text/plain, */*',
@@ -94,5 +109,12 @@ export async function fetchHistoricalClosingPrices({ ticker, fromDate, toDate })
     throw new Error(`Historical price provider returned no closing-price rows for ${normalizedTicker}.`);
   }
 
-  return priceHistory;
+  return {
+    priceHistory,
+    request: {
+      ...request,
+      requestedAt: new Date().toISOString(),
+      responseStatus: response.status,
+    },
+  };
 }

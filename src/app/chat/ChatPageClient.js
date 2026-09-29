@@ -7,6 +7,16 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/app/useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import styles from "./page.module.css";
+import { AgentFamilyPublishingPanel } from "./AgentFamilyPublishingPanel";
+import {
+  buildChatPlaceholder,
+  buildFamilyActionConfirmationMessage,
+  fetchAgentFamilyManagementState,
+  fetchAvailableChatFamilies,
+  formatFamilyActionMessage,
+  normalizeChatFamilySelection,
+  setChatFamilySearchParam,
+} from "./agentFamilyPublishing";
 import {
   ALL_VISIBILITY_VALUES,
   buildVisibilityHref,
@@ -18,48 +28,6 @@ import {
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
-const CHAT_FAMILY_OPTIONS = ["treeGrounding", "investment"];
-const DEFAULT_CHAT_FAMILY = "treeGrounding";
-const CHAT_FAMILY_LABELS = Object.freeze({
-  treeGrounding: "trees and attachments",
-  investment: "investments",
-});
-
-function normalizeChatFamily(value) {
-  const normalizedValue = String(value ?? "").trim();
-
-  return CHAT_FAMILY_OPTIONS.includes(normalizedValue) ? normalizedValue : DEFAULT_CHAT_FAMILY;
-}
-
-function buildChatPlaceholder() {
-  const familyLabels = CHAT_FAMILY_OPTIONS
-    .map((family) => CHAT_FAMILY_LABELS[family])
-    .filter(Boolean);
-
-  if (familyLabels.length === 0) {
-    return "Ask the agent a question";
-  }
-
-  if (familyLabels.length === 1) {
-    return `Ask the agent about ${familyLabels[0]}`;
-  }
-
-  const leadingLabels = familyLabels.slice(0, -1).join(", ");
-  const trailingLabel = familyLabels[familyLabels.length - 1];
-
-  return `Ask the agent about ${leadingLabels}, or ${trailingLabel}`;
-}
-
-function setChatFamilySearchParam(searchParams, family) {
-  const normalizedFamily = normalizeChatFamily(family);
-
-  if (normalizedFamily === DEFAULT_CHAT_FAMILY) {
-    searchParams.delete("family");
-    return;
-  }
-
-  searchParams.set("family", normalizedFamily);
-}
 
 function getImageExtension(candidate) {
   const normalizedCandidate = String(candidate ?? "").trim().toLowerCase();
@@ -466,100 +434,6 @@ function getErrorMessage(error, fallbackMessage) {
   return fallbackMessage;
 }
 
-async function fetchAgentFamilyManagementState() {
-  const response = await fetch("/api/admin/agents", { cache: "no-store" });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload?.error || "Agent families could not be loaded");
-  }
-
-  return Array.isArray(payload?.families) ? payload.families : [];
-}
-
-function getFamilyStatusClassName(stylesheet, promptAgentStatus) {
-  switch (String(promptAgentStatus ?? "").trim()) {
-    case "published":
-      return stylesheet.agentFamilyStatusPublished;
-    case "not_published":
-      return stylesheet.agentFamilyStatusUnknown;
-    case "publishing":
-    case "pending":
-      return stylesheet.agentFamilyStatusPending;
-    case "unsupported":
-      return stylesheet.agentFamilyStatusUnsupported;
-    case "status_error":
-    case "error":
-      return stylesheet.agentFamilyStatusError;
-    default:
-      return stylesheet.agentFamilyStatusUnknown;
-  }
-}
-
-function formatFamilyPromptAgentStatus(promptAgentStatus) {
-  switch (String(promptAgentStatus ?? "").trim()) {
-    case "published":
-      return "Published";
-    case "not_published":
-      return "Not published";
-    case "publishing":
-    case "pending":
-      return "Publishing";
-    case "unsupported":
-      return "Unsupported";
-    case "status_error":
-    case "error":
-      return "Status error";
-    default:
-      return "Unknown";
-  }
-}
-
-function buildFamilyPublishLabel(family) {
-  return String(family?.promptAgentStatus ?? "").trim() === "published" ? "Re-publish" : "Publish";
-}
-
-function formatFamilyPublishMessage(family, publishStatus) {
-  const familyLabel = String(family?.label ?? family?.family ?? "This family").trim();
-  const promptAgentName = String(publishStatus?.promptAgentName ?? family?.promptAgentName ?? "").trim();
-  const publishedAt = publishStatus?.lastPublishedAt ?? family?.lastPublishedAt ?? null;
-  const publishedSuffix = publishedAt ? ` at ${formatDateTimeTimestamp(publishedAt)}` : "";
-
-  return promptAgentName
-    ? `${familyLabel} prompt agent published as ${promptAgentName}${publishedSuffix}.`
-    : `${familyLabel} prompt agent published${publishedSuffix}.`;
-}
-
-function formatFamilyLastPublished(family) {
-  const promptAgentStatus = String(family?.promptAgentStatus ?? "").trim();
-
-  if (family?.lastPublishedAt) {
-    return formatDateTimeTimestamp(family.lastPublishedAt);
-  }
-
-  switch (promptAgentStatus) {
-    case "not_published":
-      return "Never";
-    case "unsupported":
-      return "Not applicable";
-    case "published":
-      return "Unavailable";
-    case "status_error":
-    case "error":
-      return "Unknown";
-    default:
-      return "Unknown";
-  }
-}
-
-function getFamilyDefinedTools(family) {
-  if (!Array.isArray(family?.tools)) {
-    return [];
-  }
-
-  return family.tools.filter((tool) => tool && (tool.name || tool.description));
-}
-
 function getCitationBreadcrumbParts(citation) {
   const breadcrumb = String(citation?.breadcrumb ?? "").trim();
 
@@ -717,6 +591,26 @@ function ToolSearchExecutionSummary({ searches, tokenCoverageFilter }) {
       ))}
     </div>
   );
+}
+
+function hasToolSearchResult(toolCall) {
+  const searchResult = toolCall?.searchResult;
+
+  if (!searchResult || typeof searchResult !== "object") {
+    return false;
+  }
+
+  if (Array.isArray(searchResult)) {
+    return searchResult.length > 0;
+  }
+
+  return Object.values(searchResult).some((value) => {
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+
+    return value !== null && value !== undefined;
+  });
 }
 
 function ExecutionTimingSummary({ timings, toolCalls }) {
@@ -890,60 +784,73 @@ function TurnDebugPanel({ turn }) {
           <p className={styles.sectionEmpty}>No tool calls were recorded for this turn.</p>
         ) : (
           <div className={styles.toolCallList}>
-            {toolCalls.map((toolCall) => (
-              <article key={toolCall.callId || `${toolCall.round}-${toolCall.toolName}`} className={styles.toolCard}>
-                <div className={styles.toolHeader}>
-                  <div>
-                    <p className={styles.toolLabel}>Tool cycle {toolCall.round}</p>
-                    <h3 className={styles.toolName}>{toolCall.toolName || "Tool call"}</h3>
-                    <p className={styles.debugMetaText}>
-                      {formatTimestamp(toolCall.startedAt)} to {formatTimestamp(toolCall.completedAt)} · {formatDuration(toolCall.durationMs)}
-                    </p>
+            {toolCalls.map((toolCall) => {
+              const hasSearchResult = hasToolSearchResult(toolCall);
+
+              return (
+                <article key={toolCall.callId || `${toolCall.round}-${toolCall.toolName}`} className={styles.toolCard}>
+                  <div className={styles.toolHeader}>
+                    <div>
+                      <p className={styles.toolLabel}>Tool cycle {toolCall.round}</p>
+                      <h3 className={styles.toolName}>{toolCall.toolName || "Tool call"}</h3>
+                      <p className={styles.debugMetaText}>
+                        {formatTimestamp(toolCall.startedAt)} to {formatTimestamp(toolCall.completedAt)} · {formatDuration(toolCall.durationMs)}
+                      </p>
+                    </div>
+                    {toolCall.error ? <span className={styles.toolErrorBadge}>Error</span> : null}
                   </div>
-                  {toolCall.error ? <span className={styles.toolErrorBadge}>Error</span> : null}
-                </div>
 
-                <details className={styles.debugDetail}>
-                  <summary>Parsed arguments</summary>
-                  <pre className={styles.jsonBlock}>{formatJson(toolCall.parsedArguments)}</pre>
-                </details>
+                  <details className={styles.debugDetail}>
+                    <summary>Parsed arguments</summary>
+                    <pre className={styles.jsonBlock}>{formatJson(toolCall.parsedArguments)}</pre>
+                  </details>
 
-                {(Array.isArray(toolCall.searchResult?.searches) && toolCall.searchResult.searches.length > 0)
-                  || toolCall.searchResult?.tokenCoverageFilter ? (
-                    <details className={styles.debugDetail} open>
-                      <summary>Search execution</summary>
-                      <ToolSearchExecutionSummary
-                        searches={toolCall.searchResult.searches}
-                        tokenCoverageFilter={toolCall.searchResult.tokenCoverageFilter}
-                      />
+                  {(Array.isArray(toolCall.searchResult?.searches) && toolCall.searchResult.searches.length > 0)
+                    || toolCall.searchResult?.tokenCoverageFilter ? (
+                      <details className={styles.debugDetail} open>
+                        <summary>Search execution</summary>
+                        <ToolSearchExecutionSummary
+                          searches={toolCall.searchResult.searches}
+                          tokenCoverageFilter={toolCall.searchResult.tokenCoverageFilter}
+                        />
+                      </details>
+                    ) : null}
+
+                  {hasSearchResult ? (
+                    <details className={styles.debugDetail}>
+                      <summary>Actual search results</summary>
+                      <pre className={styles.jsonBlock}>{formatJson(toolCall.searchResult)}</pre>
                     </details>
                   ) : null}
 
-                <details className={styles.debugDetail}>
-                  <summary>Actual search results</summary>
-                  <pre className={styles.jsonBlock}>{formatJson(toolCall.searchResult)}</pre>
-                </details>
-
-                <details className={styles.debugDetail}>
-                  <summary>Tool output</summary>
-                  <pre className={styles.jsonBlock}>{formatJson(toolCall.toolOutput)}</pre>
-                </details>
-
-                {toolCall.toolMetaData ? (
                   <details className={styles.debugDetail}>
-                    <summary>Tool meta data</summary>
-                    <pre className={styles.jsonBlock}>{formatJson(toolCall.toolMetaData)}</pre>
+                    <summary>Tool output</summary>
+                    <pre className={styles.jsonBlock}>{formatJson(toolCall.toolOutput)}</pre>
                   </details>
-                ) : null}
 
-                {toolCall.error ? (
-                  <details className={styles.debugDetail} open>
-                    <summary>Tool error</summary>
-                    <pre className={styles.jsonBlock}>{formatJson(toolCall.error)}</pre>
-                  </details>
-                ) : null}
-              </article>
-            ))}
+                  {toolCall.toolDebug ? (
+                    <details className={styles.debugDetail}>
+                      <summary>Tool debug</summary>
+                      <pre className={styles.jsonBlock}>{formatJson(toolCall.toolDebug)}</pre>
+                    </details>
+                  ) : null}
+
+                  {toolCall.toolMetaData ? (
+                    <details className={styles.debugDetail}>
+                      <summary>Tool meta data</summary>
+                      <pre className={styles.jsonBlock}>{formatJson(toolCall.toolMetaData)}</pre>
+                    </details>
+                  ) : null}
+
+                  {toolCall.error ? (
+                    <details className={styles.debugDetail} open>
+                      <summary>Tool error</summary>
+                      <pre className={styles.jsonBlock}>{formatJson(toolCall.error)}</pre>
+                    </details>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
@@ -1017,7 +924,8 @@ export default function ChatPageClient({ includeDebug }) {
   const [dismissedFollowUpTurnId, setDismissedFollowUpTurnId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
-  const [chatFamily, setChatFamily] = useState(() => normalizeChatFamily(requestedFamilyParam));
+  const [availableChatFamilies, setAvailableChatFamilies] = useState([]);
+  const [chatFamily, setChatFamily] = useState(null);
   const [addActionState, setAddActionState] = useState(null);
   const [writableTreeIds, setWritableTreeIds] = useState([]);
   const [agentFamilies, setAgentFamilies] = useState([]);
@@ -1026,6 +934,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [agentFamiliesError, setAgentFamiliesError] = useState("");
   const [agentFamilyPendingItems, setAgentFamilyPendingItems] = useState({});
   const chatFeedRef = useRef(null);
+  const defaultChatFamily = availableChatFamilies[0]?.family ?? null;
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
@@ -1067,6 +976,19 @@ export default function ChatPageClient({ includeDebug }) {
     }
   };
 
+  const loadAvailableFamilies = async () => {
+    const payload = await fetchAvailableChatFamilies();
+    const nextFamilies = Array.isArray(payload?.families) ? payload.families : [];
+    const nextDefaultFamily = String(payload?.defaultFamily ?? nextFamilies[0]?.family ?? "").trim() || null;
+
+    setAvailableChatFamilies(nextFamilies);
+    setChatFamily((currentFamily) => normalizeChatFamilySelection(
+      requestedFamilyParam || currentFamily,
+      nextFamilies,
+      nextDefaultFamily,
+    ));
+  };
+
   const handleVisibilityChange = (event) => {
     const nextVisibility = setVisibility(event.target.value);
     const nextSearchParams = new URLSearchParams(searchParams.toString());
@@ -1076,13 +998,47 @@ export default function ChatPageClient({ includeDebug }) {
   };
 
   const handleChatFamilyChange = (event) => {
-    const nextFamily = normalizeChatFamily(event.target.value);
+    const nextFamily = normalizeChatFamilySelection(event.target.value, availableChatFamilies, defaultChatFamily);
     setChatFamily(nextFamily);
     const nextSearchParams = new URLSearchParams(searchParams.toString());
-    setChatFamilySearchParam(nextSearchParams, nextFamily);
+    setChatFamilySearchParam(nextSearchParams, nextFamily, availableChatFamilies, defaultChatFamily);
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   };
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    fetchAvailableChatFamilies()
+      .then((payload) => {
+        if (isCancelled) {
+          return;
+        }
+
+        const nextFamilies = Array.isArray(payload?.families) ? payload.families : [];
+        const nextDefaultFamily = String(payload?.defaultFamily ?? nextFamilies[0]?.family ?? "").trim() || null;
+
+        setAvailableChatFamilies(nextFamilies);
+        setChatFamily((currentFamily) => normalizeChatFamilySelection(
+          requestedFamilyParam || currentFamily,
+          nextFamilies,
+          nextDefaultFamily,
+        ));
+      })
+      .catch((error) => {
+        if (isCancelled) {
+          return;
+        }
+
+        console.error("Chat family load failed:", error);
+        setAvailableChatFamilies([]);
+        setChatFamily(null);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [requestedFamilyParam]);
 
   useEffect(() => {
     if (!isVisibilityReady) {
@@ -1104,7 +1060,14 @@ export default function ChatPageClient({ includeDebug }) {
   }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, visibility]);
 
   useEffect(() => {
-    const normalizedRequestedFamily = normalizeChatFamily(requestedFamilyParam);
+    if (availableChatFamilies.length === 0) {
+      if (chatFamily !== null) {
+        setChatFamily(null);
+      }
+      return;
+    }
+
+    const normalizedRequestedFamily = normalizeChatFamilySelection(requestedFamilyParam, availableChatFamilies, defaultChatFamily);
 
     if (chatFamily !== normalizedRequestedFamily) {
       setChatFamily(normalizedRequestedFamily);
@@ -1112,7 +1075,7 @@ export default function ChatPageClient({ includeDebug }) {
     }
 
     const nextSearchParams = new URLSearchParams(searchParams.toString());
-    setChatFamilySearchParam(nextSearchParams, chatFamily);
+    setChatFamilySearchParam(nextSearchParams, chatFamily, availableChatFamilies, defaultChatFamily);
     const currentQueryString = searchParams.toString();
     const nextQueryString = nextSearchParams.toString();
 
@@ -1121,7 +1084,7 @@ export default function ChatPageClient({ includeDebug }) {
     }
 
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
-  }, [chatFamily, pathname, requestedFamilyParam, router, searchParams]);
+  }, [availableChatFamilies, chatFamily, defaultChatFamily, pathname, requestedFamilyParam, router, searchParams]);
 
   useEffect(() => {
     if (!isVisibilityReady) {
@@ -1321,7 +1284,7 @@ export default function ChatPageClient({ includeDebug }) {
       message,
     );
 
-    if (!message || isSubmitting || isPromptInOptionMode || !isVisibilityReady) {
+    if (!message || isSubmitting || isPromptInOptionMode || !isVisibilityReady || !chatFamily) {
       return;
     }
 
@@ -1539,21 +1502,21 @@ export default function ChatPageClient({ includeDebug }) {
     }
   }
 
-  async function handlePublishAgentFamily(family) {
+  async function handleAgentFamilyAction(family, action, confirmationMessage, formatMessage) {
     const normalizedFamily = String(family?.family ?? "").trim();
     const familyLabel = String(family?.label ?? normalizedFamily).trim();
 
-    if (!normalizedFamily || !family?.supportsPromptAgentPublishing) {
+    if (!normalizedFamily) {
       return;
     }
 
-    const confirmed = window.confirm(`${buildFamilyPublishLabel(family)} prompt agent for "${familyLabel}"?`);
+    const confirmed = window.confirm(confirmationMessage || buildFamilyActionConfirmationMessage(family, action));
 
     if (!confirmed) {
       return;
     }
 
-    const pendingKey = `publish:${normalizedFamily}`;
+    const pendingKey = `${action}:${normalizedFamily}`;
     setAgentFamilyPending(pendingKey, true);
     setAgentFamiliesStatusMessage("");
     setAgentFamiliesError("");
@@ -1566,19 +1529,19 @@ export default function ChatPageClient({ includeDebug }) {
         },
         body: JSON.stringify({
           family: normalizedFamily,
-          action: "publish",
+          action,
         }),
       });
       const payload = await response.json();
 
       if (!response.ok) {
-        throw new Error(payload?.error || `Prompt agent for ${familyLabel} could not be published`);
+        throw new Error(payload?.error || `Action ${action} could not be completed for ${familyLabel}`);
       }
 
-      setAgentFamiliesStatusMessage(formatFamilyPublishMessage(family, payload?.publish));
-      await loadAgentFamilies();
+      setAgentFamiliesStatusMessage((formatMessage || formatFamilyActionMessage)(family, action, payload?.operation));
+      await Promise.all([loadAgentFamilies(), loadAvailableFamilies()]);
     } catch (error) {
-      setAgentFamiliesError(getErrorMessage(error, `Prompt agent for ${familyLabel} could not be published`));
+      setAgentFamiliesError(getErrorMessage(error, `Action ${action} could not be completed for ${familyLabel}`));
     } finally {
       setAgentFamilyPending(pendingKey, false);
     }
@@ -1605,12 +1568,16 @@ export default function ChatPageClient({ includeDebug }) {
               </label>
               <label className={styles.toolbarLabel}>
                 <select
-                  value={chatFamily}
+                  value={chatFamily ?? ""}
                   onChange={handleChatFamilyChange}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || availableChatFamilies.length === 0}
                 >
-                  <option value="treeGrounding">treeGrounding</option>
-                  <option value="investment">investment</option>
+                  {availableChatFamilies.length === 0 ? (
+                    <option value="" disabled>No families available</option>
+                  ) : null}
+                  {availableChatFamilies.map((family) => (
+                    <option key={family.family} value={family.family}>{family.label || family.family}</option>
+                  ))}
                 </select>
               </label>
               {isPromptInOptionMode ? null : (
@@ -1618,7 +1585,7 @@ export default function ChatPageClient({ includeDebug }) {
                   type="submit"
                   form="chat-prompt-form"
                   className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
-                  disabled={isSubmitting || !prompt.trim() || !isVisibilityReady}
+                  disabled={isSubmitting || !prompt.trim() || !isVisibilityReady || !chatFamily}
                 >
                   {isSubmitting ? "Thinking..." : "Send"}
                 </button>
@@ -1655,9 +1622,10 @@ export default function ChatPageClient({ includeDebug }) {
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
                     onKeyDown={handlePromptKeyDown}
-                    placeholder={buildChatPlaceholder()}
+                    placeholder={buildChatPlaceholder(availableChatFamilies)}
                     className={styles.textArea}
                     rows={4}
+                    disabled={availableChatFamilies.length === 0}
                   />
                 )}
               </label>
@@ -1795,121 +1763,14 @@ export default function ChatPageClient({ includeDebug }) {
           </div>
 
           {isAdmin ? (
-            <section className={`appPanelShell ${styles.agentManagementPanel}`}>
-              <div className={`appPanelTopBar ${styles.panelHeader}`}>
-                <div>
-                  <p className="appEyebrow">Agent Family Publishing</p>
-                </div>
-              </div>
-              <div className={styles.agentManagementBody}>
-                <p className={styles.agentManagementIntro}>
-                  View registered agent families and publish or re-publish Azure prompt agents for supported families.
-                </p>
-
-                {agentFamiliesStatusMessage ? <p className={styles.agentManagementStatus}>{agentFamiliesStatusMessage}</p> : null}
-                {agentFamiliesError ? <p className={styles.agentManagementError}>{agentFamiliesError}</p> : null}
-
-                {isAgentFamiliesLoading ? (
-                  <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
-                    <h3>Loading agent families</h3>
-                    <p>Checking prompt agent publishing status for the registered families.</p>
-                  </div>
-                ) : agentFamilies.length === 0 ? (
-                  <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
-                    <h3>No families available</h3>
-                    <p>No agent families were returned for management.</p>
-                  </div>
-                ) : (
-                  <div className={styles.agentFamilyList}>
-                    {agentFamilies.map((family) => {
-                      const pendingKey = `publish:${family.family}`;
-                      const isPending = Boolean(agentFamilyPendingItems[pendingKey]);
-                      const definedTools = getFamilyDefinedTools(family);
-
-                      return (
-                        <article key={family.family} className={styles.agentFamilyCard}>
-                          <div className={styles.agentFamilyHeader}>
-                            <div className={styles.agentFamilyHeading}>
-                              <h3 className={styles.agentFamilyTitle}>{family.label || family.family}</h3>
-                              {family.description ? <p className={styles.agentFamilyDescription}>{family.description}</p> : null}
-                            </div>
-                            <span className={`${styles.agentFamilyStatusBadge} ${getFamilyStatusClassName(styles, family.promptAgentStatus)}`}>
-                              {formatFamilyPromptAgentStatus(family.promptAgentStatus)}
-                            </span>
-                          </div>
-
-                          <div className={styles.agentFamilyMetaList}>
-                            <p className={styles.agentFamilyMetaItem}>
-                              <span className={styles.agentFamilyMetaLabel}>Family</span>
-                              <span className={styles.agentFamilyMetaValue}>{family.family}</span>
-                            </p>
-                            <p className={styles.agentFamilyMetaItem}>
-                              <span className={styles.agentFamilyMetaLabel}>Prompt agent</span>
-                              <span className={styles.agentFamilyMetaValue}>{family.promptAgentName || "Not set"}</span>
-                            </p>
-                            <p className={styles.agentFamilyMetaItem}>
-                              <span className={styles.agentFamilyMetaLabel}>Last published</span>
-                              <span className={styles.agentFamilyMetaValue}>{formatFamilyLastPublished(family)}</span>
-                            </p>
-                            <p className={styles.agentFamilyMetaItem}>
-                              <span className={styles.agentFamilyMetaLabel}>Prompt agent publishing</span>
-                              <span className={styles.agentFamilyMetaValue}>{family.supportsPromptAgentPublishing ? "Supported" : "Not supported yet"}</span>
-                            </p>
-                          </div>
-
-                          <div className={styles.agentFamilyMetaItemStack}>
-                            <div className={styles.agentFamilyMetaItem}>
-                              <span className={styles.agentFamilyMetaLabel}>Defined tools</span>
-                              <span className={styles.agentFamilyMetaValue}>{definedTools.length}</span>
-                            </div>
-
-                            {definedTools.length > 0 ? (
-                              <div className={styles.agentFamilyToolsList}>
-                                {definedTools.map((tool) => (
-                                  <article
-                                    key={`${family.family}-${tool.name || tool.description}`}
-                                    className={styles.agentFamilyToolCard}
-                                  >
-                                    <div className={styles.agentFamilyToolHeader}>
-                                      <p className={styles.agentFamilyToolName}>{tool.name || "Unnamed tool"}</p>
-                                      {tool.sourceLabel ? (
-                                        <span className={styles.agentFamilyToolSource}>{tool.sourceLabel}</span>
-                                      ) : null}
-                                    </div>
-                                    {tool.description ? (
-                                      <p className={styles.agentFamilyToolDescription}>{tool.description}</p>
-                                    ) : null}
-                                  </article>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className={styles.agentFamilyToolsEmpty}>No tool definitions are available for this family.</p>
-                            )}
-                          </div>
-
-                          {family.statusError ? <p className={styles.agentFamilyRowError}>{family.statusError}</p> : null}
-
-                          <div className={styles.agentFamilyActions}>
-                            {family.supportsPromptAgentPublishing ? (
-                              <button
-                                type="button"
-                                className="appCompactActionButton appCompactActionButtonNeutral"
-                                onClick={() => handlePublishAgentFamily(family)}
-                                disabled={isPending || isAgentFamiliesLoading}
-                              >
-                                {isPending ? "Publishing..." : buildFamilyPublishLabel(family)}
-                              </button>
-                            ) : (
-                              <span className={styles.agentFamilyUnsupportedNote}>Prompt agent publishing is not supported for this family yet.</span>
-                            )}
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </section>
+            <AgentFamilyPublishingPanel
+              agentFamilies={agentFamilies}
+              isLoading={isAgentFamiliesLoading}
+              statusMessage={agentFamiliesStatusMessage}
+              errorMessage={agentFamiliesError}
+              pendingItems={agentFamilyPendingItems}
+              onAction={handleAgentFamilyAction}
+            />
           ) : null}
         </div>
 

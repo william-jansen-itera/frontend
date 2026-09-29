@@ -190,6 +190,7 @@ export async function runAgentFamilyExecution({
           durationMs: getElapsedDurationMs(toolStartedAtMs),
           parsedArguments: parsedArguments,
           searchResult: toolDebug?.searchResult ?? null,
+          toolDebug: toolDebug,
           toolMetaData: getToolOutputMetaData(output),
           toolOutput: getAgentToolResultData(output),
           agentToolInput: functionCallOutput,
