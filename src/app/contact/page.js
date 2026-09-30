@@ -163,7 +163,7 @@ export default function ContactPage() {
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
           <p className="appEyebrow">Contact</p>
-          <h1 className={`${styles.title} appPageTitle`}>Tell us the domain you want to unblock</h1>
+          <h1 className={`${styles.title} appPageTitle`}>Tell us the knowledge domain you want to unblock</h1>
         </div>
       </section>
 
@@ -171,7 +171,7 @@ export default function ContactPage() {
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>When to reach out</p>
           <p className={styles.cardText}>
-            Use this if a domain is blocking the work and you want to see whether MDS fits. Say what the domain is. If you want, say how that knowledge is structured today.
+            Use this if a knowledge domain is hard to manage or blocking the work and you want to see whether MDS fits. Say what the domain is. If you want, say how that knowledge is structured today.
           </p>
         </article>
 
