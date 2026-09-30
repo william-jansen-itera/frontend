@@ -165,7 +165,7 @@ export default function ContactPage() {
           <p className="appEyebrow">Contact</p>
           <h1 className={`${styles.title} appPageTitle`}>Tell us the knowledge domain you want to unblock</h1>
           <p className={styles.cardText}>
-            The agent searches your material for grounding, and assembles more by orchestrating your applications when the context needs them and using their output.
+            Agent searches your material for grounding, and assembles more by orchestrating your applications when the context needs them, using their output.
           </p>
         </div>
       </section>
