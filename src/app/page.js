@@ -2,6 +2,7 @@
 import PageVisitTracker from './PageVisitTracker';
 import Link from "next/link";
 import { useEffect, useState } from 'react';
+import { useAuth } from './useAuth';
 import styles from './page.module.css';
 
 const DEFAULT_STATUS = {
@@ -35,13 +36,20 @@ async function callHelloNextApi(name) {
 }
 
 export default function Home() {
+  const { user, isAuthResolved } = useAuth();
   const [applicationStatus, setApplicationStatus] = useState(DEFAULT_STATUS);
+  const isSignedIn = Boolean(user);
 
   useEffect(() => {
+    if (!isAuthResolved || !isSignedIn) {
+      setApplicationStatus(DEFAULT_STATUS);
+      return;
+    }
+
     callHelloNextApi('from nextapi').then(result => {
       setApplicationStatus(result);
     });
-  }, []);
+  }, [isAuthResolved, isSignedIn]);
 
   return (
     <main className={`${styles.pageShell} appPageShell`}>
@@ -60,12 +68,14 @@ export default function Home() {
             <p className={styles.statusLabel}>How it works</p>
             <p className={styles.statusValue}>Grow the tree with Notes. Inspect it with Search. Talk to it with Agent — it speaks from the tree, and shows how the answer is grounded.</p>
           </div>
-          <div className={styles.statusCard}>
-            <p className={styles.statusLabel}>System status</p>
-            <p className={`${styles.statusValue} ${styles[`statusValue${applicationStatus.level.charAt(0).toUpperCase()}${applicationStatus.level.slice(1)}`] || ''}`.trim()}>
-              {applicationStatus.message || 'Checking...'}
-            </p>
-          </div>
+          {isSignedIn ? (
+            <div className={styles.statusCard}>
+              <p className={styles.statusLabel}>Service status</p>
+              <p className={`${styles.statusValue} ${styles[`statusValue${applicationStatus.level.charAt(0).toUpperCase()}${applicationStatus.level.slice(1)}`] || ''}`.trim()}>
+                {applicationStatus.message || 'Checking...'}
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
 
