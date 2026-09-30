@@ -23,12 +23,26 @@ export const STOCK_PRICE_DATA_ROOT_PATH = Object.freeze([
   'Data',
 ]);
 
+export const PORTFOLIO_HOLDINGS_PATH = Object.freeze([
+  'Portfolio',
+  'Holdings',
+  'Stocks',
+  'List',
+]);
+
 export const VOLATILITY_GENERAL_ENGINE_FILE_NAME = 'engine-settings.yaml';
 export const VOLATILITY_TICKER_ENGINE_FILE_NAME = 'ticker-settings.yaml';
 export const VOLATILITY_ANALYSIS_LOG_FILE_NAME = 'closing-price-recommendations.log';
 export const VOLATILITY_ANALYSIS_STATE_FILE_NAME = 'closing-price-recommendations.json';
 export const VOLATILITY_CONFIG_EXTENSION = '.yaml';
 export const STOCK_PRICE_CSV_FILE_NAME = 'closing-prices.csv';
+export const PORTFOLIO_HOLDINGS_CSV_FILE_NAME = 'Portfolio stock holdings.csv';
+export const PORTFOLIO_HOLDINGS_TICKER_HEADER = 'ticker';
+export const PORTFOLIO_HOLDINGS_SHARE_COUNT_HEADER = 'share count';
+export const PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER = 'closing price';
+export const PORTFOLIO_HOLDINGS_VALUE_HEADER = 'value';
+export const PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER = 'value DKK';
+export const PORTFOLIO_HOLDINGS_PERCENTAGE_HEADER = 'percentage';
 export const DEFAULT_MAX_HISTORY_DAYS = 365;
 
 export function getRequiredInvestmentPersistenceTreeId() {
@@ -52,9 +66,17 @@ export function buildVolatilityTickerConfigPath(ticker) {
 }
 
 export function buildVolatilityAnalysisPath(ticker) {
-  return [...VOLATILITY_ANALYSIS_ROOT_PATH, String(ticker ?? '').trim().toUpperCase(), 'Closing price recommendations'];
+  return [
+    ...VOLATILITY_ANALYSIS_ROOT_PATH,
+    'Closing price recommendations',
+    String(ticker ?? '').trim().toUpperCase(),
+  ];
 }
 
 export function buildStockPricePath(ticker) {
-  return [...STOCK_PRICE_DATA_ROOT_PATH, String(ticker ?? '').trim().toUpperCase(), 'Closing prices'];
+  return [...STOCK_PRICE_DATA_ROOT_PATH, 'Closing prices', String(ticker ?? '').trim().toUpperCase()];
+}
+
+export function buildPortfolioHoldingsPath() {
+  return [...PORTFOLIO_HOLDINGS_PATH];
 }

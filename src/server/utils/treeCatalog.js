@@ -14,6 +14,7 @@ const DEFAULT_TREE_MAX_DEPTH = '3';
 const TREE_VISIBILITY_PUBLIC = 'public';
 const TREE_VISIBILITY_PRIVATE = 'private';
 const TREE_VISIBILITY_BOTH = 'both';
+export const PERSONAL_CACHE_TREE_NAME = 'personal cache';
 const REVIEW_STATUS_DRAFT = 'draft';
 const REVIEW_STATUS_SUBMITTED = 'submitted';
 const REVIEW_STATUS_APPROVED = 'approved';
@@ -599,6 +600,29 @@ export async function getTreeForPopulation(treeId, options = {}) {
       ownerUserDetails: scopedTree.ownerUserDetails ?? null,
       ownerDisplayName: scopedTree.ownerDisplayName ?? null,
     };
+  });
+}
+
+export async function ensurePersonalCacheTree(principal) {
+  const ownerObjectId = getPrincipalOwnerObjectId(principal);
+
+  if (!ownerObjectId) {
+    throw new Error('An authenticated principal is required to access personal cache.');
+  }
+
+  const matchingTree = (await getTreeList({
+    principal,
+    visibility: TREE_VISIBILITY_PRIVATE,
+    enforceAccess: true,
+  })).find((tree) => String(tree?.displayName ?? '').trim().toLowerCase() === PERSONAL_CACHE_TREE_NAME);
+
+  if (matchingTree) {
+    return matchingTree;
+  }
+
+  return createTree({
+    name: PERSONAL_CACHE_TREE_NAME,
+    principal,
   });
 }
 

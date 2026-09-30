@@ -71,7 +71,13 @@ async function queryConfiguredTree(treeId, transaction = null) {
   return result.recordset[0] ?? null;
 }
 
-export async function assertConfiguredInvestmentTree(treeId) {
+export async function assertConfiguredInvestmentTree(treeId, options = {}) {
+  const {
+    allowPrivate = false,
+    allowDescription = true,
+    allowPublishedDescription = true,
+  } = options;
+
   return withSqlConnection(async () => {
     const configuredTree = await queryConfiguredTree(treeId);
 
@@ -79,15 +85,15 @@ export async function assertConfiguredInvestmentTree(treeId) {
       throw createStatusError(`Configured investment tree ${treeId} was not found in the current application scope.`, 500);
     }
 
-    if (configuredTree.isPrivate) {
+    if (!allowPrivate && configuredTree.isPrivate) {
       throw createStatusError(`Configured investment tree ${treeId} must be public.`, 500);
     }
 
-    if (String(configuredTree.description ?? '').trim()) {
+    if (!allowDescription && String(configuredTree.description ?? '').trim()) {
       throw createStatusError(`Configured investment tree ${treeId} must not have a description.`, 500);
     }
 
-    if (configuredTree.isDescriptionPublished) {
+    if (!allowPublishedDescription && configuredTree.isDescriptionPublished) {
       throw createStatusError(`Configured investment tree ${treeId} must not be published to tree grounding.`, 500);
     }
 
@@ -288,7 +294,7 @@ export async function findInvestmentTreePathNode({ treeId, pathSegments, transac
   return resolvedNodes?.[resolvedNodes.length - 1] ?? null;
 }
 
-export async function getInvestmentRepositoryCitation({ treeId, pathSegments, fileName }) {
+export async function getInvestmentRepositoryCitation({ treeId, pathSegments, fileName, treeOptions = null }) {
   return withSqlConnection(async () => {
     const configuredTree = await queryConfiguredTree(treeId);
 
@@ -317,6 +323,7 @@ export async function getInvestmentRepositoryCitation({ treeId, pathSegments, fi
       title: leafNode.text,
       breadcrumb: resolvedNodes.map((node) => String(node.text ?? '').trim()).filter(Boolean).join(' > '),
       nodeIdPath: resolvedNodes.map((node) => String(node.id ?? '').trim()).filter(Boolean).join('/'),
+      visibility: configuredTree.isPrivate ? 'private' : 'public',
       treeDisplayName: configuredTree.displayName ?? null,
       matchSummary: matchingAttachment.fileName ?? null,
       attachmentFileNames: matchingAttachment.fileName ? [matchingAttachment.fileName] : [],
@@ -324,9 +331,9 @@ export async function getInvestmentRepositoryCitation({ treeId, pathSegments, fi
   });
 }
 
-export async function ensureInvestmentTreePath({ treeId, pathSegments }) {
+export async function ensureInvestmentTreePath({ treeId, pathSegments, treeOptions = null }) {
   return withSqlConnection(async () => {
-    await assertConfiguredInvestmentTree(treeId);
+    await assertConfiguredInvestmentTree(treeId, treeOptions ?? undefined);
     const normalizedPathSegments = normalizePathSegments(pathSegments);
     const transaction = new sql.Transaction();
 
@@ -401,9 +408,9 @@ async function listActiveNodeAttachments({ treeId, nodeId, transaction = null })
   return result.recordset;
 }
 
-export async function listInvestmentLeafAttachments({ treeId, pathSegments }) {
+export async function listInvestmentLeafAttachments({ treeId, pathSegments, treeOptions = null }) {
   return withSqlConnection(async () => {
-    await assertConfiguredInvestmentTree(treeId);
+    await assertConfiguredInvestmentTree(treeId, treeOptions ?? undefined);
     const pathNode = await findInvestmentTreePathNode({ treeId, pathSegments });
 
     if (!pathNode) {
@@ -414,9 +421,9 @@ export async function listInvestmentLeafAttachments({ treeId, pathSegments }) {
   });
 }
 
-export async function readSingleInvestmentTextAttachmentByExtension({ treeId, pathSegments, extension, requiredLabel }) {
+export async function readSingleInvestmentTextAttachmentByExtension({ treeId, pathSegments, extension, requiredLabel, treeOptions = null }) {
   return withSqlConnection(async () => {
-    await assertConfiguredInvestmentTree(treeId);
+    await assertConfiguredInvestmentTree(treeId, treeOptions ?? undefined);
     const pathNode = await findInvestmentTreePathNode({ treeId, pathSegments });
 
     if (!pathNode) {
@@ -445,9 +452,9 @@ export async function readSingleInvestmentTextAttachmentByExtension({ treeId, pa
   });
 }
 
-export async function readSingleInvestmentTextAttachmentByFileName({ treeId, pathSegments, fileName }) {
+export async function readSingleInvestmentTextAttachmentByFileName({ treeId, pathSegments, fileName, treeOptions = null }) {
   return withSqlConnection(async () => {
-    await assertConfiguredInvestmentTree(treeId);
+    await assertConfiguredInvestmentTree(treeId, treeOptions ?? undefined);
     const pathNode = await findInvestmentTreePathNode({ treeId, pathSegments });
 
     if (!pathNode) {
@@ -561,10 +568,11 @@ export async function replaceInvestmentLeafAttachment({
   contentType,
   content,
   updatedBy = null,
+  treeOptions = null,
 }) {
   return withSqlConnection(async () => {
-    await assertConfiguredInvestmentTree(treeId);
-    const leafNode = await ensureInvestmentTreePath({ treeId, pathSegments });
+    await assertConfiguredInvestmentTree(treeId, treeOptions ?? undefined);
+    const leafNode = await ensureInvestmentTreePath({ treeId, pathSegments, treeOptions });
     const attachments = await listActiveNodeAttachments({ treeId, nodeId: leafNode.id });
     const replacedAttachments = attachments.filter((attachment) => String(attachment.fileName ?? '').trim().toLowerCase() === String(fileName ?? '').trim().toLowerCase());
     const replacementFile = buildVirtualFile(fileName, contentType, Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'utf8'));

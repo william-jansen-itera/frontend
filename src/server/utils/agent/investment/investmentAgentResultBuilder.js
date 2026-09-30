@@ -12,6 +12,8 @@ import { buildAgentFamilyResult } from '@/server/utils/agent/agentFamilyResult';
 import { getAgentToolResultData } from '@/server/utils/agent/agentToolResult';
 import { getRequiredFoundryConfig } from '@/server/utils/foundryAgentClient';
 import {
+  buildPortfolioHoldingsPath,
+  PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
   buildStockPricePath,
   buildVolatilityAnalysisPath,
   getRequiredInvestmentPersistenceTreeId,
@@ -28,7 +30,14 @@ import {
   GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
 } from '@/server/utils/agent/investment/tools/getBuySellVolatilityRecommendationTool';
 import { GET_STOCK_PRICE_TOOL } from '@/server/utils/agent/investment/tools/getStockPriceTool';
+import { UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL } from '@/server/utils/agent/investment/tools/updatePortfolioHoldingsTool';
 import { GET_VOLATILITY_EVENTS_TOOL } from '@/server/utils/agent/investment/tools/reviewVolatilityEventsTool';
+
+const PERSONAL_CACHE_TREE_OPTIONS = {
+  allowPrivate: true,
+  allowDescription: true,
+  allowPublishedDescription: true,
+};
 
 function dedupeCitations(citations) {
   const citationsByKey = new Map();
@@ -51,6 +60,32 @@ function dedupeCitations(citations) {
 async function buildRepositoryCitationEntry(toolName, result) {
   const normalizedResult = getAgentToolResultData(result);
   const normalizedTicker = String(normalizedResult?.ticker ?? '').trim().toUpperCase();
+
+  if (toolName === UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL) {
+    const treeId = Number.parseInt(String(normalizedResult?.treeId ?? ''), 10);
+
+    if (!Number.isInteger(treeId) || treeId <= 0) {
+      return null;
+    }
+
+    try {
+      const citation = await getInvestmentRepositoryCitation({
+        treeId,
+        pathSegments: buildPortfolioHoldingsPath(),
+        fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
+        treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
+      });
+
+      return citation
+        ? {
+          toolName,
+          ...citation,
+        }
+        : null;
+    } catch {
+      return null;
+    }
+  }
 
   if (!normalizedTicker) {
     return null;
@@ -117,6 +152,26 @@ function getLatestRecommendation(toolInvocations) {
   return getAgentToolResultData(latestRecommendation?.output) ?? null;
 }
 
+function appendPortfolioFileLink(answer, finalToolInvocations) {
+  const latestPortfolioUpdate = [...(finalToolInvocations ?? [])]
+    .reverse()
+    .find((invocation) => invocation?.toolName === UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL);
+  const latestPortfolioData = getAgentToolResultData(latestPortfolioUpdate?.output);
+  const fileLink = String(latestPortfolioData?.fileLink ?? '').trim();
+  const fileName = String(latestPortfolioData?.fileName ?? '').trim() || PORTFOLIO_HOLDINGS_CSV_FILE_NAME;
+  const normalizedAnswer = String(answer ?? '').trim();
+
+  if (!fileLink) {
+    return answer;
+  }
+
+  const linkMarkdown = `[Open ${fileName}](${fileLink})`;
+
+  return normalizedAnswer.includes(fileLink) || normalizedAnswer.includes(linkMarkdown)
+    ? answer
+    : `${normalizedAnswer}\n\n${linkMarkdown}`.trim();
+}
+
 export async function buildInvestmentFamilyResult({
   finalResponse,
   finalToolInvocations,
@@ -144,6 +199,7 @@ export async function buildInvestmentFamilyResult({
     turnType,
   } = turnClassification;
   const recommendation = getLatestRecommendation(finalToolInvocations);
+  const answerWithFileLink = appendPortfolioFileLink(answer, finalToolInvocations);
   const citations = await captureTimingEntry(
     debug?.timings?.phases?.citationAssembly ?? null,
     async () => buildInvestmentCitations(finalToolInvocations),
@@ -159,14 +215,14 @@ export async function buildInvestmentFamilyResult({
     debug.agentOutput = buildAgentOutputDebug({
       agent: buildInvestmentAgentDescriptor(),
       response: finalResponse,
-      answer,
+      answer: answerWithFileLink,
     });
   }
 
   const familyResult = buildAgentFamilyResult({
     sourceToolFamily: INVESTMENT_FAMILY,
     turnType,
-    answer,
+    answer: answerWithFileLink,
     toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
     citations,
     followUpOptions,

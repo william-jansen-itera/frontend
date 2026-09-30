@@ -348,6 +348,7 @@ export function buildGetBuySellVolatilityRecommendationHandler({ includeDebug = 
         toolName: GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
         toolResultType: 'recommendation',
         data: parsedStoredState,
+        supportsCitations: true,
         includeDebug,
       });
     }
@@ -417,6 +418,7 @@ export function buildGetBuySellVolatilityRecommendationHandler({ includeDebug = 
       toolName: GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
       toolResultType: 'recommendation',
       data: output,
+      supportsCitations: true,
       includeDebug,
     });
   };

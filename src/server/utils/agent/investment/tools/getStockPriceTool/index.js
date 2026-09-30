@@ -93,6 +93,7 @@ export function buildGetStockPriceHandler({ includeDebug = false, updatedBy = nu
       toolName: GET_STOCK_PRICE_TOOL,
       toolResultType: 'price_data',
       data: output,
+      supportsCitations: true,
       includeDebug,
       debug: includeDebug ? {
         cacheStatus: stockPriceResult.cacheStatus,

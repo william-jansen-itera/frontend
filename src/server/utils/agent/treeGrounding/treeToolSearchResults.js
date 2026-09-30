@@ -77,6 +77,7 @@ export function buildAgentSearchResult(rawResult) {
       title: entry.title,
       breadcrumb: entry.breadcrumb,
       nodeIdPath: entry.nodeIdPath,
+      visibility: String(entry?.visibility ?? '').trim() || (entry?.isPrivate === true ? 'private' : entry?.isPrivate === false ? 'public' : null),
       treeDisplayName: entry.treeDisplayName,
       matchSummary: entry.nodeHighlight
         || entry.attachmentSummaries?.find((attachment) => normalizeWhitespace(attachment?.summary))?.summary

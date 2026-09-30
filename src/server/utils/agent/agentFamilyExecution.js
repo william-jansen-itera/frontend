@@ -95,6 +95,7 @@ export async function runAgentFamilyExecution({
   responseConfig,
   initialInput,
   handlerMap,
+  handlerContext = null,
   debug = null,
   includeDebug = false,
 }) {
@@ -156,7 +157,7 @@ export async function runAgentFamilyExecution({
             error: `No handler is registered for tool ${toolName}.`,
           };
         } else {
-          const handlerResult = normalizeToolHandlerResult(await handler(parsedArguments), includeDebug);
+          const handlerResult = normalizeToolHandlerResult(await handler(parsedArguments, handlerContext), includeDebug);
           output = handlerResult.toolOutput;
           toolDebug = handlerResult.debug;
         }

@@ -313,11 +313,15 @@ function getCitationBreadcrumbItems(citation, visibility = "public") {
   const pathNodeIds = nodeIdPath
     ? nodeIdPath.split("/").map((part) => part.trim()).filter(Boolean)
     : [];
+  const citationVisibility = String(citation?.visibility ?? "").trim().toLowerCase();
+  const resolvedVisibility = PUBLIC_PRIVATE_VISIBILITY_VALUES.includes(citationVisibility)
+    ? citationVisibility
+    : visibility;
   const buildNotesHref = (nodeId) => {
     const notesSearchParams = new URLSearchParams();
     notesSearchParams.set("treeId", String(citation.treeId));
     notesSearchParams.set("nodeId", String(nodeId));
-    return buildVisibilityHref("/notes", notesSearchParams.toString(), visibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
+    return buildVisibilityHref("/notes", notesSearchParams.toString(), resolvedVisibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
   };
   const nodeHref = buildNotesHref(citation.nodeId);
 

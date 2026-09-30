@@ -826,6 +826,7 @@ export default function AdminPage() {
             </div>
           </div>
         </article>
+
       </section>
     </main>
   );

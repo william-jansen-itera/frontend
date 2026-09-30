@@ -29,6 +29,7 @@ function buildCitationEntries(result, toolName) {
     title: entry.title,
     breadcrumb: entry.breadcrumb,
     nodeIdPath: entry.nodeIdPath,
+    visibility: entry.visibility ?? null,
     treeDisplayName: entry.treeDisplayName,
     matchSummary: entry.matchSummary ?? null,
     attachmentFileNames: entry.attachmentFileNames ?? [],

@@ -398,6 +398,7 @@ export function buildReviewVolatilityEventsHandler({ includeDebug = false } = {}
       toolName: GET_VOLATILITY_EVENTS_TOOL,
       toolResultType: 'event_review',
       data: output,
+      supportsCitations: true,
       includeDebug,
     });
   };

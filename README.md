@@ -299,6 +299,40 @@ The agent runtime then decides:
 
 In other words, tool-choice behavior is not hardcoded in the application, but it is strongly shaped by the tool definitions, instructions, and history that the application sends to the agent.
 
+### Tool input schema vs. output schema
+
+Tool definitions in this codebase usually contain two different schema concepts:
+
+- an input schema under the tool definition's `parameters`
+- a local output schema constant that documents the expected shape of the handler result
+
+These do not currently behave the same way.
+
+The input schema is active. It is part of the function/tool definition sent to the model runtime, so it directly affects what arguments the model is allowed or expected to send when it calls the tool.
+
+The output schema is currently passive. It documents the intended shape of the tool-specific `data` payload returned by a handler, but the shared tool-result wrapper does not currently validate handler output against that schema before sending the function result back to the model.
+
+In practice this means:
+
+- if the input schema is wrong, tool calls can fail at runtime
+- if the output schema is wrong or stale, the code will not automatically reject it unless downstream logic breaks when it reads the returned fields
+
+So output schemas are still useful as code contracts and maintenance documentation, but they are not yet active runtime validators in the current chat execution path.
+
+### Citation behavior
+
+Citations are currently assembled by the server after the tool loop finishes. The model does not pick a single citation to display.
+
+Instead, each family result builder examines the final tool invocations for the turn, derives any citation entries it knows how to map from those tool results, and then deduplicates the combined set before returning the final chat response.
+
+In practice this means:
+
+- if several tool calls in the same turn map to distinct citable artifacts, the response can contain several citations
+- if multiple tool calls point to the same underlying tree/node/file, the server deduplicates those citations before returning them
+- citation-building logic lives in the family-specific result builders rather than in the model itself
+
+The `supportsCitations` tool-result metadata flag should be treated as per-tool capability metadata, mainly for debug and UI inspection. It is not the primary source of truth for building citations. The source of truth remains the result-builder logic that knows how to translate particular tool outputs into citation entries.
+
 ### Agent execution modes
 
 The chat architecture currently supports two execution modes for agent families.

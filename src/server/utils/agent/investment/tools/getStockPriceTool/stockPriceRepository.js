@@ -164,7 +164,9 @@ async function loadCachedPriceHistory(treeId, ticker) {
   }
 
   const downloadedAttachment = await downloadNodeAttachmentBlob(matchingAttachment.blobName);
-  return parseCsv(downloadedAttachment.content.toString('utf8'));
+  const primaryHistory = parseCsv(downloadedAttachment.content.toString('utf8'));
+
+  return primaryHistory ?? [];
 }
 
 export async function loadStoredPriceHistory(ticker) {
@@ -295,7 +297,9 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
     currency: 'USD',
     priceHistory: sliceRecentHistory(mergedHistory, normalizedDays),
     cacheStatus: existingHistory.length > 0
-      ? (didUpdateStoredCsv ? 'refreshed' : 'validated')
+      ? (didUpdateStoredCsv
+        ? 'refreshed'
+        : 'validated')
       : 'created',
     providerRequests,
   };

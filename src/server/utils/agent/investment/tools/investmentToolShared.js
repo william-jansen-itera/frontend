@@ -6,7 +6,7 @@ export function normalizeTicker(value) {
   return String(value ?? '').trim().toUpperCase();
 }
 
-export function buildInvestmentToolResult({ toolName, toolResultType, data, includeDebug = false, debug = null }) {
+export function buildInvestmentToolResult({ toolName, toolResultType, data, supportsCitations = false, includeDebug = false, debug = null }) {
   return buildAgentToolResult({
     sourceToolFamily: INVESTMENT_FAMILY,
     toolName,
@@ -24,7 +24,7 @@ export function buildInvestmentToolResult({ toolName, toolResultType, data, incl
             : Array.isArray(data?.signals)
           ? data.signals.length
           : 1,
-      supportsCitations: false,
+      supportsCitations: Boolean(supportsCitations),
       generatedAt: new Date().toISOString(),
     },
     ...(includeDebug ? { debug } : {}),

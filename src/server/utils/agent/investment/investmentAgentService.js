@@ -1,4 +1,5 @@
 import { getProjectClient } from '@/server/utils/foundryAgentClient';
+import { buildAgentPersonalCacheContext } from '@/server/utils/agent/agentPersonalCache';
 import { buildInitialAgentInput } from '@/server/utils/agent/agentConversationInput';
 import {
   attachDebugToError,
@@ -59,7 +60,12 @@ export async function invokeInvestmentAgent({
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const agent = await getPublishedInvestmentPromptAgent();
-  const { handlerMap, tools } = buildInvestmentRuntimeContext({ includeDebug });
+  const agentPersonalCacheContext = await buildAgentPersonalCacheContext(principal);
+  const { handlerMap, tools } = buildInvestmentRuntimeContext({
+    includeDebug,
+    updatedBy: agentPersonalCacheContext.updatedBy,
+    personalCacheTreeId: agentPersonalCacheContext.personalCacheTreeId,
+  });
   const normalizedHistory = normalizeHistory(history);
   const initialInput = buildInitialAgentInput({
     allowedToolInstruction: null,
@@ -90,6 +96,7 @@ export async function invokeInvestmentAgent({
       },
       initialInput,
       handlerMap,
+      handlerContext: agentPersonalCacheContext,
       debug,
       includeDebug,
     });

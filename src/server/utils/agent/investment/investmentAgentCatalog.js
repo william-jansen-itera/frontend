@@ -20,6 +20,11 @@ import {
   reviewVolatilityEventsToolDefinition,
   GET_VOLATILITY_EVENTS_TOOL,
 } from '@/server/utils/agent/investment/tools/reviewVolatilityEventsTool';
+import {
+  buildUpdatePortfolioHoldingsHandler,
+  updatePortfolioHoldingsToolDefinition,
+  UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL,
+} from '@/server/utils/agent/investment/tools/updatePortfolioHoldingsTool';
 
 export const INVESTMENT_FAMILY = 'investment';
 
@@ -60,6 +65,7 @@ function buildInvestmentToolDefinitions() {
     getStockPriceToolDefinition,
     getBuySellVolatilityRecommendationToolDefinition,
     reviewVolatilityEventsToolDefinition,
+    updatePortfolioHoldingsToolDefinition,
   ];
 }
 
@@ -184,12 +190,13 @@ export async function unpublishInvestmentPromptAgent() {
   };
 }
 
-function buildInvestmentHandlerMap({ includeDebug = false } = {}) {
+function buildInvestmentHandlerMap({ includeDebug = false, updatedBy = null, personalCacheTreeId = null } = {}) {
   const handlerMap = new Map();
 
-  handlerMap.set(GET_STOCK_PRICE_TOOL, buildGetStockPriceHandler({ includeDebug }));
-  handlerMap.set(GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL, buildGetBuySellVolatilityRecommendationHandler({ includeDebug }));
-  handlerMap.set(GET_VOLATILITY_EVENTS_TOOL, buildReviewVolatilityEventsHandler({ includeDebug }));
+  handlerMap.set(GET_STOCK_PRICE_TOOL, buildGetStockPriceHandler({ includeDebug, updatedBy, personalCacheTreeId }));
+  handlerMap.set(GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL, buildGetBuySellVolatilityRecommendationHandler({ includeDebug, updatedBy, personalCacheTreeId }));
+  handlerMap.set(GET_VOLATILITY_EVENTS_TOOL, buildReviewVolatilityEventsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
+  handlerMap.set(UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL, buildUpdatePortfolioHoldingsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
 
   return handlerMap;
 }
@@ -225,6 +232,7 @@ Field meanings:
 - finalState.mode: VOLATILITY means an episode is open; NEUTRAL means it is not
 - finalState.volatility: crashPeak, episodeLow, rotationsUsed, rerotationThreshold, rotationShares, rotationPrices
 Pass the priceHistory from the get_stock_price tool to this tool.
+If the latest close is still below rerotationThreshold and rotationsUsed equals maxRotations, say the episode is open and the next action is a re-rotation, not another buy rotation.
 
 ## get_volatility_events tool
 Use this tool for factual claims about volatility events.
@@ -248,13 +256,25 @@ If an event detail is a single pipe-delimited summary string, preserve the impor
 If returned events is empty, say no matching volatility events were found.
 When you answer an event request, end by asking whether the user wants to see events using a different filter, mentioning filter options.
 
-If the latest close is still below rerotationThreshold and rotationsUsed equals maxRotations, say the episode is open and the next action is a re-rotation, not another buy rotation.
+## update_portfolio_stock_holdings tool
+Use this tool when the user wants to create, add, refresh, or summarize personal portfolio holdings stored in personal cache.
+This tool operates on the fixed CSV file at Portfolio > Holdings > Stocks > List in the user personal cache.
+Use operation update_holdings only after you have the user ticker and share count pairs.
+If the user asked to add holdings but did not provide share counts, ask for both ticker and share count before using update_holdings.
+Use operation refresh_calculations when the user wants current closing price, value, percentage, or a portfolio summary from stored holdings.
+The tool returns the full current CSV dataset and a direct file link.
+When you answer from this tool, include the file link and summarize whether rows were added, updated, or recalculated.
 `.trim();
 }
 
 export function buildInvestmentRuntimeContext(options = {}) {
   return {
     tools: buildInvestmentToolDefinitions(),
-    handlerMap: buildInvestmentHandlerMap({ includeDebug: Boolean(options.includeDebug) }),
+    handlerMap: buildInvestmentHandlerMap({
+      includeDebug: Boolean(options.includeDebug),
+      updatedBy: options.updatedBy ?? null,
+      personalCacheTreeId: options.personalCacheTreeId ?? null,
+    }),
+    personalCacheTreeId: options.personalCacheTreeId ?? null,
   };
 }
