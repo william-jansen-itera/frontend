@@ -57,7 +57,24 @@ function normalizeIpAddress(value) {
     return null;
   }
 
-  return normalizedValue.startsWith('::ffff:') ? normalizedValue.slice(7) : normalizedValue;
+  const withoutIpv4MappedPrefix = normalizedValue.startsWith('::ffff:')
+    ? normalizedValue.slice(7)
+    : normalizedValue;
+
+  if (withoutIpv4MappedPrefix.startsWith('[')) {
+    const closingBracketIndex = withoutIpv4MappedPrefix.indexOf(']');
+    return closingBracketIndex > 0
+      ? withoutIpv4MappedPrefix.slice(1, closingBracketIndex)
+      : withoutIpv4MappedPrefix;
+  }
+
+  const ipv4WithPortMatch = withoutIpv4MappedPrefix.match(/^(\d{1,3}(?:\.\d{1,3}){3}):(\d+)$/);
+
+  if (ipv4WithPortMatch) {
+    return ipv4WithPortMatch[1];
+  }
+
+  return withoutIpv4MappedPrefix;
 }
 
 function getClientIpAddress(request) {
@@ -66,7 +83,7 @@ function getClientIpAddress(request) {
   if (forwardedFor) {
     const firstForwardedAddress = forwardedFor
       .split(',')
-      .map((value) => value.trim())
+      .map((value) => normalizeIpAddress(value))
       .find(Boolean);
 
     if (firstForwardedAddress) {
