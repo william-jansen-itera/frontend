@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { parseClientPrincipal } from '@/server/utils/auth';
+import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { getTreeList } from '@/server/utils/treeCatalog';
 import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
 
@@ -22,7 +22,7 @@ function normalizeReviewFilter(value) {
 
 export async function GET(request) {
   try {
-    const principal = parseClientPrincipal(request);
+    const principal = requireAuthenticatedPrincipal(request);
     const { searchParams } = new URL(request.url);
     const reviewStatus = normalizeReviewFilter(searchParams.get('status'));
     const availableTrees = await getTreeList({

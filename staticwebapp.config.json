@@ -29,12 +29,20 @@
       "allowedRoles": ["mdsusers"]
     },
     {
+      "route": "/api/hello",
+      "allowedRoles": ["authenticated"]
+    },
+    {
       "route": "/api/chat*",
       "allowedRoles": ["mdsusers"]
     },
     {
       "route": "/api/notes*",
       "allowedRoles": ["mdsusers"]
+    },
+    {
+      "route": "/api/review",
+      "allowedRoles": ["authenticated"]
     },
     {
       "route": "/api/search*",

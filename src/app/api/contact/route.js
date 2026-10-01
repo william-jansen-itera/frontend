@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { logException, logTrace } from '@/server/utils/logging';
 import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
 import { buildUserAgentSummary } from '@/server/utils/userAgent';
-import { parseClientPrincipal } from '@/server/utils/auth';
+import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 
 function normalizeText(value) {
@@ -36,7 +36,7 @@ function assertAdminPrincipal(principal) {
 
 export async function GET(request) {
   try {
-    const principal = parseClientPrincipal(request);
+    const principal = requireAuthenticatedPrincipal(request);
     assertAdminPrincipal(principal);
 
     const result = await withSqlConnection(async () => new sql.Request()
@@ -63,6 +63,10 @@ export async function GET(request) {
       requests: result.recordset,
     });
   } catch (error) {
+    if (Number(error?.status) === 401) {
+      return NextResponse.json({ error: 'Authentication is required.' }, { status: 401 });
+    }
+
     if (error instanceof Error && error.message === 'Admin role mdsadmins is required') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }

@@ -4,6 +4,12 @@ import {
   normalizeClientPrincipal,
 } from '@/shared/clientPrincipal';
 
+function createStatusError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
 function decodeBase64Json(value) {
   if (!value) {
     return null;
@@ -36,4 +42,14 @@ export function parseClientPrincipal(request) {
 
 export function getRelevantPrincipalDetails(principal) {
   return normalizeClientPrincipal(principal);
+}
+
+export function requireAuthenticatedPrincipal(request, message = 'Authentication is required') {
+  const principal = parseClientPrincipal(request);
+
+  if (!principal) {
+    throw createStatusError(message, 401);
+  }
+
+  return principal;
 }
