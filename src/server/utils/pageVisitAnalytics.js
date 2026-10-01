@@ -1,12 +1,10 @@
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { setTimeout as delay } from 'timers/promises';
-import { confirmSqlIsResponsive, getRequiredApplicationIdentifier, isLikelySleepingSqlError, sql, withSqlConnection } from '@/server/utils/sql';
+import { getRequiredApplicationIdentifier } from '@/server/utils/sql';
 import { classifyBrowserFamily, classifyDeviceClass } from '@/server/utils/userAgent';
 import { isLocalDevelopmentHost } from '@/shared/clientPrincipal';
+import { listPageVisitEvents, writePageVisitEvent } from '@/server/utils/analyticsStorage';
 
 const ALLOWED_PAGE_PATHS = new Set(['/', '/about', '/contact']);
-const SQL_WAKE_RETRY_DELAY_MS = 10_000;
-const SQL_WAKE_MAX_RETRIES = 3;
 
 function normalizeHostName(value) {
   const normalizedValue = String(value ?? '').trim().toLowerCase();
@@ -93,114 +91,78 @@ export async function incrementPageVisitCounter(dimensions) {
     };
   }
 
-  const executeCounterWrite = () => withSqlConnection(async () => {
-    const result = await new sql.Request()
-      .input('app_identifier', sql.NVarChar(128), dimensions.appIdentifier)
-      .input('page_path', sql.NVarChar(32), dimensions.pagePath)
-      .input('is_authenticated', sql.Bit, dimensions.isAuthenticated)
-      .input('referrer_host', sql.NVarChar(255), dimensions.referrerHost)
-      .input('device_class', sql.NVarChar(32), dimensions.deviceClass)
-      .input('browser_family', sql.NVarChar(32), dimensions.browserFamily)
-      .query(`
-        DECLARE @now DATETIME2(7) = SYSUTCDATETIME();
+  const recordedAt = new Date().toISOString();
+  const eventId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-        UPDATE dbo.page_visit_counters
-        SET
-          visit_count = visit_count + 1,
-          latest_visited_at = @now,
-          updated_at = @now
-        WHERE app_identifier = @app_identifier
-          AND page_path = @page_path
-          AND is_authenticated = @is_authenticated
-          AND referrer_host = @referrer_host
-          AND device_class = @device_class
-          AND browser_family = @browser_family;
-
-        IF @@ROWCOUNT = 0
-        BEGIN
-          BEGIN TRY
-            INSERT INTO dbo.page_visit_counters (
-              app_identifier,
-              page_path,
-              is_authenticated,
-              referrer_host,
-              device_class,
-              browser_family,
-              visit_count,
-              first_visited_at,
-              latest_visited_at,
-              updated_at
-            )
-            VALUES (
-              @app_identifier,
-              @page_path,
-              @is_authenticated,
-              @referrer_host,
-              @device_class,
-              @browser_family,
-              1,
-              @now,
-              @now,
-              @now
-            );
-          END TRY
-          BEGIN CATCH
-            IF ERROR_NUMBER() IN (2601, 2627)
-            BEGIN
-              UPDATE dbo.page_visit_counters
-              SET
-                visit_count = visit_count + 1,
-                latest_visited_at = @now,
-                updated_at = @now
-              WHERE app_identifier = @app_identifier
-                AND page_path = @page_path
-                AND is_authenticated = @is_authenticated
-                AND referrer_host = @referrer_host
-                AND device_class = @device_class
-                AND browser_family = @browser_family;
-            END
-            ELSE
-            BEGIN
-              THROW;
-            END
-          END CATCH
-        END;
-
-        SELECT TOP 1
-          visit_count AS visitCount,
-          first_visited_at AS firstVisitedAt,
-          latest_visited_at AS latestVisitedAt
-        FROM dbo.page_visit_counters
-        WHERE app_identifier = @app_identifier
-          AND page_path = @page_path
-          AND is_authenticated = @is_authenticated
-          AND referrer_host = @referrer_host
-          AND device_class = @device_class
-          AND browser_family = @browser_family;
-      `);
-
-    return {
-      status: 'recorded',
-      counter: result.recordset[0] ?? null,
-    };
+  await writePageVisitEvent({
+    eventId,
+    recordedAt,
+    ...dimensions,
   });
 
-  let lastError;
+  return {
+    status: 'recorded',
+  };
+}
 
-  for (let attempt = 0; attempt <= SQL_WAKE_MAX_RETRIES; attempt += 1) {
-    try {
-      return await executeCounterWrite();
-    } catch (error) {
-      lastError = error;
+function shouldExcludeFromAdminAggregate(eventEntry) {
+  return eventEntry?.deviceClass === 'desktop' && eventEntry?.browserFamily === 'edge';
+}
 
-      if (!isLikelySleepingSqlError(error) || attempt === SQL_WAKE_MAX_RETRIES) {
-        throw error;
+function sortGroupedRows(rows, keys) {
+  return [...rows].sort((left, right) => {
+    for (const key of keys) {
+      const leftValue = String(left?.[key] ?? '');
+      const rightValue = String(right?.[key] ?? '');
+      const comparison = leftValue.localeCompare(rightValue);
+
+      if (comparison !== 0) {
+        return comparison;
       }
-
-      await delay(SQL_WAKE_RETRY_DELAY_MS);
-      await confirmSqlIsResponsive();
     }
+
+    return Number(right?.visitCount ?? 0) - Number(left?.visitCount ?? 0);
+  });
+}
+
+export async function getPageVisitAnalyticsSummary() {
+  const appIdentifier = getRequiredApplicationIdentifier();
+  const events = await listPageVisitEvents(appIdentifier);
+  const byPageDeviceBrowser = new Map();
+  const byPage = new Map();
+
+  for (const eventEntry of events) {
+    if (!eventEntry || shouldExcludeFromAdminAggregate(eventEntry)) {
+      continue;
+    }
+
+    const pagePath = normalizeTrackedPagePath(eventEntry.pagePath);
+
+    if (!pagePath) {
+      continue;
+    }
+
+    const deviceClass = String(eventEntry.deviceClass ?? '').trim() || 'unknown';
+    const browserFamily = String(eventEntry.browserFamily ?? '').trim() || 'unknown';
+    const detailedKey = `${pagePath}\u0000${deviceClass}\u0000${browserFamily}`;
+    const pageOnlyKey = pagePath;
+
+    byPageDeviceBrowser.set(detailedKey, {
+      pagePath,
+      deviceClass,
+      browserFamily,
+      visitCount: Number(byPageDeviceBrowser.get(detailedKey)?.visitCount ?? 0) + 1,
+    });
+
+    byPage.set(pageOnlyKey, {
+      pagePath,
+      visitCount: Number(byPage.get(pageOnlyKey)?.visitCount ?? 0) + 1,
+    });
   }
 
-  throw lastError;
+  return {
+    byPageDeviceBrowser: sortGroupedRows(Array.from(byPageDeviceBrowser.values()), ['pagePath', 'deviceClass', 'browserFamily']),
+    byPage: sortGroupedRows(Array.from(byPage.values()), ['pagePath']),
+    generatedAt: new Date().toISOString(),
+  };
 }

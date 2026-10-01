@@ -38,6 +38,16 @@ function formatTimestamp(value) {
   return parsedValue.toLocaleString();
 }
 
+function formatVisitCount(value) {
+  const normalizedValue = Number(value ?? 0);
+
+  if (!Number.isFinite(normalizedValue)) {
+    return "0";
+  }
+
+  return normalizedValue.toLocaleString();
+}
+
 function buildAuditLabel(userDetails, timestamp, defaultLabel = null) {
   const parts = [];
   const normalizedUserDetails = String(userDetails ?? "").trim();
@@ -97,9 +107,12 @@ export default function AdminPage() {
   const [deletedTrees, setDeletedTrees] = useState([]);
   const [deletedNodes, setDeletedNodes] = useState([]);
   const [deletedAttachments, setDeletedAttachments] = useState([]);
+  const [analyticsSummary, setAnalyticsSummary] = useState({ byPageDeviceBrowser: [], byPage: [], generatedAt: null });
   const [isLoading, setIsLoading] = useState(true);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [analyticsErrorMessage, setAnalyticsErrorMessage] = useState("");
   const [pendingItems, setPendingItems] = useState({});
 
   const setPending = (key, isPending) => {
@@ -139,6 +152,38 @@ export default function AdminPage() {
       setErrorMessage(getErrorMessage(error, "Deleted items could not be loaded"));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadAnalyticsSummary = async () => {
+    if (!isAdmin) {
+      setAnalyticsSummary({ byPageDeviceBrowser: [], byPage: [], generatedAt: null });
+      setAnalyticsErrorMessage("");
+      setIsAnalyticsLoading(false);
+      return;
+    }
+
+    setIsAnalyticsLoading(true);
+
+    try {
+      const response = await fetch("/api/admin/analytics", { cache: "no-store" });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Analytics could not be loaded");
+      }
+
+      setAnalyticsSummary({
+        byPageDeviceBrowser: Array.isArray(data?.byPageDeviceBrowser) ? data.byPageDeviceBrowser : [],
+        byPage: Array.isArray(data?.byPage) ? data.byPage : [],
+        generatedAt: data?.generatedAt || null,
+      });
+      setAnalyticsErrorMessage("");
+    } catch (error) {
+      setAnalyticsSummary({ byPageDeviceBrowser: [], byPage: [], generatedAt: null });
+      setAnalyticsErrorMessage(getErrorMessage(error, "Analytics could not be loaded"));
+    } finally {
+      setIsAnalyticsLoading(false);
     }
   };
 
@@ -184,10 +229,47 @@ export default function AdminPage() {
       }
     });
 
+    Promise.resolve().then(async () => {
+      try {
+        const response = await fetch("/api/admin/analytics", { cache: "no-store" });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Analytics could not be loaded");
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setAnalyticsSummary({
+          byPageDeviceBrowser: Array.isArray(data?.byPageDeviceBrowser) ? data.byPageDeviceBrowser : [],
+          byPage: Array.isArray(data?.byPage) ? data.byPage : [],
+          generatedAt: data?.generatedAt || null,
+        });
+        setAnalyticsErrorMessage("");
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setAnalyticsSummary({ byPageDeviceBrowser: [], byPage: [], generatedAt: null });
+        setAnalyticsErrorMessage(getErrorMessage(error, "Analytics could not be loaded"));
+      } finally {
+        if (isMounted) {
+          setIsAnalyticsLoading(false);
+        }
+      }
+    });
+
     return () => {
       isMounted = false;
     };
   }, [isAdmin]);
+
+  const handleRefresh = async () => {
+    await Promise.all([loadDeletedItems(), loadAnalyticsSummary()]);
+  };
 
   const handlePurgeTree = async (tree) => {
     const treeId = String(tree.id);
@@ -547,6 +629,8 @@ export default function AdminPage() {
     );
   }
 
+  const isRefreshing = isLoading || isAnalyticsLoading;
+
   return (
     <main className={`${styles.pageShell} appPageShell`}>
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
@@ -561,11 +645,11 @@ export default function AdminPage() {
           </div>
           <button
             type="button"
-            onClick={loadDeletedItems}
-            disabled={isLoading}
+            onClick={handleRefresh}
+            disabled={isRefreshing}
             className="appPrimaryFormButton"
           >
-            {isLoading ? "Refreshing..." : "Refresh"}
+            {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
         {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}
@@ -780,6 +864,82 @@ export default function AdminPage() {
       </section>
 
       <section className={styles.sectionStack}>
+        <article className={`appTopLevelPanel ${styles.panel}`}>
+          <div className={`appPanelTopBar ${styles.panelToolbar}`}>
+            <div className={styles.panelHeaderGroup}>
+              <span className={styles.panelHeading}>Page visit analytics</span>
+            </div>
+          </div>
+          <div className={styles.panelBody}>
+            <p className={styles.sectionDescription}>Live aggregates from the append-only visit event log, excluding desktop Edge traffic to match the legacy SQL filters.</p>
+            {analyticsSummary.generatedAt ? (
+              <p className={styles.tableMeta}>Last aggregated: {formatTimestamp(analyticsSummary.generatedAt)}</p>
+            ) : null}
+            {analyticsErrorMessage ? <p className={styles.errorMessage}>{analyticsErrorMessage}</p> : null}
+            {isAnalyticsLoading ? (
+              <div className={styles.emptyState}>Loading analytics...</div>
+            ) : (
+              <div className={styles.analyticsTables}>
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>By page, device class, and browser family</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>device class</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>browser family</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byPageDeviceBrowser.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                          </tr>
+                        ) : analyticsSummary.byPageDeviceBrowser.map((row) => (
+                          <tr key={`${row.pagePath}:${row.deviceClass}:${row.browserFamily}`}>
+                            <td>{row.pagePath}</td>
+                            <td>{row.deviceClass}</td>
+                            <td>{row.browserFamily}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>By page</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byPage.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                          </tr>
+                        ) : analyticsSummary.byPage.map((row) => (
+                          <tr key={row.pagePath}>
+                            <td>{row.pagePath}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
+        </article>
+
         <article className={`appTopLevelPanel ${styles.panel}`}>
           <div className={`appPanelTopBar ${styles.panelToolbar}`}>
             <div className={styles.panelHeaderGroup}>

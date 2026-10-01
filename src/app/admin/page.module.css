@@ -124,6 +124,34 @@
   line-height: 1.6;
 }
 
+.tableMeta {
+  margin: 0.75rem 0 0;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.analyticsTables {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.analyticsSection {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.analyticsHeading {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.analyticsEmptyCell {
+  color: #475569;
+}
+
 .indexingTableWrapper {
   margin-top: 1rem;
   overflow-x: auto;
