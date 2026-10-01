@@ -871,7 +871,7 @@ export default function AdminPage() {
             </div>
           </div>
           <div className={styles.panelBody}>
-            <p className={styles.sectionDescription}>Live aggregates from the append-only visit event log, excluding desktop Edge traffic to match the legacy SQL filters.</p>
+            <p className={styles.sectionDescription}>Live aggregates from the append-only visit event log.</p>
             {analyticsSummary.generatedAt ? (
               <p className={styles.tableMeta}>Last aggregated: {formatTimestamp(analyticsSummary.generatedAt)}</p>
             ) : null}

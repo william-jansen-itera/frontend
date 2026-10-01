@@ -5,6 +5,12 @@ import { isLocalDevelopmentHost } from '@/shared/clientPrincipal';
 import { listPageVisitEvents, writePageVisitEvent } from '@/server/utils/analyticsStorage';
 
 const ALLOWED_PAGE_PATHS = new Set(['/', '/about', '/contact']);
+const IGNORED_ANALYTICS_IPS = new Set(
+  String(process.env.ANALYTICS_IGNORED_IPS ?? '')
+    .split(',')
+    .map((value) => normalizeIpAddress(value))
+    .filter(Boolean),
+);
 
 function normalizeHostName(value) {
   const normalizedValue = String(value ?? '').trim().toLowerCase();
@@ -44,6 +50,44 @@ function getReferrerHost(referer) {
   }
 }
 
+function normalizeIpAddress(value) {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return normalizedValue.startsWith('::ffff:') ? normalizedValue.slice(7) : normalizedValue;
+}
+
+function getClientIpAddress(request) {
+  const forwardedFor = String(request.headers.get('x-forwarded-for') ?? '').trim();
+
+  if (forwardedFor) {
+    const firstForwardedAddress = forwardedFor
+      .split(',')
+      .map((value) => value.trim())
+      .find(Boolean);
+
+    if (firstForwardedAddress) {
+      return firstForwardedAddress;
+    }
+  }
+
+  const clientIp = String(request.headers.get('x-client-ip') ?? '').trim();
+
+  return normalizeIpAddress(clientIp) || 'unknown';
+}
+
+function shouldIgnoreAnalyticsIpAddress(clientIp) {
+  if (IGNORED_ANALYTICS_IPS.size === 0) {
+    return false;
+  }
+
+  const normalizedClientIp = normalizeIpAddress(clientIp);
+  return normalizedClientIp ? IGNORED_ANALYTICS_IPS.has(normalizedClientIp) : false;
+}
+
 function isLocalRequest(request) {
   const requestUrl = request?.url ? new URL(request.url) : null;
   const forwardedHost = normalizeHostName(request.headers.get('x-forwarded-host'));
@@ -74,10 +118,17 @@ export function getPageVisitCounterDimensions(request, pagePath) {
     return null;
   }
 
+  const clientIp = getClientIpAddress(request);
+
+  if (shouldIgnoreAnalyticsIpAddress(clientIp)) {
+    return null;
+  }
+
   return {
     appIdentifier: getRequiredApplicationIdentifier(),
     pagePath: normalizedPagePath,
     isAuthenticated: parseClientPrincipal(request) ? 1 : 0,
+    clientIp,
     referrerHost: getReferrerHost(request.headers.get('referer')),
     deviceClass: classifyDeviceClass(request.headers.get('user-agent')),
     browserFamily: classifyBrowserFamily(request.headers.get('user-agent')),
@@ -105,10 +156,6 @@ export async function incrementPageVisitCounter(dimensions) {
   };
 }
 
-function shouldExcludeFromAdminAggregate(eventEntry) {
-  return eventEntry?.deviceClass === 'desktop' && eventEntry?.browserFamily === 'edge';
-}
-
 function sortGroupedRows(rows, keys) {
   return [...rows].sort((left, right) => {
     for (const key of keys) {
@@ -132,7 +179,7 @@ export async function getPageVisitAnalyticsSummary() {
   const byPage = new Map();
 
   for (const eventEntry of events) {
-    if (!eventEntry || shouldExcludeFromAdminAggregate(eventEntry)) {
+    if (!eventEntry) {
       continue;
     }
 

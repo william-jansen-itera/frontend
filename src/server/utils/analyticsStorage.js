@@ -52,6 +52,7 @@ function buildPageVisitMetadata(eventPayload) {
     applicationidentifier: sanitizeMetadataValue(eventPayload.appIdentifier),
     eventtype: 'pagevisit',
     pagepath: sanitizeMetadataValue(eventPayload.pagePath),
+    clientip: sanitizeMetadataValue(eventPayload.clientIp),
     deviceclass: sanitizeMetadataValue(eventPayload.deviceClass),
     browserfamily: sanitizeMetadataValue(eventPayload.browserFamily),
   };

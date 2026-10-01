@@ -43,6 +43,10 @@ Optional maintenance settings:
 - `AZURE_PURGE_FUNCTION_URL` is the full HTTP purge Function URL used by frontend admin routes for manual purge actions
 - `AZURE_PURGE_FUNCTION_KEY` is the server-side function key used when the frontend calls the purge Function
 
+Optional analytics settings:
+
+- `ANALYTICS_IGNORED_IPS` is a comma-separated list of client IP addresses that should be ignored by page-visit logging, for example `203.0.113.10,198.51.100.7`
+
 `APPLICATION_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `false`.
 
 For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.
