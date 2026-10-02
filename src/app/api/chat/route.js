@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import {
   invokeAgentFamily,
@@ -74,8 +75,23 @@ function getDefaultIncludeDebug() {
   return parseBooleanSetting(process.env.APPLICATION_DEBUG, false);
 }
 
+function createChatJsonResponse(body, { status = 200, requestId, includeDebug } = {}) {
+  const response = NextResponse.json(body, { status });
+
+  if (requestId) {
+    response.headers.set('x-chat-request-id', requestId);
+  }
+
+  response.headers.set('x-chat-response-origin', 'app-route');
+  response.headers.set('x-chat-debug-enabled', includeDebug ? 'true' : 'false');
+
+  return response;
+}
+
 export async function POST(request) {
   let includeDebug = getDefaultIncludeDebug();
+  const requestId = request.headers.get('x-chat-request-id') || randomUUID();
+  const requestStartedAt = new Date().toISOString();
 
   try {
     const payload = await request.json();
@@ -85,10 +101,24 @@ export async function POST(request) {
     const visibility = String(payload?.visibility ?? '').trim() || 'public';
     const followUpSelection = normalizeFollowUpSelection(payload?.followUpSelection);
 
+    await logTrace(
+      JSON.stringify({
+        event: 'prompt_agent_invoke_started',
+        requestId,
+        requestStartedAt,
+        includeDebug,
+        requestedFamily: String(payload?.family ?? '').trim() || null,
+        resolvedFamily: family,
+        visibility,
+        hasFollowUpSelection: Boolean(followUpSelection),
+        messageLength: message.length,
+      }),
+    );
+
     if (!message && !followUpSelection) {
-      return NextResponse.json(
+      return createChatJsonResponse(
         { error: 'A non-empty message is required.' },
-        { status: 400 },
+        { status: 400, requestId, includeDebug },
       );
     }
 
@@ -108,6 +138,7 @@ export async function POST(request) {
     await logTrace(
       JSON.stringify({
         event: 'prompt_agent_invoke_success',
+        requestId,
         family,
         agentName: result.agent.name,
         toolNames: result.toolsUsed,
@@ -115,20 +146,66 @@ export async function POST(request) {
       }),
     );
 
-    return NextResponse.json(includeDebug ? result : { ...result, debug: undefined });
+    return createChatJsonResponse(
+      includeDebug
+        ? {
+          ...result,
+          debug: result?.debug
+            ? {
+              ...result.debug,
+              request: {
+                requestId,
+                requestStartedAt,
+                responseOrigin: 'app-route',
+              },
+            }
+            : {
+              requestId,
+              requestStartedAt,
+              responseOrigin: 'app-route',
+            },
+        }
+        : { ...result, debug: undefined },
+      { requestId, includeDebug },
+    );
   } catch (error) {
+    await logTrace(
+      JSON.stringify({
+        event: 'prompt_agent_invoke_failure',
+        requestId,
+        requestStartedAt,
+        includeDebug,
+        errorMessage: error instanceof Error ? error.message : String(error ?? 'Agent request failed'),
+        errorName: error instanceof Error ? error.name : null,
+        hasDebug: Boolean(error?.debug),
+      }),
+    );
+
     await logException(error);
 
-    return NextResponse.json(
+    return createChatJsonResponse(
       includeDebug
         ? {
           error: error instanceof Error ? error.message : 'Agent request failed',
-          debug: error?.debug ?? null,
+          debug: error?.debug
+            ? {
+              ...error.debug,
+              request: {
+                requestId,
+                requestStartedAt,
+                responseOrigin: 'app-route',
+              },
+            }
+            : {
+              requestId,
+              requestStartedAt,
+              responseOrigin: 'app-route',
+            },
         }
         : {
           error: error instanceof Error ? error.message : 'Agent request failed',
         },
-      { status: 500 },
+      { status: 500, requestId, includeDebug },
     );
   }
 }

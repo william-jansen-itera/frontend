@@ -195,8 +195,66 @@ function formatJson(value) {
   }
 }
 
-function buildChatRequestFailureDebug({ response, payload, question, family, visibility, followUpSelection }) {
+function buildChatResponseHeaderSnapshot(response) {
+  if (!response?.headers) {
+    return {};
+  }
+
   return {
+    chatRequestId: response.headers.get("x-chat-request-id") ?? null,
+    chatResponseOrigin: response.headers.get("x-chat-response-origin") ?? null,
+    chatDebugEnabled: response.headers.get("x-chat-debug-enabled") ?? null,
+    contentType: response.headers.get("content-type") ?? null,
+    azureRef: response.headers.get("x-azure-ref") ?? null,
+    azureRequestId: response.headers.get("x-ms-request-id") ?? null,
+    azureClientRequestId: response.headers.get("x-ms-client-request-id") ?? null,
+  };
+}
+
+function classifyChatFailure({ response, payload, responseHeaders }) {
+  if ((response?.status ?? null) === 500 && responseHeaders.chatResponseOrigin !== "app-route") {
+    return "platform_or_upstream_500";
+  }
+
+  if ((response?.status ?? null) === 500 && !responseHeaders.contentType) {
+    return "non_json_500_without_content_type";
+  }
+
+  if ((response?.status ?? null) === 500 && responseHeaders.contentType && !String(responseHeaders.contentType).includes("application/json")) {
+    return "non_json_500_response";
+  }
+
+  if (payload?.debug) {
+    return "application_json_error";
+  }
+
+  return "unknown_fetch_failure";
+}
+
+function buildChatRequestFailureDebug({
+  response,
+  payload,
+  question,
+  family,
+  visibility,
+  followUpSelection,
+  requestId,
+  requestStartedAt,
+  requestCompletedAt,
+}) {
+  const responseHeaders = buildChatResponseHeaderSnapshot(response);
+
+  return {
+    request: {
+      requestId,
+      requestStartedAt,
+      requestCompletedAt,
+      durationMs: requestStartedAt && requestCompletedAt
+        ? Math.max(0, new Date(requestCompletedAt).getTime() - new Date(requestStartedAt).getTime())
+        : null,
+      routeReachedApplication: responseHeaders.chatResponseOrigin === "app-route",
+      failureKind: classifyChatFailure({ response, payload, responseHeaders }),
+    },
     userQuery: {
       question: String(question ?? "").trim(),
       family: String(family ?? "").trim() || null,
@@ -207,7 +265,7 @@ function buildChatRequestFailureDebug({ response, payload, question, family, vis
       endpoint: "/api/chat",
       status: response?.status ?? null,
       statusText: response?.statusText ?? null,
-      contentType: response?.headers?.get("content-type") ?? null,
+      responseHeaders,
       error: payload?.error ?? null,
       rawText: payload?.rawText ?? null,
     },
@@ -1105,6 +1163,8 @@ export default function ChatPageClient({ includeDebug }) {
   async function submitTurn({ question, message, followUpSelection = null }) {
     const turnId = `${Date.now()}`;
     const history = buildHistoryFromTurns(turns);
+    const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const requestStartedAt = new Date().toISOString();
 
     setIsSubmitting(true);
     setRequestError(null);
@@ -1134,6 +1194,7 @@ export default function ChatPageClient({ includeDebug }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-chat-request-id": requestId,
         },
         body: JSON.stringify({
           message,
@@ -1154,6 +1215,9 @@ export default function ChatPageClient({ includeDebug }) {
           family: chatFamily,
           visibility,
           followUpSelection,
+          requestId,
+          requestStartedAt,
+          requestCompletedAt: new Date().toISOString(),
         });
 
         throw {
