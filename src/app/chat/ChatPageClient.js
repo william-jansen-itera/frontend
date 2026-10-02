@@ -606,6 +606,16 @@ function TurnDebugPanel({ turn }) {
     );
   }
 
+  if (turn.error && !turn.debug) {
+    return (
+      <div className={styles.debugEmptyState}>
+        <h2>Turn failed</h2>
+        <p>{turn.error}</p>
+        <p>Debug details were not attached to this failure.</p>
+      </div>
+    );
+  }
+
   if (!turn.debug) {
     return (
       <div className={styles.debugEmptyState}>
@@ -820,8 +830,9 @@ export default function ChatPageClient({ includeDebug }) {
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
-  const hasObservedDebugData = turns.some((turn) => turn?.debug && typeof turn.debug === "object");
-  const showTurnInspector = includeDebug || hasObservedDebugData;
+  const hasObservedDebugData = turns.some((turn) => turn?.debug !== null && turn?.debug !== undefined);
+  const hasObservedTurnFailure = turns.some((turn) => Boolean(turn?.error));
+  const showTurnInspector = includeDebug || hasObservedDebugData || hasObservedTurnFailure;
   const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
   const activeBroaderAnswerClarificationTurn = getLatestBroaderAnswerClarificationTurn(turns);
   const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
