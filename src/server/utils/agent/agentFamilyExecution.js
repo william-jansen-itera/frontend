@@ -148,6 +148,7 @@ export async function runAgentFamilyExecution({
         toolOutput: null,
       };
       let executionError = null;
+      let executionErrorDetails = null;
 
       try {
         parsedArguments = JSON.parse(functionCall.arguments || '{}');
@@ -163,6 +164,20 @@ export async function runAgentFamilyExecution({
         }
       } catch (error) {
         executionError = error instanceof Error ? error.message : 'Tool execution failed';
+        executionErrorDetails = {
+          message: error instanceof Error ? error.message : 'Tool execution failed',
+          name: error instanceof Error ? error.name : null,
+          stack: error instanceof Error ? error.stack ?? null : null,
+          debug: error?.debug ?? null,
+        };
+        if (executionErrorDetails.debug && includeDebug) {
+          toolDebug = {
+            ...toolDebug,
+            ...(executionErrorDetails.debug && typeof executionErrorDetails.debug === 'object'
+              ? executionErrorDetails.debug
+              : { errorDebug: executionErrorDetails.debug }),
+          };
+        }
         output = {
           error: executionError,
         };
@@ -195,7 +210,7 @@ export async function runAgentFamilyExecution({
           toolMetaData: getToolOutputMetaData(output),
           toolOutput: getAgentToolResultData(output),
           agentToolInput: functionCallOutput,
-          error: executionError,
+          error: executionErrorDetails ?? executionError,
         });
       }
       functionOutputs.push(functionCallOutput);
