@@ -66,7 +66,10 @@ export default function Home() {
         <div className={styles.statusRow}>
           <div className={styles.statusCard}>
             <p className={styles.statusLabel}>How it works</p>
-            <p className={styles.statusValue}>Grow the tree with Notes. Inspect it with Search. Talk to it with Agent — it speaks from the tree, and shows how the answer is grounded.</p>
+            <p className={styles.statusValue}>
+              Grow the tree with Notes. Inspect it with Search. Talk to it with Agent — it speaks from the tree, and shows how the answer is grounded.{' '}
+              <Link href="/about" className={styles.inlineLink}>Read more</Link>
+            </p>
           </div>
           {isSignedIn ? (
             <div className={styles.statusCard}>

@@ -33,6 +33,18 @@
   line-height: var(--ui-body-line-height);
 }
 
+.inlineLink {
+  color: var(--ui-link-color, #0f766e);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.inlineLink:hover,
+.inlineLink:focus-visible {
+  color: var(--ui-link-hover-color, #0b5f59);
+}
+
 .statusValueWarning {
   color: #c2410c;
 }
