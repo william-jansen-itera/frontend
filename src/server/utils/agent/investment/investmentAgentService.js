@@ -50,6 +50,7 @@ export async function invokeInvestmentAgent({
   principal = null,
   followUpSelection = null,
   includeDebug = false,
+  requestId = null,
 }) {
   const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
   const normalizedMessage = String(message ?? '').trim();
@@ -73,6 +74,11 @@ export async function invokeInvestmentAgent({
         broaderAnswerDetection: null,
         broaderAnswerReview: null,
       },
+      logContext: {
+        requestId,
+        family: INVESTMENT_FAMILY,
+      },
+      loggingEnabled: includeDebug,
     });
     appendDebugStep(debug, 'investment agent invocation started');
   }

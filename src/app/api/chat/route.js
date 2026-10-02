@@ -4,7 +4,7 @@ import {
   invokeAgentFamily,
   resolveAgentFamilySelection,
 } from '@/server/utils/agent/agentFamilyInvoker';
-import { logException, logTrace } from '@/server/utils/logging';
+import { logException, logStructuredTrace, logTrace } from '@/server/utils/logging';
 import { parseClientPrincipal } from '@/server/utils/auth';
 
 export const runtime = 'nodejs';
@@ -101,16 +101,27 @@ function createChatJsonResponse(body, { status = 200, requestId, includeDebug } 
 function appendRouteDebugStep(debug, step, details = null) {
   const normalizedDebug = debug && typeof debug === 'object' ? debug : {};
   const existingSteps = Array.isArray(normalizedDebug.stepsComplete) ? normalizedDebug.stepsComplete : [];
+  const stepEntry = {
+    step,
+    completedAt: new Date().toISOString(),
+    ...(details && typeof details === 'object' ? details : {}),
+  };
+
+  if (normalizedDebug.loggingEnabled && normalizedDebug.requestId) {
+    void logStructuredTrace({
+      event: 'chat_route_step',
+      requestId: normalizedDebug.requestId,
+      step,
+      completedAt: stepEntry.completedAt,
+      details: stepEntry,
+    });
+  }
 
   return {
     ...normalizedDebug,
     stepsComplete: [
       ...existingSteps,
-      {
-        step,
-        completedAt: new Date().toISOString(),
-        ...(details && typeof details === 'object' ? details : {}),
-      },
+      stepEntry,
     ],
   };
 }
@@ -158,7 +169,7 @@ export async function POST(request) {
   const requestId = request.headers.get('x-chat-request-id') || randomUUID();
   const requestStartedAt = new Date().toISOString();
   const routeTimeoutMs = getChatRouteTimeoutMs();
-  let routeDebug = includeDebug ? appendRouteDebugStep({}, 'api call received', { requestId }) : null;
+  let routeDebug = includeDebug ? appendRouteDebugStep({ requestId, loggingEnabled: includeDebug }, 'api call received', { requestId }) : null;
 
   try {
     const payload = await request.json();
@@ -218,6 +229,7 @@ export async function POST(request) {
         visibility,
         followUpSelection,
         includeDebug,
+        requestId,
       }),
     });
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route received agent family result', {

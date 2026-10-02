@@ -1,3 +1,5 @@
+import { logStructuredTrace } from '@/server/utils/logging';
+
 export function serializeDebugValue(value) {
   if (value === undefined) {
     return null;
@@ -37,10 +39,14 @@ export function createAgentDebugState({
   initialInput,
   phaseNames = [],
   extraTimings = {},
+  logContext = null,
+  loggingEnabled = false,
 }) {
   return {
     sourceToolFamily,
     stepsComplete: [],
+    loggingEnabled: Boolean(loggingEnabled),
+    logContext: serializeDebugValue(logContext),
     orchestration: {
       activeFamily: sourceToolFamily,
       familyStack: [sourceToolFamily],
@@ -93,11 +99,23 @@ export function appendDebugStep(debug, step, details = null) {
     debug.stepsComplete = [];
   }
 
-  debug.stepsComplete.push(serializeDebugValue({
+  const stepEntry = serializeDebugValue({
     step: String(step),
     completedAt: new Date().toISOString(),
     ...(details && typeof details === 'object' ? details : {}),
-  }));
+  });
+
+  debug.stepsComplete.push(stepEntry);
+
+  if (debug.loggingEnabled && debug.logContext && typeof debug.logContext === 'object') {
+    void logStructuredTrace({
+      event: 'agent_debug_step',
+      ...debug.logContext,
+      step: stepEntry.step,
+      completedAt: stepEntry.completedAt,
+      details: stepEntry,
+    });
+  }
 }
 
 export function attachDebugToError(error, debug) {

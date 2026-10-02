@@ -81,6 +81,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
         broaderAnswerDetection: createDebugTimingEntry(),
         broaderAnswerReview: createDebugTimingEntry({ executed: false }),
       },
+      loggingEnabled: includeDebug,
     })
     : null;
   const requestStartedAtMs = includeDebug ? Date.now() : null;

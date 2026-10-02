@@ -43,6 +43,14 @@ export async function logTrace(message) {
   await sendLogToAzureMonitor({ level: 'trace', message, timestamp: new Date().toISOString() });
 }
 
+export async function logStructuredTrace(payload) {
+  await sendLogToAzureMonitor({
+    level: 'trace',
+    ...(payload && typeof payload === 'object' ? payload : { message: String(payload ?? '') }),
+    timestamp: new Date().toISOString(),
+  });
+}
+
 export async function logException(exception) {
   await sendLogToAzureMonitor({ level: 'error', message: exception?.message || String(exception), stack: exception?.stack, timestamp: new Date().toISOString() });
 }

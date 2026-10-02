@@ -195,83 +195,6 @@ function formatJson(value) {
   }
 }
 
-function buildChatResponseHeaderSnapshot(response) {
-  if (!response?.headers) {
-    return {};
-  }
-
-  return {
-    chatRequestId: response.headers.get("x-chat-request-id") ?? null,
-    chatResponseOrigin: response.headers.get("x-chat-response-origin") ?? null,
-    chatDebugEnabled: response.headers.get("x-chat-debug-enabled") ?? null,
-    contentType: response.headers.get("content-type") ?? null,
-    azureRef: response.headers.get("x-azure-ref") ?? null,
-    azureRequestId: response.headers.get("x-ms-request-id") ?? null,
-    azureClientRequestId: response.headers.get("x-ms-client-request-id") ?? null,
-  };
-}
-
-function classifyChatFailure({ response, payload, responseHeaders }) {
-  if ((response?.status ?? null) === 500 && responseHeaders.chatResponseOrigin !== "app-route") {
-    return "platform_or_upstream_500";
-  }
-
-  if ((response?.status ?? null) === 500 && !responseHeaders.contentType) {
-    return "non_json_500_without_content_type";
-  }
-
-  if ((response?.status ?? null) === 500 && responseHeaders.contentType && !String(responseHeaders.contentType).includes("application/json")) {
-    return "non_json_500_response";
-  }
-
-  if (payload?.debug) {
-    return "application_json_error";
-  }
-
-  return "unknown_fetch_failure";
-}
-
-function buildChatRequestFailureDebug({
-  response,
-  payload,
-  question,
-  family,
-  visibility,
-  followUpSelection,
-  requestId,
-  requestStartedAt,
-  requestCompletedAt,
-}) {
-  const responseHeaders = buildChatResponseHeaderSnapshot(response);
-
-  return {
-    request: {
-      requestId,
-      requestStartedAt,
-      requestCompletedAt,
-      durationMs: requestStartedAt && requestCompletedAt
-        ? Math.max(0, new Date(requestCompletedAt).getTime() - new Date(requestStartedAt).getTime())
-        : null,
-      routeReachedApplication: responseHeaders.chatResponseOrigin === "app-route",
-      failureKind: classifyChatFailure({ response, payload, responseHeaders }),
-    },
-    userQuery: {
-      question: String(question ?? "").trim(),
-      family: String(family ?? "").trim() || null,
-      visibility: String(visibility ?? "").trim() || null,
-      followUpSelection: followUpSelection ?? null,
-    },
-    clientFetchFailure: {
-      endpoint: "/api/chat",
-      status: response?.status ?? null,
-      statusText: response?.statusText ?? null,
-      responseHeaders,
-      error: payload?.error ?? null,
-      rawText: payload?.rawText ?? null,
-    },
-  };
-}
-
 function buildTimingDebugEntries({ timings, toolCalls }) {
   const phaseEntries = timings?.phases && typeof timings.phases === "object"
     ? Object.entries(timings.phases).map(([phaseName, phaseTiming]) => ({
@@ -683,12 +606,12 @@ function TurnDebugPanel({ turn }) {
     );
   }
 
-  if (turn.error && !turn.debug) {
+  if (turn.error) {
     return (
       <div className={styles.debugEmptyState}>
         <h2>Turn failed</h2>
-        <p>{turn.error}</p>
-        <p>Debug details were not attached to this failure.</p>
+        <p>Error details are not shown in the debug panel.</p>
+        <p>Use application logs for failure diagnostics.</p>
       </div>
     );
   }
@@ -708,12 +631,6 @@ function TurnDebugPanel({ turn }) {
   const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
   const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
   const turnType = String(turn?.turnType ?? "default").trim() || "default";
-  const requestDebug = turn?.debug?.request && typeof turn.debug.request === "object"
-    ? turn.debug.request
-    : null;
-  const clientFetchFailure = turn?.debug?.clientFetchFailure && typeof turn.debug.clientFetchFailure === "object"
-    ? turn.debug.clientFetchFailure
-    : null;
   const debugUserQuery = {
     turnType,
     ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
@@ -724,26 +641,6 @@ function TurnDebugPanel({ turn }) {
 
   return (
     <div className={styles.debugSections}>
-      {turn.error ? (
-        <section className={styles.debugSection}>
-          <div className={styles.sectionHeader}>
-            <p className="appSectionEyebrow">0. Failure</p>
-            <h2 className={styles.sectionTitle}>Request failure details</h2>
-          </div>
-          <pre className={styles.jsonBlock}>{formatJson({
-            error: turn.error,
-            requestSummary: {
-              routeReachedApplication: requestDebug?.routeReachedApplication ?? null,
-              failureKind: requestDebug?.failureKind ?? null,
-              requestId: requestDebug?.requestId ?? null,
-              durationMs: requestDebug?.durationMs ?? null,
-            },
-            debug: turn.debug,
-            ...(clientFetchFailure ? { clientFetchFailure } : {}),
-          })}</pre>
-        </section>
-      ) : null}
-
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
           <p className="appSectionEyebrow">1. User Query</p>
@@ -934,8 +831,7 @@ export default function ChatPageClient({ includeDebug }) {
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
   const hasObservedDebugData = turns.some((turn) => turn?.debug !== null && turn?.debug !== undefined);
-  const hasObservedTurnFailure = turns.some((turn) => Boolean(turn?.error));
-  const showTurnInspector = includeDebug || hasObservedDebugData || hasObservedTurnFailure;
+  const showTurnInspector = includeDebug || hasObservedDebugData;
   const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
   const activeBroaderAnswerClarificationTurn = getLatestBroaderAnswerClarificationTurn(turns);
   const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
@@ -1219,21 +1115,9 @@ export default function ChatPageClient({ includeDebug }) {
       const payload = await parseApiResponseBody(response);
 
       if (!response.ok) {
-        const fallbackDebug = buildChatRequestFailureDebug({
-          response,
-          payload,
-          question,
-          family: chatFamily,
-          visibility,
-          followUpSelection,
-          requestId,
-          requestStartedAt,
-          requestCompletedAt: new Date().toISOString(),
-        });
-
         throw {
           message: payload?.error || `Chat request failed (${response.status})`,
-          debug: payload?.debug ?? fallbackDebug,
+          debug: null,
         };
       }
 
@@ -1265,7 +1149,7 @@ export default function ChatPageClient({ includeDebug }) {
           ? {
             ...turn,
             answer: "",
-            debug: error?.debug ?? null,
+            debug: null,
             error: messageText,
             toolInvocations: [],
             priorToolInvocations: [],
