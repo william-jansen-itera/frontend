@@ -15,6 +15,7 @@ import {
   fetchAvailableChatFamilies,
   formatFamilyActionMessage,
   normalizeChatFamilySelection,
+  parseApiResponseBody,
   setChatFamilySearchParam,
 } from "./agentFamilyPublishing";
 import {
@@ -1096,7 +1097,7 @@ export default function ChatPageClient({ includeDebug }) {
         }),
       });
 
-      const payload = await response.json();
+      const payload = await parseApiResponseBody(response);
 
       if (!response.ok) {
         throw {

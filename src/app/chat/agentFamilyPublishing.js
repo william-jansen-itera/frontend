@@ -19,6 +19,23 @@ function formatDateTimeTimestamp(value) {
   }).format(dateValue);
 }
 
+export async function parseApiResponseBody(response) {
+  const responseText = await response.text();
+
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    return {
+      error: responseText,
+      rawText: responseText,
+    };
+  }
+}
+
 export async function fetchAgentFamilyManagementState() {
   const response = await fetch("/api/admin/agents", { cache: "no-store" });
   const payload = await response.json();
@@ -32,7 +49,7 @@ export async function fetchAgentFamilyManagementState() {
 
 export async function fetchAvailableChatFamilies() {
   const response = await fetch("/api/chat/families", { cache: "no-store" });
-  const payload = await response.json();
+  const payload = await parseApiResponseBody(response);
 
   if (!response.ok) {
     throw new Error(payload?.error || "Chat families could not be loaded");
