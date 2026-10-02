@@ -195,6 +195,25 @@ function formatJson(value) {
   }
 }
 
+function buildChatRequestFailureDebug({ response, payload, question, family, visibility, followUpSelection }) {
+  return {
+    userQuery: {
+      question: String(question ?? "").trim(),
+      family: String(family ?? "").trim() || null,
+      visibility: String(visibility ?? "").trim() || null,
+      followUpSelection: followUpSelection ?? null,
+    },
+    clientFetchFailure: {
+      endpoint: "/api/chat",
+      status: response?.status ?? null,
+      statusText: response?.statusText ?? null,
+      contentType: response?.headers?.get("content-type") ?? null,
+      error: payload?.error ?? null,
+      rawText: payload?.rawText ?? null,
+    },
+  };
+}
+
 function buildTimingDebugEntries({ timings, toolCalls }) {
   const phaseEntries = timings?.phases && typeof timings.phases === "object"
     ? Object.entries(timings.phases).map(([phaseName, phaseTiming]) => ({
@@ -641,6 +660,21 @@ function TurnDebugPanel({ turn }) {
 
   return (
     <div className={styles.debugSections}>
+      {turn.error ? (
+        <section className={styles.debugSection}>
+          <div className={styles.sectionHeader}>
+            <p className="appSectionEyebrow">0. Failure</p>
+            <h2 className={styles.sectionTitle}>Request failure details</h2>
+          </div>
+          <pre className={styles.jsonBlock}>{formatJson({
+            error: turn.error,
+            ...(turn.debug?.clientFetchFailure && typeof turn.debug.clientFetchFailure === "object"
+              ? { clientFetchFailure: turn.debug.clientFetchFailure }
+              : {}),
+          })}</pre>
+        </section>
+      ) : null}
+
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
           <p className="appSectionEyebrow">1. User Query</p>
@@ -1113,9 +1147,18 @@ export default function ChatPageClient({ includeDebug }) {
       const payload = await parseApiResponseBody(response);
 
       if (!response.ok) {
+        const fallbackDebug = buildChatRequestFailureDebug({
+          response,
+          payload,
+          question,
+          family: chatFamily,
+          visibility,
+          followUpSelection,
+        });
+
         throw {
-          message: payload?.error || "Chat request failed",
-          debug: payload?.debug ?? null,
+          message: payload?.error || `Chat request failed (${response.status})`,
+          debug: payload?.debug ?? fallbackDebug,
         };
       }
 
