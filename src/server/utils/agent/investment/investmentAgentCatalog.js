@@ -262,7 +262,7 @@ This tool operates on the fixed CSV file at Portfolio > Holdings > Stocks > List
 Use operation update_holdings only after you have the user ticker and share count pairs.
 If the user asked to add holdings but did not provide share counts, ask for both ticker and share count before using update_holdings.
 Use operation refresh_calculations when the user wants current closing price, value, percentage, or a portfolio summary from stored holdings.
-When providing a portfolio summary, state the total portfolio value in both USD from totalPortfolioValue and in DKK from totalPortfolioValueiDKK.
+When providing a portfolio summary, state the total portfolio value in both USD from totalPortfolioValue and in DKK from totalPortfolioValueDkk.
 The tool returns the full current CSV dataset and a direct file link.
 When you answer from this tool, include the file link and summarize whether rows were added, updated, or recalculated.
 `.trim();

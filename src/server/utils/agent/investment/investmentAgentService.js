@@ -3,6 +3,7 @@ import { buildAgentPersonalCacheContext } from '@/server/utils/agent/agentPerson
 import { buildInitialAgentInput } from '@/server/utils/agent/agentConversationInput';
 import {
   attachDebugToError,
+  appendDebugStep,
   createAgentDebugState,
 } from '@/server/utils/agent/agentDebug';
 import { runAgentFamilyExecution } from '@/server/utils/agent/agentFamilyExecution';
@@ -59,12 +60,38 @@ export async function invokeInvestmentAgent({
 
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
+  let debug = null;
+
+  if (includeDebug) {
+    debug = createAgentDebugState({
+      sourceToolFamily: INVESTMENT_FAMILY,
+      normalizedMessage,
+      normalizedFollowUpSelection,
+      initialInput: null,
+      phaseNames: ['citationAssembly', 'responseShaping'],
+      extraTimings: {
+        broaderAnswerDetection: null,
+        broaderAnswerReview: null,
+      },
+    });
+    appendDebugStep(debug, 'investment agent invocation started');
+  }
+
   const agent = await getPublishedInvestmentPromptAgent();
+  appendDebugStep(debug, 'published prompt agent loaded', {
+    agentName: agent?.name ?? null,
+  });
   const agentPersonalCacheContext = await buildAgentPersonalCacheContext(principal);
+  appendDebugStep(debug, 'personal cache context loaded', {
+    personalCacheTreeId: agentPersonalCacheContext?.personalCacheTreeId ?? null,
+  });
   const { handlerMap, tools } = buildInvestmentRuntimeContext({
     includeDebug,
     updatedBy: agentPersonalCacheContext.updatedBy,
     personalCacheTreeId: agentPersonalCacheContext.personalCacheTreeId,
+  });
+  appendDebugStep(debug, 'investment runtime context built', {
+    toolCount: Array.isArray(tools) ? tools.length : null,
   });
   const normalizedHistory = normalizeHistory(history);
   const initialInput = buildInitialAgentInput({
@@ -72,22 +99,16 @@ export async function invokeInvestmentAgent({
     normalizedHistory,
     normalizedMessage,
   });
-  const debug = includeDebug
-    ? createAgentDebugState({
-      sourceToolFamily: INVESTMENT_FAMILY,
-      normalizedMessage,
-      normalizedFollowUpSelection,
-      initialInput,
-      phaseNames: ['citationAssembly', 'responseShaping'],
-      extraTimings: {
-        broaderAnswerDetection: null,
-        broaderAnswerReview: null,
-      },
-    })
-    : null;
+  if (debug) {
+    debug.curatedAgentInput.initialMessages = initialInput;
+    appendDebugStep(debug, 'initial agent input built', {
+      historyMessageCount: normalizedHistory.length,
+    });
+  }
   const requestStartedAtMs = includeDebug ? Date.now() : null;
 
   try {
+    appendDebugStep(debug, 'agent family execution started');
     const { response, toolInvocations, modelCalls } = await runAgentFamilyExecution({
       openAIClient,
       responseConfig: {
@@ -100,6 +121,10 @@ export async function invokeInvestmentAgent({
       debug,
       includeDebug,
     });
+    appendDebugStep(debug, 'agent family execution completed', {
+      toolInvocationCount: toolInvocations.length,
+      finalResponseId: response?.id ?? null,
+    });
 
     if (debug) {
       debug.timings.modelCalls.push(...modelCalls);
@@ -107,6 +132,7 @@ export async function invokeInvestmentAgent({
       debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
     }
 
+    appendDebugStep(debug, 'investment result builder started');
     const { familyResult } = await buildInvestmentFamilyResult({
       finalResponse: response,
       finalToolInvocations: [...toolInvocations],
@@ -116,10 +142,18 @@ export async function invokeInvestmentAgent({
       debug,
       agent,
     });
+    appendDebugStep(debug, 'investment result builder completed', {
+      citationCount: Array.isArray(familyResult?.citations) ? familyResult.citations.length : null,
+      toolsUsedCount: Array.isArray(familyResult?.toolsUsed) ? familyResult.toolsUsed.length : null,
+    });
 
+    appendDebugStep(debug, 'investment response built');
     return buildInvestmentResponse({ familyResult, principal, debug });
   } catch (error) {
     if (debug) {
+      appendDebugStep(debug, 'investment agent invocation failed', {
+        errorMessage: error instanceof Error ? error.message : String(error ?? 'Agent request failed'),
+      });
       debug.timings.requestCompletedAt = new Date().toISOString();
       debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
     }

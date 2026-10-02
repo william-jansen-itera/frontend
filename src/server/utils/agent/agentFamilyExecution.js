@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { getAgentToolResultData, getAgentToolResultDebug, getAgentToolResultMeta, isAgentToolResult } from '@/server/utils/agent/agentToolResult';
+import { appendDebugStep } from '@/server/utils/agent/agentDebug';
 
 const MAX_TOOL_ROUNDS = 5;
 
@@ -104,8 +105,13 @@ export async function runAgentFamilyExecution({
 
   const initialModelCallStartedAt = new Date().toISOString();
   const initialModelCallStartedAtMs = performance.now();
+  appendDebugStep(debug, 'initial model response requested');
   let currentResponse = await createAgentResponse(openAIClient, responseConfig, {
     input: initialInput,
+  });
+  appendDebugStep(debug, 'initial model response received', {
+    responseId: currentResponse?.id ?? null,
+    status: currentResponse?.status ?? null,
   });
 
   if (debug) {
@@ -135,6 +141,9 @@ export async function runAgentFamilyExecution({
 
     const functionOutputs = [];
     const roundDebug = includeDebug ? [] : null;
+    appendDebugStep(debug, `tool round ${round + 1} started`, {
+      functionCallCount: functionCalls.length,
+    });
 
     for (const functionCall of functionCalls) {
       const toolName = functionCall.name;
@@ -152,15 +161,28 @@ export async function runAgentFamilyExecution({
 
       try {
         parsedArguments = JSON.parse(functionCall.arguments || '{}');
+        appendDebugStep(debug, `tool ${toolName} called`, {
+          round: round + 1,
+          callId: functionCall.call_id ?? null,
+        });
 
         if (!handler) {
           output = {
             error: `No handler is registered for tool ${toolName}.`,
           };
+          appendDebugStep(debug, `tool ${toolName} missing handler`, {
+            round: round + 1,
+            callId: functionCall.call_id ?? null,
+          });
         } else {
           const handlerResult = normalizeToolHandlerResult(await handler(parsedArguments, handlerContext), includeDebug);
           output = handlerResult.toolOutput;
           toolDebug = handlerResult.debug;
+          appendDebugStep(debug, `tool ${toolName} completed`, {
+            round: round + 1,
+            callId: functionCall.call_id ?? null,
+            durationMs: getElapsedDurationMs(toolStartedAtMs),
+          });
         }
       } catch (error) {
         executionError = error instanceof Error ? error.message : 'Tool execution failed';
@@ -181,6 +203,11 @@ export async function runAgentFamilyExecution({
         output = {
           error: executionError,
         };
+        appendDebugStep(debug, `tool ${toolName} failed`, {
+          round: round + 1,
+          callId: functionCall.call_id ?? null,
+          errorMessage: executionError,
+        });
       }
 
       const modelFacingOutput = buildModelFacingToolOutput(output);
@@ -218,9 +245,16 @@ export async function runAgentFamilyExecution({
 
     const modelCallStartedAt = new Date().toISOString();
     const modelCallStartedAtMs = performance.now();
+    appendDebugStep(debug, `tool round ${round + 1} synthesis requested`, {
+      functionOutputCount: functionOutputs.length,
+    });
     currentResponse = await createAgentResponse(openAIClient, responseConfig, {
       input: functionOutputs,
       previous_response_id: currentResponse.id,
+    });
+    appendDebugStep(debug, `tool round ${round + 1} synthesis received`, {
+      responseId: currentResponse?.id ?? null,
+      status: currentResponse?.status ?? null,
     });
     if (includeDebug) {
       modelCalls.push({
@@ -236,5 +270,6 @@ export async function runAgentFamilyExecution({
     }
   }
 
+  appendDebugStep(debug, 'agent family execution exceeded tool round limit');
   throw new Error('The agent exceeded the maximum number of tool rounds');
 }

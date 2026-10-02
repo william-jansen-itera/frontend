@@ -40,6 +40,7 @@ export function createAgentDebugState({
 }) {
   return {
     sourceToolFamily,
+    stepsComplete: [],
     orchestration: {
       activeFamily: sourceToolFamily,
       familyStack: [sourceToolFamily],
@@ -81,6 +82,22 @@ export async function captureTimingEntry(timingEntry, action) {
     timingEntry.completedAt = new Date().toISOString();
     timingEntry.durationMs = Date.now() - startedAtMs;
   }
+}
+
+export function appendDebugStep(debug, step, details = null) {
+  if (!debug || !step) {
+    return;
+  }
+
+  if (!Array.isArray(debug.stepsComplete)) {
+    debug.stepsComplete = [];
+  }
+
+  debug.stepsComplete.push(serializeDebugValue({
+    step: String(step),
+    completedAt: new Date().toISOString(),
+    ...(details && typeof details === 'object' ? details : {}),
+  }));
 }
 
 export function attachDebugToError(error, debug) {
@@ -151,6 +168,7 @@ export function buildFamilyDebugPayload(debug) {
 
   return serializeDebugValue({
     sourceToolFamily: debug.sourceToolFamily ?? null,
+    stepsComplete: debug.stepsComplete ?? [],
     orchestration: debug.orchestration ?? null,
     userQuery: debug.userQuery ?? null,
     toolCalls: debug.toolCalls ?? [],

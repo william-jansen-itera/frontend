@@ -1,4 +1,5 @@
 import {
+  appendDebugStep,
   buildAgentOutputDebug,
   buildFamilyDebugPayload,
   captureTimingEntry,
@@ -180,6 +181,7 @@ export async function buildInvestmentFamilyResult({
   normalizedMessage,
   debug,
 }) {
+  appendDebugStep(debug, 'response shaping started');
   const turnClassification = await captureTimingEntry(
     debug?.timings?.phases?.responseShaping ?? null,
     async () => classifyAgentTurn({
@@ -191,6 +193,9 @@ export async function buildInvestmentFamilyResult({
       debug,
     }),
   );
+  appendDebugStep(debug, 'response shaping completed', {
+    turnType: turnClassification?.turnType ?? null,
+  });
   const {
     answer,
     followUpOptions,
@@ -204,6 +209,9 @@ export async function buildInvestmentFamilyResult({
     debug?.timings?.phases?.citationAssembly ?? null,
     async () => buildInvestmentCitations(finalToolInvocations),
   );
+  appendDebugStep(debug, 'citation assembly completed', {
+    citationCount: Array.isArray(citations) ? citations.length : null,
+  });
 
   if (debug) {
     setCuratedToolMessages(debug);
