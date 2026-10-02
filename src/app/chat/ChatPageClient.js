@@ -708,6 +708,12 @@ function TurnDebugPanel({ turn }) {
   const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
   const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
   const turnType = String(turn?.turnType ?? "default").trim() || "default";
+  const requestDebug = turn?.debug?.request && typeof turn.debug.request === "object"
+    ? turn.debug.request
+    : null;
+  const clientFetchFailure = turn?.debug?.clientFetchFailure && typeof turn.debug.clientFetchFailure === "object"
+    ? turn.debug.clientFetchFailure
+    : null;
   const debugUserQuery = {
     turnType,
     ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
@@ -726,9 +732,14 @@ function TurnDebugPanel({ turn }) {
           </div>
           <pre className={styles.jsonBlock}>{formatJson({
             error: turn.error,
-            ...(turn.debug?.clientFetchFailure && typeof turn.debug.clientFetchFailure === "object"
-              ? { clientFetchFailure: turn.debug.clientFetchFailure }
-              : {}),
+            requestSummary: {
+              routeReachedApplication: requestDebug?.routeReachedApplication ?? null,
+              failureKind: requestDebug?.failureKind ?? null,
+              requestId: requestDebug?.requestId ?? null,
+              durationMs: requestDebug?.durationMs ?? null,
+            },
+            debug: turn.debug,
+            ...(clientFetchFailure ? { clientFetchFailure } : {}),
           })}</pre>
         </section>
       ) : null}
