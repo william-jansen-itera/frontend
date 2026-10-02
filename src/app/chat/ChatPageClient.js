@@ -820,14 +820,16 @@ export default function ChatPageClient({ includeDebug }) {
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
+  const hasObservedDebugData = turns.some((turn) => turn?.debug && typeof turn.debug === "object");
+  const showTurnInspector = includeDebug || hasObservedDebugData;
   const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
   const activeBroaderAnswerClarificationTurn = getLatestBroaderAnswerClarificationTurn(turns);
   const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
   const isSingleTurnLayout = turns.length === 1;
   const isInitialTransientState = turns.length === 1 && (Boolean(turns[0]?.isPending) || Boolean(turns[0]?.error));
   const isHistoryEmpty = turns.length === 0;
-  const isDebugPending = includeDebug && Boolean(selectedTurn?.isPending);
-  const isDebugEmpty = includeDebug && !selectedTurn;
+  const isDebugPending = showTurnInspector && Boolean(selectedTurn?.isPending);
+  const isDebugEmpty = showTurnInspector && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
 
   const setAgentFamilyPending = (key, isPending) => {
@@ -1431,7 +1433,7 @@ export default function ChatPageClient({ includeDebug }) {
 
   return (
     <main className="appPageShell">
-      <section className={`${styles.workspaceGrid} ${!includeDebug ? styles.workspaceGridSingle : ""}`}>
+      <section className={`${styles.workspaceGrid} ${!showTurnInspector ? styles.workspaceGridSingle : ""}`}>
         <div className={styles.chatColumnStack}>
           <div className={styles.chatColumnSurface}>
             <section className={styles.heroCard}>
@@ -1522,7 +1524,7 @@ export default function ChatPageClient({ includeDebug }) {
                 <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
                   <h3>Start a turn</h3>
                   <p>
-                    {includeDebug
+                    {showTurnInspector
                       ? "This will show the conversation."
                       : "The conversation history and grounded citations will appear here as you ask questions."}
                   </p>
@@ -1658,7 +1660,7 @@ export default function ChatPageClient({ includeDebug }) {
           ) : null}
         </div>
 
-        {includeDebug ? (
+        {showTurnInspector ? (
           <aside className={`appPanelShell ${styles.debugPanel} ${isDebugCompactState ? styles.debugPanelEmpty : ""}`}>
             <div className={`appPanelTopBar ${styles.panelHeader}`}>
               <div>
