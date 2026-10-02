@@ -86,21 +86,21 @@ export default function Home() {
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Notes</p>
           <h2 className={styles.cardTitle}>Grow the tree</h2>
-          <p className={styles.cardDescription}>Create or generate trees, branches, and leaves — notes and attachments live on the leaves. The structure and the material together power search and chat.</p>
+          <p className={styles.cardDescription}>Create or generate trees, branches, and leaves — notes and attachments live on the leaves. The structure and the material together power search and Agent. A tree can also grow roots into existing applications. Agent orchestrates them and uses their output as context, and to create new branches and leaves.</p>
           <Link href="/notes" className={styles.cardLink}>Open Notes</Link>
         </article>
 
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Search</p>
           <h2 className={styles.cardTitle}>Inspect the material</h2>
-          <p className={styles.cardDescription}>Look through notes and attachments, see the highlights, and jump to the branch and leaf they came from.</p>
+          <p className={styles.cardDescription}>Look through notes and attachments, see the highlights, and jump to the branch and leaf they came from. Search information and results are detailed enough for a forensic read.</p>
           <Link href="/search" className={styles.cardLink}>Open Search</Link>
         </article>
 
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Agent</p>
           <h2 className={styles.cardTitle}>Talk to the tree</h2>
-          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its material — with the evidence attached.</p>
+          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its material or its applications — with the evidence attached.</p>
           <Link href="/chat" className={styles.cardLink}>Open Agent</Link>
         </article>
       </section>

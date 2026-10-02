@@ -40,6 +40,12 @@ export default function About() {
         </article>
 
         <article className={styles.infoCard}>
+          <p className={styles.cardEyebrow}>Extend</p>
+          <h2 className={styles.cardTitle}>Grow roots into existing applications</h2>
+          <p className={styles.cardText}>Give the agent tools, or enable it to use existing applications, and it can use each capability in the right context. Then it does not only understand the domain. It can act in it. The tree is not only notes you write or generate. Agent can also use the output of the tools to grow trees.</p>
+        </article>
+
+        <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Review</p>
           <h2 className={styles.cardTitle}>Activate drafting and review where it matters</h2>
           <p className={styles.cardText}>A tree can opt into its own review workflow when the domain needs more control. That lets people draft material first, submit it for review, and approve or reject it inside the same workspace, while trees that do not need that process can stay lightweight.</p>
@@ -54,17 +60,17 @@ export default function About() {
         <article className={styles.infoCard}>
           <p className={styles.cardEyebrow}>Talk</p>
           <h2 className={styles.cardTitle}>Ask the domain, not a general model</h2>
-          <p className={styles.cardText}>Use Agent to ask questions against the trees you built. The answer is shaped by the material in that domain instead of relying only on broad model knowledge.</p>
+          <p className={styles.cardText}>Use Agent to ask questions against the trees you built. The answer is shaped by the material in that domain, and by your applications, instead of relying only on broad model knowledge.</p>
         </article>
 
         <article className={styles.infoCard}>
-          <p className={styles.cardEyebrow}>Grounding</p>
+          <p className={styles.cardEyebrow}>Ground</p>
           <h2 className={styles.cardTitle}>See the ground under the answer</h2>
           <p className={styles.cardText}>When the agent uses material from the tree, it shows the grounding so you can inspect the path back to the source and judge whether the answer is well supported.</p>
         </article>
 
         <article className={styles.infoCard}>
-          <p className={styles.cardEyebrow}>Broader answers</p>
+          <p className={styles.cardEyebrow}>Use broader knowledge</p>
           <h2 className={styles.cardTitle}>Use outside knowledge deliberately</h2>
           <p className={styles.cardText}>When the agent steps outside the local tree and uses broader model knowledge, that path stays explicit instead of pretending everything was grounded in your material.</p>
         </article>
@@ -76,19 +82,13 @@ export default function About() {
         </article>
 
         <article className={styles.infoCard}>
-          <p className={styles.cardEyebrow}>Collective memory</p>
+          <p className={styles.cardEyebrow}>Share collective memory</p>
           <h2 className={styles.cardTitle}>Hold the domain together</h2>
-          <p className={styles.cardText}>The agent has your understanding of the domain — the tree you built together — so it can recognize the connections in that material and speak from them. Context is not the chat history. It is a shared memory.</p>
+          <p className={styles.cardText}>The agent has your understanding of the domain — the tree you built together, and the applications it can use in context — so it can recognize the connections in that material and speak from them. Context is not the chat history. It is a shared memory.</p>
         </article>
 
         <article className={styles.infoCard}>
-          <p className={styles.cardEyebrow}>Extensibility</p>
-          <h2 className={styles.cardTitle}>Add tools, and the agent grows</h2>
-          <p className={styles.cardText}>Give the agent a tool for a particular context, and it can use that capability there. Then it does not only understand the domain. It can act in it. Each new tool extends what it can do, and the agent grows over the capabilities you have given it.</p>
-        </article>
-
-        <article className={styles.infoCard}>
-          <p className={styles.cardEyebrow}>Safety</p>
+          <p className={styles.cardEyebrow}>Restore</p>
           <h2 className={styles.cardTitle}>Restore before permanent removal</h2>
           <p className={styles.cardText}>Deleting a tree, branch, or attachment does not erase it immediately. The workspace keeps a 7-day recovery window first, so accidental deletes can be restored before final cleanup.</p>
         </article>
