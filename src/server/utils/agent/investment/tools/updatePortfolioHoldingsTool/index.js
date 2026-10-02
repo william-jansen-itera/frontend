@@ -1,3 +1,4 @@
+import { attachDebugToError } from '@/server/utils/agent/agentDebug';
 import { buildInvestmentToolResult } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import {
   collectPortfolioHoldings,
@@ -118,21 +119,31 @@ export function buildUpdatePortfolioHoldingsHandler({ includeDebug = false, upda
     let output;
     let operationDebug = null;
 
-    if (operation === UPDATE_HOLDINGS_OPERATION) {
-      output = await collectPortfolioHoldings({
-        treeId: resolvedTreeId,
+    try {
+      if (operation === UPDATE_HOLDINGS_OPERATION) {
+        output = await collectPortfolioHoldings({
+          treeId: resolvedTreeId,
+          entries,
+          updatedBy: resolvedUpdatedBy,
+        });
+      } else if (operation === REFRESH_CALCULATIONS_OPERATION) {
+        const refreshResult = await refreshPortfolioHoldingsCalculations({
+          treeId: resolvedTreeId,
+          updatedBy: resolvedUpdatedBy,
+        });
+        output = refreshResult?.output ?? refreshResult;
+        operationDebug = refreshResult?.debug ?? null;
+      } else {
+        throw new Error(`Unsupported portfolio holdings operation: ${operation ?? ''}`);
+      }
+    } catch (error) {
+      throw attachDebugToError(error, includeDebug ? {
+        operation: String(operation ?? ''),
+        entryCount: Array.isArray(entries) ? entries.length : 0,
         entries,
-        updatedBy: resolvedUpdatedBy,
-      });
-    } else if (operation === REFRESH_CALCULATIONS_OPERATION) {
-      const refreshResult = await refreshPortfolioHoldingsCalculations({
-        treeId: resolvedTreeId,
-        updatedBy: resolvedUpdatedBy,
-      });
-      output = refreshResult?.output ?? refreshResult;
-      operationDebug = refreshResult?.debug ?? null;
-    } else {
-      throw new Error(`Unsupported portfolio holdings operation: ${operation ?? ''}`);
+        resolvedTreeId,
+        resolvedUpdatedBy,
+      } : null);
     }
 
     return buildInvestmentToolResult({
