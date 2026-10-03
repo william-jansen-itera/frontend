@@ -123,7 +123,10 @@ export async function invokeInvestmentAgent({
       },
       initialInput,
       handlerMap,
-      handlerContext: agentPersonalCacheContext,
+      handlerContext: {
+        ...agentPersonalCacheContext,
+        debug,
+      },
       debug,
       includeDebug,
     });
