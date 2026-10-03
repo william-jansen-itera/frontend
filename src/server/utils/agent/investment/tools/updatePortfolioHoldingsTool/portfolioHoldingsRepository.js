@@ -28,6 +28,7 @@ const DERIVED_HEADERS = [
   PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER,
   PORTFOLIO_HOLDINGS_PERCENTAGE_HEADER,
 ];
+const PORTFOLIO_HOLDINGS_PRICE_LOOKUP_CONCURRENCY = 4;
 
 const USD_TO_DKK_RATE_URL = 'https://api.frankfurter.dev/v2/rate/usd/dkk';
 
@@ -314,6 +315,26 @@ function summarizePriceLookupSource(latestClose) {
   };
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+
+  const results = new Array(items.length);
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  let nextIndex = 0;
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }));
+
+  return results;
+}
+
 export async function collectPortfolioHoldings({ treeId, entries, updatedBy = null, onStep = null }) {
   if (!treeId) {
     throw new Error('A personal cache tree id is required to collect portfolio holdings.');
@@ -440,6 +461,8 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     onStep?.('tool update_portfolio_stock_holdings exchange rate failed');
   }
 
+  const validRows = [];
+
   for (const [rowIndex, row] of rows.entries()) {
     const normalizedTicker = normalizeTicker(row?.[PORTFOLIO_HOLDINGS_TICKER_HEADER]);
     const shareCount = Number(String(row?.[PORTFOLIO_HOLDINGS_SHARE_COUNT_HEADER] ?? '').trim());
@@ -459,63 +482,87 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
       continue;
     }
 
-    try {
-      onStep?.('tool update_portfolio_stock_holdings price lookup started', {
-        ticker: normalizedTicker,
-        rowNumber: rowIndex + 2,
-      });
-      const latestClose = await loadLatestClose({ ticker: normalizedTicker, updatedBy });
-      const priceLookupSource = summarizePriceLookupSource(latestClose);
-      onStep?.('tool update_portfolio_stock_holdings price lookup completed', {
-        ticker: normalizedTicker,
-        rowNumber: rowIndex + 2,
-        ...priceLookupSource,
-      });
+    validRows.push({
+      row,
+      rowIndex,
+      normalizedTicker,
+      shareCount,
+    });
+  }
 
+  const lookupResults = await mapWithConcurrency(
+    validRows,
+    PORTFOLIO_HOLDINGS_PRICE_LOOKUP_CONCURRENCY,
+    async ({ row, rowIndex, normalizedTicker, shareCount }) => {
+      try {
+        onStep?.('tool update_portfolio_stock_holdings price lookup started', {
+          ticker: normalizedTicker,
+          rowNumber: rowIndex + 2,
+        });
+        const latestClose = await loadLatestClose({ ticker: normalizedTicker, updatedBy });
+        const priceLookupSource = summarizePriceLookupSource(latestClose);
+        onStep?.('tool update_portfolio_stock_holdings price lookup completed', {
+          ticker: normalizedTicker,
+          rowNumber: rowIndex + 2,
+          ...priceLookupSource,
+        });
+
+        return {
+          row,
+          rowIndex,
+          normalizedTicker,
+          shareCount,
+          latestClose,
+          priceLookupSource,
+          failed: false,
+        };
+      } catch {
+        onStep?.('tool update_portfolio_stock_holdings price lookup failed', {
+          ticker: normalizedTicker,
+          rowNumber: rowIndex + 2,
+        });
+
+        return {
+          row,
+          rowIndex,
+          normalizedTicker,
+          shareCount,
+          latestClose: null,
+          priceLookupSource: null,
+          failed: true,
+        };
+      }
+    },
+  );
+
+  for (const lookupResult of lookupResults) {
+    const {
+      row,
+      rowIndex,
+      normalizedTicker,
+      shareCount,
+      latestClose,
+      priceLookupSource,
+      failed,
+    } = lookupResult;
+
+    if (priceLookupSource) {
       priceLookups.push({
         ticker: normalizedTicker,
         ...priceLookupSource,
       });
+    }
 
-      if (Array.isArray(latestClose?.providerRequests)) {
-        providerRequests.push(
-          ...latestClose.providerRequests.map((request) => ({
-            ticker: normalizedTicker,
-            ...request,
-          })),
-        );
-      }
-
-      if (!latestClose || !Number.isFinite(latestClose.close)) {
-        row[PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER] = '';
-        row[PORTFOLIO_HOLDINGS_VALUE_HEADER] = '';
-        row[PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER] = '';
-        row[PORTFOLIO_HOLDINGS_PERCENTAGE_HEADER] = '';
-        skippedRows.push({
-          rowNumber: rowIndex + 2,
+    if (Array.isArray(latestClose?.providerRequests)) {
+      providerRequests.push(
+        ...latestClose.providerRequests.map((request) => ({
           ticker: normalizedTicker,
-          reason: 'missing_latest_close',
-        });
-        continue;
-      }
+          ...request,
+        })),
+      );
+    }
 
-      const rowValue = shareCount * latestClose.close;
-      row[PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER] = String(latestClose.close);
-      row[PORTFOLIO_HOLDINGS_VALUE_HEADER] = formatValue(rowValue);
-      row[PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER] = usdToDkkRate
-        ? formatValue(rowValue * usdToDkkRate.rate)
-        : '';
-      row[PORTFOLIO_HOLDINGS_PERCENTAGE_HEADER] = '';
-      totalPortfolioValue += rowValue;
-      if (usdToDkkRate) {
-        totalPortfolioValueDkk += rowValue * usdToDkkRate.rate;
-      }
-      pricedTickers.push(normalizedTicker);
-    } catch {
-      onStep?.('tool update_portfolio_stock_holdings price lookup failed', {
-        ticker: normalizedTicker,
-        rowNumber: rowIndex + 2,
-      });
+    if (failed) {
       row[PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER] = '';
       row[PORTFOLIO_HOLDINGS_VALUE_HEADER] = '';
       row[PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER] = '';
@@ -525,7 +572,34 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
         ticker: normalizedTicker,
         reason: 'price_lookup_failed',
       });
+      continue;
     }
+
+    if (!latestClose || !Number.isFinite(latestClose.close)) {
+      row[PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER] = '';
+      row[PORTFOLIO_HOLDINGS_VALUE_HEADER] = '';
+      row[PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER] = '';
+      row[PORTFOLIO_HOLDINGS_PERCENTAGE_HEADER] = '';
+      skippedRows.push({
+        rowNumber: rowIndex + 2,
+        ticker: normalizedTicker,
+        reason: 'missing_latest_close',
+      });
+      continue;
+    }
+
+    const rowValue = shareCount * latestClose.close;
+    row[PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER] = String(latestClose.close);
+    row[PORTFOLIO_HOLDINGS_VALUE_HEADER] = formatValue(rowValue);
+    row[PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER] = usdToDkkRate
+      ? formatValue(rowValue * usdToDkkRate.rate)
+      : '';
+    row[PORTFOLIO_HOLDINGS_PERCENTAGE_HEADER] = '';
+    totalPortfolioValue += rowValue;
+    if (usdToDkkRate) {
+      totalPortfolioValueDkk += rowValue * usdToDkkRate.rate;
+    }
+    pricedTickers.push(normalizedTicker);
   }
 
   rows.forEach((row) => {
