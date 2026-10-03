@@ -1,4 +1,4 @@
-import { attachDebugToError } from '@/server/utils/agent/agentDebug';
+import { appendDebugStep, attachDebugToError } from '@/server/utils/agent/agentDebug';
 import { buildInvestmentToolResult } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import {
   collectPortfolioHoldings,
@@ -116,20 +116,34 @@ export function buildUpdatePortfolioHoldingsHandler({ includeDebug = false, upda
   return async function updatePortfolioHoldingsHandler({ operation, entries = [] }, agentContext = null) {
     const resolvedTreeId = agentContext?.personalCacheTreeId ?? personalCacheTreeId ?? null;
     const resolvedUpdatedBy = agentContext?.updatedBy ?? updatedBy ?? null;
+    const agentDebug = agentContext?.debug ?? null;
     let output;
     let operationDebug = null;
+    const emitStep = (step, details = null) => {
+      if (!includeDebug || !agentDebug) {
+        return;
+      }
+
+      appendDebugStep(agentDebug, step, details);
+    };
 
     try {
       if (operation === UPDATE_HOLDINGS_OPERATION) {
+        emitStep('tool update_portfolio_stock_holdings update started', {
+          entryCount: Array.isArray(entries) ? entries.length : 0,
+        });
         output = await collectPortfolioHoldings({
           treeId: resolvedTreeId,
           entries,
           updatedBy: resolvedUpdatedBy,
+          onStep: emitStep,
         });
       } else if (operation === REFRESH_CALCULATIONS_OPERATION) {
+        emitStep('tool update_portfolio_stock_holdings refresh started');
         const refreshResult = await refreshPortfolioHoldingsCalculations({
           treeId: resolvedTreeId,
           updatedBy: resolvedUpdatedBy,
+          onStep: emitStep,
         });
         output = refreshResult?.output ?? refreshResult;
         operationDebug = refreshResult?.debug ?? null;

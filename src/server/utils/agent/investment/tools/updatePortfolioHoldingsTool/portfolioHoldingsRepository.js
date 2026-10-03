@@ -292,7 +292,7 @@ async function loadLatestClose({ ticker, updatedBy }) {
     : null;
 }
 
-export async function collectPortfolioHoldings({ treeId, entries, updatedBy = null }) {
+export async function collectPortfolioHoldings({ treeId, entries, updatedBy = null, onStep = null }) {
   if (!treeId) {
     throw new Error('A personal cache tree id is required to collect portfolio holdings.');
   }
@@ -310,7 +310,14 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
     throw new Error('At least one ticker and share count pair is required for update_holdings.');
   }
 
+  onStep?.('tool update_portfolio_stock_holdings ensure file started', {
+    mode: 'update_holdings',
+  });
   const document = await ensurePortfolioHoldingsFile({ treeId, updatedBy });
+  onStep?.('tool update_portfolio_stock_holdings ensure file completed', {
+    mode: 'update_holdings',
+    existingRowCount: Array.isArray(document.rows) ? document.rows.length : 0,
+  });
   const rows = document.rows.map((row) => ({ ...row }));
   const columns = normalizeColumns(document.columns);
   const rowsByTicker = buildTickerRowMap(rows);
@@ -338,11 +345,19 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
     addedOrUpdatedTickers.push(entry.ticker);
   });
 
+  onStep?.('tool update_portfolio_stock_holdings save started', {
+    mode: 'update_holdings',
+    rowCount: rows.length,
+  });
   const savedDocument = await savePortfolioHoldingsDocument({
     treeId,
     columns,
     rows,
     updatedBy,
+  });
+  onStep?.('tool update_portfolio_stock_holdings save completed', {
+    mode: 'update_holdings',
+    rowCount: savedDocument.rows.length,
   });
 
   return {
@@ -368,12 +383,19 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
   };
 }
 
-export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy = null }) {
+export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy = null, onStep = null }) {
   if (!treeId) {
     throw new Error('A personal cache tree id is required to refresh portfolio holdings calculations.');
   }
 
+  onStep?.('tool update_portfolio_stock_holdings ensure file started', {
+    mode: 'refresh_calculations',
+  });
   const document = await ensurePortfolioHoldingsFile({ treeId, updatedBy });
+  onStep?.('tool update_portfolio_stock_holdings ensure file completed', {
+    mode: 'refresh_calculations',
+    existingRowCount: Array.isArray(document.rows) ? document.rows.length : 0,
+  });
   const rows = document.rows.map((row) => ({ ...row }));
   const columns = normalizeColumns(document.columns);
   const pricedTickers = [];
@@ -386,9 +408,14 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
   let totalPortfolioValueDkk = 0;
 
   try {
+    onStep?.('tool update_portfolio_stock_holdings exchange rate started');
     usdToDkkRate = await loadUsdToDkkRate();
+    onStep?.('tool update_portfolio_stock_holdings exchange rate completed', {
+      rate: usdToDkkRate?.rate ?? null,
+    });
   } catch {
     warnings.push('USD to DKK exchange rate could not be loaded. The value DKK column was left blank.');
+    onStep?.('tool update_portfolio_stock_holdings exchange rate failed');
   }
 
   for (const [rowIndex, row] of rows.entries()) {
@@ -411,7 +438,19 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     }
 
     try {
+      onStep?.('tool update_portfolio_stock_holdings price lookup started', {
+        ticker: normalizedTicker,
+        rowNumber: rowIndex + 2,
+      });
       const latestClose = await loadLatestClose({ ticker: normalizedTicker, updatedBy });
+      onStep?.('tool update_portfolio_stock_holdings price lookup completed', {
+        ticker: normalizedTicker,
+        rowNumber: rowIndex + 2,
+        cacheStatus: latestClose?.cacheStatus ?? null,
+        providerRequestCount: Array.isArray(latestClose?.providerRequests)
+          ? latestClose.providerRequests.length
+          : 0,
+      });
 
       priceLookups.push({
         ticker: normalizedTicker,
@@ -456,6 +495,10 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
       }
       pricedTickers.push(normalizedTicker);
     } catch {
+      onStep?.('tool update_portfolio_stock_holdings price lookup failed', {
+        ticker: normalizedTicker,
+        rowNumber: rowIndex + 2,
+      });
       row[PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER] = '';
       row[PORTFOLIO_HOLDINGS_VALUE_HEADER] = '';
       row[PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER] = '';
@@ -483,11 +526,19 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     warnings.push('No holdings rows are stored yet. Add ticker and share count pairs first.');
   }
 
+  onStep?.('tool update_portfolio_stock_holdings save started', {
+    mode: 'refresh_calculations',
+    rowCount: rows.length,
+  });
   const savedDocument = await savePortfolioHoldingsDocument({
     treeId,
     columns,
     rows,
     updatedBy,
+  });
+  onStep?.('tool update_portfolio_stock_holdings save completed', {
+    mode: 'refresh_calculations',
+    rowCount: savedDocument.rows.length,
   });
 
   return {
