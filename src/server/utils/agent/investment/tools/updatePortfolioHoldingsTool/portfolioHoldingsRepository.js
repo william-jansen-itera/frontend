@@ -292,6 +292,28 @@ async function loadLatestClose({ ticker, updatedBy }) {
     : null;
 }
 
+function summarizePriceLookupSource(latestClose) {
+  const providerRequests = Array.isArray(latestClose?.providerRequests)
+    ? latestClose.providerRequests
+    : [];
+  const providerRequestCount = providerRequests.length;
+  const cacheStatus = latestClose?.cacheStatus ?? null;
+  const usedFetchedPrice = cacheStatus !== 'hit' || providerRequestCount > 0;
+
+  return {
+    cacheStatus,
+    priceSource: cacheStatus === 'hit'
+      ? 'cache'
+      : usedFetchedPrice
+        ? 'provider_fetch'
+        : 'unknown',
+    providerRequestCount,
+    providerRequestReasons: providerRequests
+      .map((request) => String(request?.reason ?? '').trim())
+      .filter(Boolean),
+  };
+}
+
 export async function collectPortfolioHoldings({ treeId, entries, updatedBy = null, onStep = null }) {
   if (!treeId) {
     throw new Error('A personal cache tree id is required to collect portfolio holdings.');
@@ -443,21 +465,16 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
         rowNumber: rowIndex + 2,
       });
       const latestClose = await loadLatestClose({ ticker: normalizedTicker, updatedBy });
+      const priceLookupSource = summarizePriceLookupSource(latestClose);
       onStep?.('tool update_portfolio_stock_holdings price lookup completed', {
         ticker: normalizedTicker,
         rowNumber: rowIndex + 2,
-        cacheStatus: latestClose?.cacheStatus ?? null,
-        providerRequestCount: Array.isArray(latestClose?.providerRequests)
-          ? latestClose.providerRequests.length
-          : 0,
+        ...priceLookupSource,
       });
 
       priceLookups.push({
         ticker: normalizedTicker,
-        cacheStatus: latestClose?.cacheStatus ?? null,
-        providerRequestCount: Array.isArray(latestClose?.providerRequests)
-          ? latestClose.providerRequests.length
-          : 0,
+        ...priceLookupSource,
       });
 
       if (Array.isArray(latestClose?.providerRequests)) {
