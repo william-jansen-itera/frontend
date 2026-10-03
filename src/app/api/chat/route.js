@@ -75,16 +75,6 @@ function getDefaultIncludeDebug() {
   return parseBooleanSetting(process.env.APPLICATION_DEBUG, false);
 }
 
-function getChatRouteTimeoutMs() {
-  const parsedValue = Number(process.env.CHAT_ROUTE_TIMEOUT_MS);
-
-  if (!Number.isFinite(parsedValue) || parsedValue < 1000) {
-    return 45000;
-  }
-
-  return Math.floor(parsedValue);
-}
-
 function createChatJsonResponse(body, { status = 200, requestId, includeDebug } = {}) {
   const response = NextResponse.json(body, { status });
 
@@ -126,49 +116,10 @@ function appendRouteDebugStep(debug, step, details = null) {
   };
 }
 
-function buildRouteTimeoutError({ requestId, requestStartedAt, timeoutMs, routeDebug }) {
-  const error = new Error(`Chat request timed out after ${timeoutMs} ms before a response could be completed.`);
-
-  error.debug = appendRouteDebugStep(
-    {
-      ...(routeDebug && typeof routeDebug === 'object' ? routeDebug : {}),
-      request: {
-        requestId,
-        requestStartedAt,
-        responseOrigin: 'app-route',
-      },
-    },
-    'chat route timeout reached',
-    { timeoutMs },
-  );
-
-  return error;
-}
-
-async function invokeAgentFamilyWithTimeout({ timeoutMs, buildTimeoutError, action }) {
-  let timeoutId;
-
-  try {
-    return await Promise.race([
-      action(),
-      new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(buildTimeoutError());
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-  }
-}
-
 export async function POST(request) {
   let includeDebug = getDefaultIncludeDebug();
   const requestId = request.headers.get('x-chat-request-id') || randomUUID();
   const requestStartedAt = new Date().toISOString();
-  const routeTimeoutMs = getChatRouteTimeoutMs();
   let routeDebug = includeDebug ? appendRouteDebugStep({ requestId, loggingEnabled: includeDebug }, 'api call received', { requestId }) : null;
 
   try {
@@ -210,27 +161,17 @@ export async function POST(request) {
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route invoking agent family', {
       historyCount: history.length,
       hasPrincipal: Boolean(principal),
-      timeoutMs: routeTimeoutMs,
     }) : routeDebug;
-    const result = await invokeAgentFamilyWithTimeout({
-      timeoutMs: routeTimeoutMs,
-      buildTimeoutError: () => buildRouteTimeoutError({
-        requestId,
-        requestStartedAt,
-        timeoutMs: routeTimeoutMs,
-        routeDebug,
-      }),
-      action: () => invokeAgentFamily({
-        family,
-        familyStatus: resolvedFamily,
-        message,
-        history,
-        principal,
-        visibility,
-        followUpSelection,
-        includeDebug,
-        requestId,
-      }),
+    const result = await invokeAgentFamily({
+      family,
+      familyStatus: resolvedFamily,
+      message,
+      history,
+      principal,
+      visibility,
+      followUpSelection,
+      includeDebug,
+      requestId,
     });
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route received agent family result', {
       toolsUsedCount: Array.isArray(result?.toolsUsed) ? result.toolsUsed.length : null,

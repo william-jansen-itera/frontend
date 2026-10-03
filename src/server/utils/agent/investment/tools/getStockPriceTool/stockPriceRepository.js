@@ -109,17 +109,6 @@ function sliceRecentHistory(priceHistory, days) {
   });
 }
 
-function isOneDayBehind(leftDate, rightDate) {
-  const leftParsedDate = parseIsoDate(leftDate);
-  const rightParsedDate = parseIsoDate(rightDate);
-
-  if (!leftParsedDate || !rightParsedDate) {
-    return false;
-  }
-
-  return formatDate(shiftDays(leftParsedDate, 1)) === formatDate(rightParsedDate);
-}
-
 function doesCachedWindowStartCoverRequestedRange(earliestCachedDate, requiredWindowStartDate) {
   if (!earliestCachedDate || !requiredWindowStartDate) {
     return false;
@@ -241,29 +230,6 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
       reason: needsHistoryBackfill || !incrementalStartDate ? 'window_backfill' : 'incremental_refresh',
       ...fetchResult.request,
     });
-  }
-  const latestFetchedDate = fetchedHistory[fetchedHistory.length - 1]?.date ?? null;
-
-  if (existingHistory.length > 0 && isOneDayBehind(latestCachedDate, latestFetchedDate)) {
-    const repairStartDate = fallbackStartDate;
-
-    fetchResult = await fetcher({
-      ticker: normalizedTicker,
-      fromDate: repairStartDate,
-      toDate: fetchEndDate,
-    });
-    fetchedHistory = Array.isArray(fetchResult)
-      ? fetchResult
-      : Array.isArray(fetchResult?.priceHistory)
-        ? fetchResult.priceHistory
-        : [];
-
-    if (fetchResult?.request) {
-      providerRequests.push({
-        reason: 'repair_gap',
-        ...fetchResult.request,
-      });
-    }
   }
 
   const mergedHistory = mergePriceHistory(existingHistory, fetchedHistory);
