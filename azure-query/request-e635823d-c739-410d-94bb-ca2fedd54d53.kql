@@ -1,0 +1,16 @@
+CustomAppLogs_CL
+| where tostring(requestId_g) == "e635823d-c739-410d-94bb-ca2fedd54d53"
+| where tostring(event_s) in ("chat_route_step", "agent_debug_step")
+| order by TimeGenerated asc
+| project
+    completedAt_t,
+    event = tostring(event_s),
+    step = tostring(step_s),
+    completedAt = tostring(completedAt_t),
+    family = tostring(family_s),
+    ticker = tostring(details_ticker_s),
+    rowNumber = toint(details_rowNumber_d),
+    cacheStatus = tostring(details_cacheStatus_s),
+    priceSource = tostring(details_priceSource_s),
+    providerRequestCount = toint(details_providerRequestCount_d),
+    providerRequestReasons = tostring(details_providerRequestReasons_s)
