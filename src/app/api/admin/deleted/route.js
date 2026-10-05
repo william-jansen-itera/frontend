@@ -4,6 +4,48 @@ import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/serv
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { restoreNodeAttachmentBlobIfDeleted } from '@/server/utils/blobStorage';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
+import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
+
+function normalizeSecretMetadata(value) {
+  const candidate = typeof value === 'string'
+    ? (() => {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    })()
+    : value;
+
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return null;
+  }
+
+  const secretName = String(candidate.secretName ?? '').trim();
+
+  if (!secretName) {
+    return null;
+  }
+
+  return {
+    provider: String(candidate.provider ?? 'azure_key_vault').trim() || 'azure_key_vault',
+    secretName,
+    version: String(candidate.version ?? '').trim() || null,
+    vaultUrl: String(candidate.vaultUrl ?? '').trim() || null,
+    displayLabel: String(candidate.displayLabel ?? '').trim() || secretName,
+  };
+}
+
+async function restoreDeletedSecrets(treeId, secretRecords) {
+  for (const secretRecord of secretRecords) {
+    await invokeSecretFunction({
+      action: 'restore-secret',
+      treeId: String(treeId),
+      nodeId: String(secretRecord.treeNodeId),
+      secretMetadata: secretRecord.secretMetadata,
+    });
+  }
+}
 
 function assertAdminPrincipal(principal) {
   if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
@@ -82,9 +124,36 @@ async function undeleteTree(applicationIdentifier, treeId) {
         AND files.deleted_at = @tree_deleted_at;
     `);
 
+  const secrets = await new sql.Request()
+    .input('application_identifier', sql.NVarChar, applicationIdentifier)
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('tree_deleted_at', sql.DateTime2, treeDeletedAt)
+    .query(`
+      SELECT CAST(tn.id AS VARCHAR(20)) AS treeNodeId, tnd.secret_metadata AS secretMetadata
+      FROM tree_node_details tnd
+      INNER JOIN tree_nodes tn ON tn.id = tnd.tree_node_id
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ai.app_identifier = @application_identifier
+        AND ti.id = @tree_instance_id
+        AND ti.deleted_at = @tree_deleted_at
+        AND CAST(COALESCE(tnd.is_secret, 0) AS BIT) = 1
+        AND tnd.secret_metadata IS NOT NULL;
+    `);
+
   for (const attachment of attachments.recordset) {
     await restoreNodeAttachmentBlobIfDeleted(attachment.blobName);
   }
+
+  await restoreDeletedSecrets(
+    treeId,
+    secrets.recordset
+      .map((record) => ({
+        treeNodeId: record.treeNodeId,
+        secretMetadata: normalizeSecretMetadata(record.secretMetadata),
+      }))
+      .filter((record) => record.secretMetadata),
+  );
 
   const result = await new sql.Request()
     .input('application_identifier', sql.NVarChar, applicationIdentifier)
@@ -177,9 +246,51 @@ async function undeleteNode(applicationIdentifier, treeId, nodeId) {
       WHERE files.deleted_at = @node_deleted_at;
     `);
 
+  const secrets = await new sql.Request()
+    .input('application_identifier', sql.NVarChar, applicationIdentifier)
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('node_id', sql.Int, Number(nodeId))
+    .input('node_deleted_at', sql.DateTime2, nodeDeletedAt)
+    .query(`
+      WITH Descendants AS (
+        SELECT tn.id
+        FROM tree_nodes tn
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE ai.app_identifier = @application_identifier
+          AND tn.tree_instance_id = @tree_instance_id
+          AND tn.id = @node_id
+          AND tn.deleted_at = @node_deleted_at
+          AND ti.deleted_at IS NULL
+
+        UNION ALL
+
+        SELECT child.id
+        FROM tree_nodes child
+        INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
+        WHERE child.tree_instance_id = @tree_instance_id
+          AND child.deleted_at = @node_deleted_at
+      )
+      SELECT CAST(Descendants.id AS VARCHAR(20)) AS treeNodeId, tnd.secret_metadata AS secretMetadata
+      FROM Descendants
+      INNER JOIN tree_node_details tnd ON tnd.tree_node_id = Descendants.id
+      WHERE CAST(COALESCE(tnd.is_secret, 0) AS BIT) = 1
+        AND tnd.secret_metadata IS NOT NULL;
+    `);
+
   for (const attachment of attachments.recordset) {
     await restoreNodeAttachmentBlobIfDeleted(attachment.blobName);
   }
+
+  await restoreDeletedSecrets(
+    treeId,
+    secrets.recordset
+      .map((record) => ({
+        treeNodeId: record.treeNodeId,
+        secretMetadata: normalizeSecretMetadata(record.secretMetadata),
+      }))
+      .filter((record) => record.secretMetadata),
+  );
 
   const result = await new sql.Request()
     .input('application_identifier', sql.NVarChar, applicationIdentifier)

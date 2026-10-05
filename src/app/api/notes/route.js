@@ -18,6 +18,7 @@ import {
 } from '@/server/utils/azureSearch';
 import { logException, logTrace } from '@/server/utils/logging';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
+import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 import { assertTreeAccess, getAuditMetadata, getTreeList } from '@/server/utils/treeCatalog';
@@ -27,6 +28,9 @@ const REVIEW_STATUS_DRAFT = 'draft';
 const REVIEW_STATUS_SUBMITTED = 'submitted';
 const REVIEW_STATUS_APPROVED = 'approved';
 const REVIEW_STATUS_REJECTED = 'rejected';
+const SECRET_PROVIDER_AZURE_KEY_VAULT = 'azure_key_vault';
+const MASKED_SECRET_VALUE = 'Stored secret';
+const DEFAULT_SECRET_REFERENCE_LABEL = 'Stored Key Vault secret';
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   '.csv',
   '.doc',
@@ -100,6 +104,111 @@ function getEffectiveReviewStatus(value, approvalEnabled) {
   }
 
   return normalizeReviewStatus(value, REVIEW_STATUS_DRAFT);
+}
+
+function normalizeSecretMetadata(value) {
+  const candidate = typeof value === 'string'
+    ? (() => {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    })()
+    : value;
+
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return null;
+  }
+
+  const provider = String(candidate.provider ?? SECRET_PROVIDER_AZURE_KEY_VAULT).trim() || SECRET_PROVIDER_AZURE_KEY_VAULT;
+  const secretName = String(candidate.secretName ?? '').trim();
+  const version = String(candidate.version ?? '').trim() || null;
+  const vaultUrl = String(candidate.vaultUrl ?? '').trim() || null;
+  const displayLabel = String(candidate.displayLabel ?? '').trim() || secretName || null;
+
+  if (!secretName) {
+    return null;
+  }
+
+  return {
+    provider,
+    secretName,
+    version,
+    vaultUrl,
+    displayLabel,
+  };
+}
+
+function serializeSecretMetadata(value) {
+  const normalizedMetadata = normalizeSecretMetadata(value);
+
+  return normalizedMetadata ? JSON.stringify(normalizedMetadata) : null;
+}
+
+function buildSecretReference(secretMetadata) {
+  const normalizedMetadata = normalizeSecretMetadata(secretMetadata);
+
+  if (!normalizedMetadata) {
+    return null;
+  }
+
+  return {
+    provider: normalizedMetadata.provider,
+    version: normalizedMetadata.version,
+    displayLabel: DEFAULT_SECRET_REFERENCE_LABEL,
+    hasStoredSecret: true,
+  };
+}
+
+async function getDescendantSecretMetadata(treeInstanceId, nodeId, { includeDeleted = false } = {}) {
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, treeInstanceId)
+    .input('id', sql.Int, nodeId)
+    .input('include_deleted', sql.Bit, includeDeleted ? 1 : 0)
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`WITH Descendants AS (
+        SELECT tn.id
+        FROM tree_nodes tn
+        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+        WHERE tn.id = @id
+          AND tn.tree_instance_id = @tree_instance_id
+          AND ai.app_identifier = @application_identifier
+          AND (@include_deleted = 1 OR tn.deleted_at IS NULL)
+        UNION ALL
+        SELECT t.id
+        FROM tree_nodes t
+        INNER JOIN Descendants d ON t.parent_id = d.id
+        WHERE t.tree_instance_id = @tree_instance_id
+          AND (@include_deleted = 1 OR t.deleted_at IS NULL)
+      )
+      SELECT
+        CAST(d.id AS VARCHAR(20)) AS treeNodeId,
+        tnd.secret_metadata AS secretMetadata
+      FROM Descendants d
+      INNER JOIN tree_node_details tnd ON tnd.tree_node_id = d.id
+      WHERE CAST(COALESCE(tnd.is_secret, 0) AS BIT) = 1
+        AND tnd.secret_metadata IS NOT NULL;
+    `);
+
+  return result.recordset
+    .map((record) => ({
+      treeNodeId: record.treeNodeId,
+      secretMetadata: normalizeSecretMetadata(record.secretMetadata),
+    }))
+    .filter((record) => record.secretMetadata);
+}
+
+async function deleteStoredSecrets(treeInstanceId, secretRecords) {
+  for (const secretRecord of secretRecords) {
+    await invokeSecretFunction({
+      action: 'delete-secret',
+      treeId: String(treeInstanceId),
+      nodeId: String(secretRecord.treeNodeId),
+      secretMetadata: secretRecord.secretMetadata,
+    });
+  }
 }
 
 function resolveNextReviewStatus(currentStatus, reviewAction) {
@@ -273,6 +382,9 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       id: node.id,
       name: node.name,
       notes: '',
+      isSecret: false,
+      secretMetadata: null,
+      maskedSecretValue: null,
       updatedAt: null,
       updatedByUserDetails: null,
       attachments: [],
@@ -294,6 +406,8 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
         CAST(tn.id AS VARCHAR(10)) AS id,
         tn.text AS name,
         ISNULL(tnd.notes, '') AS notes,
+        CAST(COALESCE(tnd.is_secret, 0) AS BIT) AS isSecret,
+        tnd.secret_metadata AS secretMetadata,
         CAST(CASE WHEN COALESCE(ti.approval_enabled, 0) = 1 THEN COALESCE(tn.review_status, '${REVIEW_STATUS_DRAFT}') ELSE '${REVIEW_STATUS_DRAFT}' END AS NVARCHAR(20)) AS reviewStatus,
         tn.submitted_at AS submittedAt,
         tn.submitted_by_user_details AS submittedByUserDetails,
@@ -314,6 +428,9 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       id: node.id,
       name: node.name,
       notes: '',
+      isSecret: false,
+      secretMetadata: null,
+      maskedSecretValue: null,
       updatedAt: null,
       updatedByUserDetails: null,
       attachments: [],
@@ -355,11 +472,35 @@ async function queryNodeDetails(treeInstanceId, nodeId, transaction = null, know
       ORDER BY files.created_at DESC, files.id DESC;
     `);
 
+  const secretMetadata = buildSecretReference(details.secretMetadata);
+
   return {
     ...details,
     isLeafNode: true,
+    isSecret: Boolean(details.isSecret),
+    secretMetadata,
+    maskedSecretValue: Boolean(details.isSecret) ? MASKED_SECRET_VALUE : null,
     attachments: attachmentResult.recordset,
   };
+}
+
+async function queryTreeNodeDetailRecord(treeInstanceId, nodeId, transaction = null) {
+  const result = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
+    .input('id', sql.Int, parseInt(nodeId, 10))
+    .query(`
+      SELECT TOP 1
+        ISNULL(tnd.notes, '') AS notes,
+        CAST(COALESCE(tnd.is_secret, 0) AS BIT) AS isSecret,
+        tnd.secret_metadata AS secretMetadata
+      FROM tree_nodes tn
+      LEFT JOIN tree_node_details tnd ON tnd.tree_node_id = tn.id
+      WHERE tn.tree_instance_id = @tree_instance_id
+        AND tn.id = @id
+        AND tn.deleted_at IS NULL;
+    `);
+
+  return result.recordset[0] ?? null;
 }
 
 async function getNodeDetails(treeInstanceId, nodeId) {
@@ -927,7 +1068,10 @@ async function CreateGeneratedChildNodes({ treeInstanceId, parentId, children })
 
 async function DeleteTreeNode({ id, treeInstanceId }) {
   return withSqlConnection(async () => {
-    const attachments = await getDescendantAttachmentBlobs(treeInstanceId, id);
+    const [attachments, secrets] = await Promise.all([
+      getDescendantAttachmentBlobs(treeInstanceId, id),
+      getDescendantSecretMetadata(treeInstanceId, id),
+    ]);
     const deletedBlobNames = [];
 
     try {
@@ -938,6 +1082,8 @@ async function DeleteTreeNode({ id, treeInstanceId }) {
           deletedBlobNames.push(attachment.blobName);
         }
       }
+
+      await deleteStoredSecrets(treeInstanceId, secrets);
 
     const deletedAt = new Date();
     const deleteResult = await new sql.Request()
@@ -1278,7 +1424,14 @@ async function transitionAttachmentReviewStatus({ treeInstanceId, attachmentId, 
   return queryNodeDetails(treeInstanceId, attachment.treeNodeId);
 }
 
-async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes, updatedBy = null }) {
+async function UpdateTreeNodeDetails(treeInstanceId, nodeId, {
+  name,
+  notes,
+  isSecret = false,
+  secretValue = '',
+  secretMetadata = null,
+  updatedBy = null,
+}) {
   return withSqlConnection(async () => {
     const trimmedName = name.trim();
     const treeNode = await queryTreeNode(treeInstanceId, nodeId);
@@ -1314,9 +1467,44 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes, upda
       };
     }
 
+    const existingDetails = await queryTreeNodeDetailRecord(treeInstanceId, nodeId);
+    const nextIsSecret = Boolean(isSecret);
+    const nextNotes = typeof notes === 'string' ? notes : '';
+    const nextSecretValue = String(secretValue ?? '').trim();
+    const requestedSecretMetadata = normalizeSecretMetadata(secretMetadata);
+    const existingSecretMetadata = requestedSecretMetadata ?? normalizeSecretMetadata(existingDetails?.secretMetadata);
+    let nextSecretMetadata = null;
+
+    if (nextIsSecret) {
+      if (nextSecretValue) {
+        const brokerResult = await invokeSecretFunction({
+          action: 'set-secret',
+          treeId: String(treeInstanceId),
+          nodeId: String(nodeId),
+          secretValue: nextSecretValue,
+          secretMetadata: existingSecretMetadata,
+        });
+
+        nextSecretMetadata = normalizeSecretMetadata(brokerResult.secretMetadata);
+      } else if (existingSecretMetadata) {
+        nextSecretMetadata = existingSecretMetadata;
+      } else {
+        throw createStatusError('A secret value is required when enabling a secret note', 400);
+      }
+    } else if (existingSecretMetadata) {
+      await invokeSecretFunction({
+        action: 'delete-secret',
+        treeId: String(treeInstanceId),
+        nodeId: String(nodeId),
+        secretMetadata: existingSecretMetadata,
+      });
+    }
+
     await new sql.Request()
       .input('tree_node_id', sql.Int, nodeId)
-      .input('notes', sql.NVarChar(sql.MAX), notes ?? '')
+      .input('notes', sql.NVarChar(sql.MAX), nextNotes)
+      .input('is_secret', sql.Bit, nextIsSecret ? 1 : 0)
+      .input('secret_metadata', sql.NVarChar(sql.MAX), serializeSecretMetadata(nextSecretMetadata))
       .input('updated_by_object_id', sql.NVarChar(100), updatedBy?.updatedByObjectId ?? null)
       .input('updated_by_user_details', sql.NVarChar(320), updatedBy?.updatedByUserDetails ?? null)
       .query(`
@@ -1326,17 +1514,52 @@ async function UpdateTreeNodeDetails(treeInstanceId, nodeId, { name, notes, upda
         WHEN MATCHED THEN
           UPDATE SET
             notes = @notes,
+            is_secret = @is_secret,
+            secret_metadata = @secret_metadata,
             updated_by_object_id = @updated_by_object_id,
             updated_by_user_details = @updated_by_user_details,
             updated_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN
-          INSERT (tree_node_id, notes, created_at, updated_at, updated_by_object_id, updated_by_user_details)
-          VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME(), @updated_by_object_id, @updated_by_user_details);
+          INSERT (tree_node_id, notes, is_secret, secret_metadata, created_at, updated_at, updated_by_object_id, updated_by_user_details)
+          VALUES (@tree_node_id, @notes, @is_secret, @secret_metadata, SYSUTCDATETIME(), SYSUTCDATETIME(), @updated_by_object_id, @updated_by_user_details);
       `);
 
     return {
       flatData: await queryTreeData(treeInstanceId),
       details: await queryNodeDetails(treeInstanceId, nodeId, null, treeNode),
+    };
+  });
+}
+
+async function revealTreeNodeSecret(treeInstanceId, nodeId) {
+  return withSqlConnection(async () => {
+    const treeNode = await queryTreeNode(treeInstanceId, nodeId);
+
+    if (!treeNode) {
+      throw createStatusError('Node was not found for the selected tree', 404);
+    }
+
+    if (!treeNode.isLeafNode) {
+      throw createStatusError('Only leaf nodes can contain secrets', 400);
+    }
+
+    const detailRecord = await queryTreeNodeDetailRecord(treeInstanceId, nodeId);
+    const secretMetadata = normalizeSecretMetadata(detailRecord?.secretMetadata);
+
+    if (!detailRecord?.isSecret || !secretMetadata) {
+      throw createStatusError('This node does not contain a stored secret', 400);
+    }
+
+    const brokerResult = await invokeSecretFunction({
+      action: 'get-secret',
+      treeId: String(treeInstanceId),
+      nodeId: String(nodeId),
+      secretMetadata,
+    });
+
+    return {
+      secretValue: String(brokerResult.secretValue ?? ''),
+      secretMetadata: buildSecretReference(secretMetadata),
     };
   });
 }
@@ -1913,7 +2136,20 @@ export async function PUT(request) {
 export async function PATCH(request) {
   try {
     const principal = parseClientPrincipal(request);
-    const { action, id, treeId, isExpanded, expandedNodeIds, name, notes, attachmentId, rejectionComment } = await request.json();
+    const {
+      action,
+      id,
+      treeId,
+      isExpanded,
+      expandedNodeIds,
+      name,
+      notes,
+      isSecret,
+      secretValue,
+      secretMetadata,
+      attachmentId,
+      rejectionComment,
+    } = await request.json();
     const normalizedAction = String(action ?? '').trim().toLowerCase();
 
     if (!treeId) {
@@ -1921,6 +2157,14 @@ export async function PATCH(request) {
     }
 
     await assertWritableTreeForRequest(request, treeId);
+
+    if (normalizedAction === 'reveal-secret') {
+      if (id === undefined) {
+        return NextResponse.json({ error: 'Invalid request, id is required for secret reveal' }, { status: 400 });
+      }
+
+      return NextResponse.json(await revealTreeNodeSecret(parseInt(treeId, 10), parseInt(id, 10)));
+    }
 
     if (normalizedAction === 'submit-node-review' || normalizedAction === 'unsubmit-node-review' || normalizedAction === 'approve-node-review' || normalizedAction === 'reject-node-review') {
       if (id === undefined) {
@@ -1973,6 +2217,9 @@ export async function PATCH(request) {
     return NextResponse.json(await UpdateTreeNodeDetails(parseInt(treeId), parseInt(id), {
       name,
       notes: typeof notes === 'string' ? notes : '',
+      isSecret: Boolean(isSecret),
+      secretValue: typeof secretValue === 'string' ? secretValue : '',
+      secretMetadata,
       updatedBy: normalizeUpdatedByMetadata(principal),
     }));
   } catch (err) {

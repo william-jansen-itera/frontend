@@ -203,6 +203,74 @@
   padding: 16px;
 }
 
+.secretSection,
+.secretCard,
+.secretReferenceBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.secretSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.secretToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.secretCard {
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--surface-radius-card);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 252, 0.95));
+}
+
+.secretEditRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.secretEditRow .textInput {
+  flex: 1 1 16rem;
+}
+
+.secretReferenceValue {
+  color: #475569;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.secretPlaceholder {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  font-style: italic;
+}
+
+.secretActions {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.secretValueText {
+  color: #18181b;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .attachmentSection {
   display: grid;
   gap: 12px;

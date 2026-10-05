@@ -169,6 +169,11 @@ export function buildNodeEditorState(nodeDetails = null) {
   return {
     name: nodeDetails?.name ?? "",
     notes: nodeDetails?.notes ?? "",
+    isSecret: Boolean(nodeDetails?.isSecret),
+    secretMetadata: nodeDetails?.secretMetadata ?? null,
+    maskedSecretValue: nodeDetails?.maskedSecretValue ?? null,
+    secretValue: "",
+    revealedSecretValue: null,
     reviewStatus: nodeDetails?.reviewStatus ?? "draft",
     submittedAt: nodeDetails?.submittedAt ?? null,
     submittedByUserDetails: nodeDetails?.submittedByUserDetails ?? null,

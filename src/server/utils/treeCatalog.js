@@ -3,6 +3,7 @@ import {
   deleteNodeAttachmentBlobIfExists,
   restoreNodeAttachmentBlobIfDeleted,
 } from '@/server/utils/blobStorage';
+import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
 import { hasClientPrincipalRole, normalizeClientPrincipal } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
 
@@ -31,6 +32,7 @@ const REVIEW_ACTION_SUBMIT = 'submit';
 const REVIEW_ACTION_UNSUBMIT = 'unsubmit';
 const REVIEW_ACTION_APPROVE = 'approve';
 const REVIEW_ACTION_REJECT = 'reject';
+const SECRET_PROVIDER_AZURE_KEY_VAULT = 'azure_key_vault';
 
 export const TREE_REVIEW_ACTION_VALUES = Object.freeze([
   REVIEW_ACTION_SUBMIT,
@@ -55,6 +57,40 @@ function normalizeReviewStatus(value, fallback = REVIEW_STATUS_DRAFT) {
 
 function normalizeOptionalMetadataValue(value) {
   return String(value ?? '').trim() || null;
+}
+
+function normalizeSecretMetadata(value) {
+  const candidate = typeof value === 'string'
+    ? (() => {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    })()
+    : value;
+
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return null;
+  }
+
+  const provider = String(candidate.provider ?? SECRET_PROVIDER_AZURE_KEY_VAULT).trim() || SECRET_PROVIDER_AZURE_KEY_VAULT;
+  const secretName = String(candidate.secretName ?? '').trim();
+  const version = String(candidate.version ?? '').trim() || null;
+  const vaultUrl = String(candidate.vaultUrl ?? '').trim() || null;
+  const displayLabel = String(candidate.displayLabel ?? '').trim() || secretName || null;
+
+  if (!secretName) {
+    return null;
+  }
+
+  return {
+    provider,
+    secretName,
+    version,
+    vaultUrl,
+    displayLabel,
+  };
 }
 
 function normalizeRejectionComment(value, { required = false } = {}) {
@@ -1295,6 +1331,44 @@ async function restoreDeletedTreeAttachmentBlobs(blobNames) {
   }
 }
 
+async function getScopedTreeSecretMetadata(treeId) {
+  const result = await new sql.Request()
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`
+      SELECT
+        CAST(tn.id AS VARCHAR(20)) AS treeNodeId,
+        tnd.secret_metadata AS secretMetadata
+      FROM tree_node_details tnd
+      INNER JOIN tree_nodes tn ON tn.id = tnd.tree_node_id
+      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ti.id = @tree_instance_id
+        AND ai.app_identifier = @application_identifier
+        AND tn.deleted_at IS NULL
+        AND CAST(COALESCE(tnd.is_secret, 0) AS BIT) = 1
+        AND tnd.secret_metadata IS NOT NULL;
+    `);
+
+  return result.recordset
+    .map((record) => ({
+      treeNodeId: record.treeNodeId,
+      secretMetadata: normalizeSecretMetadata(record.secretMetadata),
+    }))
+    .filter((record) => record.secretMetadata);
+}
+
+async function deleteScopedTreeSecrets(treeId, secrets) {
+  for (const secret of secrets) {
+    await invokeSecretFunction({
+      action: 'delete-secret',
+      treeId: String(treeId),
+      nodeId: String(secret.treeNodeId),
+      secretMetadata: secret.secretMetadata,
+    });
+  }
+}
+
 async function softDeleteScopedTree(treeId, deletedAt) {
   const deleteResult = await new sql.Request()
     .input('tree_instance_id', sql.Int, Number(treeId))
@@ -1335,7 +1409,10 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
       enforceAccess,
     });
 
-    const attachments = await getScopedTreeAttachmentBlobs(treeId);
+    const [attachments, secrets] = await Promise.all([
+      getScopedTreeAttachmentBlobs(treeId),
+      getScopedTreeSecretMetadata(treeId),
+    ]);
     const deletedBlobNames = [];
 
     try {
@@ -1346,6 +1423,8 @@ export async function deleteTree({ treeId, principal = null, enforceAccess = fal
           deletedBlobNames.push(attachment.blobName);
         }
       }
+
+      await deleteScopedTreeSecrets(treeId, secrets);
 
       await softDeleteScopedTree(treeId, new Date());
 

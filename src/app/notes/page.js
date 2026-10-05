@@ -104,6 +104,18 @@ function buildAuditLabel(userDetails, timestamp, defaultLabel) {
   return parts.join(" • ");
 }
 
+function formatSecretReference(secretMetadata) {
+  const displayLabel = String(secretMetadata?.displayLabel ?? "").trim();
+  const secretName = String(secretMetadata?.secretName ?? "").trim();
+  const version = String(secretMetadata?.version ?? "").trim();
+
+  if (!displayLabel && !secretName) {
+    return "Secret reference will be created on save.";
+  }
+
+  return version ? `${displayLabel || secretName} (version ${version})` : (displayLabel || secretName);
+}
+
 function formatReviewStatusLabel(reviewStatus) {
   const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
 
@@ -258,6 +270,8 @@ function NotesPage() {
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState(null);
   const [pendingReviewKey, setPendingReviewKey] = useState("");
+  const [isRevealingSecret, setIsRevealingSecret] = useState(false);
+  const [isSecretValueVisible, setIsSecretValueVisible] = useState(false);
   const { pageContainerRef, treeContentRef, isStackedLayout, panelHeight, treeHeight } = usePanelLayout();
   const treeRef = useRef();
   const attachmentInputRef = useRef(null);
@@ -275,11 +289,17 @@ function NotesPage() {
   const isLeafSelection = Boolean(selectedNode?.isLeafNode);
   const canEditLeafDetails = Boolean(isLeafSelection && canWriteSelectedTree);
   const canGenerateNotes = Boolean(isLeafSelection && canWriteSelectedTree);
-  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null || Boolean(pendingReviewKey);
+  const canRevealSecret = Boolean(isLeafSelection && nodeEditorState.isSecret && nodeEditorState.secretMetadata?.hasStoredSecret);
+  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null || Boolean(pendingReviewKey) || isRevealingSecret;
   const isLoadingTrees = !isVisibilityReady || loadedVisibility !== visibilityParam;
   const resolvedTreeIdValue = treeIdParam ?? "";
+  const normalizedSecretValue = normalizeEditorComparableValue(nodeEditorState.secretValue);
+  const normalizedRevealedSecretValue = normalizeEditorComparableValue(nodeEditorState.revealedSecretValue);
+  const hasSecretValueChange = Boolean(nodeEditorState.isSecret) && normalizedSecretValue !== "" && normalizedSecretValue !== normalizedRevealedSecretValue;
   const hasUnsavedNodeDetailChanges = normalizeEditorComparableValue(nodeEditorState.name) !== normalizeEditorComparableValue(savedNodeEditorState.name)
-    || normalizeEditorComparableValue(nodeEditorState.notes) !== normalizeEditorComparableValue(savedNodeEditorState.notes);
+    || normalizeEditorComparableValue(nodeEditorState.notes) !== normalizeEditorComparableValue(savedNodeEditorState.notes)
+    || Boolean(nodeEditorState.isSecret) !== Boolean(savedNodeEditorState.isSecret)
+    || hasSecretValueChange;
   const selectedNodeReviewStatus = String(nodeEditorState.reviewStatus ?? selectedNode?.reviewStatus ?? "draft");
   const canSubmitSelectedNode = approvalEnabled && Boolean(selectedNode) && (selectedNodeReviewStatus === "draft" || selectedNodeReviewStatus === "rejected");
   const canApproveOrRejectSelectedNode = approvalEnabled && Boolean(selectedNode) && selectedNodeReviewStatus === "submitted";
@@ -800,6 +820,20 @@ function NotesPage() {
     }));
   };
 
+  const handleSecretToggleChange = (isSecret) => {
+    if (!isSecret) {
+      setIsSecretValueVisible(false);
+    }
+
+    setNodeEditorState((currentState) => ({
+      ...currentState,
+      isSecret,
+      revealedSecretValue: null,
+      maskedSecretValue: isSecret ? (currentState.maskedSecretValue || "Stored secret") : null,
+      secretValue: "",
+    }));
+  };
+
   const handleAttachmentSelectionChange = (event) => {
     setPendingFiles(Array.from(event.target.files ?? []));
   };
@@ -1058,6 +1092,46 @@ function NotesPage() {
     }
   };
 
+  const handleRevealSecret = async ({ populateInput = isEditingNotes } = {}) => {
+    if (!treeIdParam || !selectedNodeId || !canRevealSecret) {
+      return;
+    }
+
+    try {
+      setIsRevealingSecret(true);
+      setNodeDetailsError(null);
+
+      const response = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reveal-secret",
+          treeId: treeIdParam,
+          id: selectedNodeId,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to reveal secret");
+      }
+
+      setNodeEditorState((currentState) => ({
+        ...currentState,
+        secretMetadata: result.secretMetadata ?? currentState.secretMetadata,
+        revealedSecretValue: typeof result.secretValue === "string" ? result.secretValue : null,
+        secretValue: populateInput && typeof result.secretValue === "string"
+          ? result.secretValue
+          : currentState.secretValue,
+      }));
+    } catch (err) {
+      console.error("Failed to reveal secret:", err);
+      setNodeDetailsError(err.message);
+    } finally {
+      setIsRevealingSecret(false);
+    }
+  };
+
   // Save node editor state to the server 
   // and update state with the response, including treeData and nodeEditorState
   const handleSaveNodeDetails = async () => {
@@ -1077,6 +1151,9 @@ function NotesPage() {
           treeId: treeIdParam,
           name: nodeEditorState.name,
           notes: nodeEditorState.notes,
+          isSecret: nodeEditorState.isSecret,
+          secretValue: nodeEditorState.secretValue,
+          secretMetadata: nodeEditorState.secretMetadata,
         }),
       });
 
@@ -1098,19 +1175,37 @@ function NotesPage() {
     }
   };
 
-  const handleStartEditingNotes = () => {
+  const handleStartEditingNotes = async () => {
     if (!canEditLeafDetails || isNodeDetailsBusy) {
       return;
     }
 
+    const revealedSecretValue = typeof nodeEditorState.revealedSecretValue === "string"
+      ? nodeEditorState.revealedSecretValue
+      : null;
+
+    setNodeDetailsError(null);
+    setIsSecretValueVisible(false);
+    setNodeEditorState((currentState) => ({
+      ...currentState,
+      secretValue: revealedSecretValue ?? "",
+      revealedSecretValue,
+    }));
     setIsEditingNotes(true);
+
+    if (nodeEditorState.isSecret && nodeEditorState.secretMetadata?.hasStoredSecret && !revealedSecretValue) {
+      await handleRevealSecret({ populateInput: true });
+    }
   };
 
   const handleCancelEditingNotes = () => {
-    setNodeEditorState((currentState) => ({
-      ...currentState,
+    setIsSecretValueVisible(false);
+    setNodeEditorState({
+      ...savedNodeEditorState,
       notes: savedNodeEditorState.notes,
-    }));
+      secretValue: "",
+      revealedSecretValue: null,
+    });
     setNodeDetailsError(null);
     setIsEditingNotes(false);
   };
@@ -1456,6 +1551,75 @@ function NotesPage() {
                         onStartEditing={handleStartEditingNotes}
                         onCancelEditing={handleCancelEditingNotes}
                       />
+                    </div>
+                    <div className={styles.secretSection}>
+                      <div className={styles.secretSectionHeader}>
+                        <span className="appFieldLabel">Secret</span>
+                      </div>
+                      <label className={styles.secretToggle}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(nodeEditorState.isSecret)}
+                          onChange={(event) => handleSecretToggleChange(event.target.checked)}
+                          disabled={isNodeDetailsBusy || !canWriteSelectedTree || !isEditingNotes}
+                        />
+                        <span>Store a secret for this leaf in Key Vault</span>
+                      </label>
+                      {nodeEditorState.isSecret ? (
+                        <div className={styles.secretCard}>
+                          {isEditingNotes ? (
+                            <div className={styles.secretEditRow}>
+                              <input
+                                type={isSecretValueVisible ? "text" : "password"}
+                                value={nodeEditorState.secretValue}
+                                onChange={(event) => handleNodeEditorChange("secretValue", event.target.value)}
+                                disabled={isNodeDetailsBusy || !canWriteSelectedTree}
+                                placeholder="Secret value"
+                                className={`appTextControl ${styles.textInput}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsSecretValueVisible((currentValue) => !currentValue);
+                                }}
+                                disabled={isNodeDetailsBusy || !canWriteSelectedTree || !nodeEditorState.secretValue}
+                                className="appCompactActionButton appCompactActionButtonNeutral"
+                                aria-pressed={isSecretValueVisible}
+                              >
+                                {isSecretValueVisible ? "Hide" : "Show"}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className={styles.secretEditRow}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (nodeEditorState.revealedSecretValue) {
+                                    setNodeEditorState((currentState) => ({
+                                      ...currentState,
+                                      revealedSecretValue: null,
+                                    }));
+                                    return;
+                                  }
+
+                                  handleRevealSecret();
+                                }}
+                                disabled={isRevealingSecret || (!canRevealSecret && !nodeEditorState.revealedSecretValue)}
+                                className="appCompactActionButton appCompactActionButtonNeutral"
+                              >
+                                {isRevealingSecret ? "Revealing..." : nodeEditorState.revealedSecretValue ? "Hide" : "Reveal"}
+                              </button>
+                              {nodeEditorState.revealedSecretValue ? (
+                                <span className={styles.secretValueText}>{nodeEditorState.revealedSecretValue}</span>
+                              ) : (
+                                <span className={styles.secretPlaceholder}>
+                                  {nodeEditorState.maskedSecretValue || "Stored secret"}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                     <section className={styles.attachmentSection}>
                       <div className={styles.attachmentSectionHeader}>

@@ -260,6 +260,8 @@ GO
 CREATE TABLE [dbo].[tree_node_details](
 	[tree_node_id] [int] NOT NULL,
 	[notes] [nvarchar](max) NULL,
+	[is_secret] [bit] NOT NULL,
+	[secret_metadata] [nvarchar](max) NULL,
 	[created_at] [datetime2](7) NOT NULL,
 	[updated_at] [datetime2](7) NOT NULL,
  CONSTRAINT [PK_tree_node_details] PRIMARY KEY CLUSTERED 
@@ -267,6 +269,8 @@ CREATE TABLE [dbo].[tree_node_details](
 	[tree_node_id] ASC
 )WITH (STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
 ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[tree_node_details] ADD DEFAULT ((0)) FOR [is_secret]
 GO
 /****** Object:  Table [dbo].[tree_setting]    Script Date: 7/31/2026 4:11:42 PM ******/
 SET ANSI_NULLS ON

@@ -42,6 +42,21 @@ Optional maintenance settings:
 
 - `AZURE_PURGE_FUNCTION_URL` is the full HTTP purge Function URL used by frontend admin routes for manual purge actions
 - `AZURE_PURGE_FUNCTION_KEY` is the server-side function key used when the frontend calls the purge Function
+- `AZURE_SECRET_FUNCTION_URL` is the full HTTP secret-broker Function URL used by frontend notes routes for tree secret save and reveal actions
+- `AZURE_SECRET_FUNCTION_KEY` is the server-side function key used when the frontend calls the secret-broker Function
+
+### Tree Secret Flow
+
+Leaf-node secrets are stored and revealed through a brokered server flow rather than direct client access.
+
+1. The Notes page saves ordinary explanatory text in `notes`, but sends secret values to the Next.js notes API separately.
+2. The notes API authorizes tree access, then calls the Azure Function secret broker using `AZURE_SECRET_FUNCTION_URL` and `AZURE_SECRET_FUNCTION_KEY`.
+3. The Function App uses its own Azure identity to write the secret to Key Vault and returns only safe reference metadata for SQL storage.
+4. The client never receives or stores the underlying Key Vault secret name.
+5. When a user clicks `Reveal`, the client sends only the tree and node identifiers back to the notes API.
+6. The notes API looks up the stored server-side secret metadata for that leaf, calls the broker, and returns the secret value only for that authorized request.
+
+This keeps secret values out of searchable note content, keeps Key Vault identity off the client, and avoids exposing the actual Key Vault secret name in normal browser traffic.
 
 Optional analytics settings:
 
