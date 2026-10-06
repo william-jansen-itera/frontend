@@ -841,6 +841,7 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugPending = showTurnInspector && Boolean(selectedTurn?.isPending);
   const isDebugEmpty = showTurnInspector && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
+  const shouldShowVisibilityControl = chatFamily === "treeGrounding";
 
   const setAgentFamilyPending = (key, isPending) => {
     setAgentFamilyPendingItems((currentState) => ({
@@ -1452,17 +1453,19 @@ export default function ChatPageClient({ includeDebug }) {
             <section className={styles.heroCard}>
             <div className={`appPanelTopBar ${styles.promptPanelHeader}`}>
               <p className="appEyebrow">Prompt</p>
-              <label className={styles.toolbarLabel}>
-                <select
-                  value={visibility}
-                  onChange={handleVisibilityChange}
-                  disabled={isSubmitting || !isVisibilityReady}
-                >
-                  <option value="public">Public</option>
-                  <option value="private">Private</option>
-                  <option value="both">Both</option>
-                </select>
-              </label>
+              {shouldShowVisibilityControl ? (
+                <label className={styles.toolbarLabel}>
+                  <select
+                    value={visibility}
+                    onChange={handleVisibilityChange}
+                    disabled={isSubmitting || !isVisibilityReady}
+                  >
+                    <option value="public">Public</option>
+                    <option value="private">Private</option>
+                    <option value="both">Both</option>
+                  </select>
+                </label>
+              ) : null}
               <label className={styles.toolbarLabel}>
                 <select
                   value={chatFamily ?? ""}
