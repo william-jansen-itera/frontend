@@ -3,6 +3,7 @@ import { DefaultAzureCredential } from '@azure/identity';
 
 const DEFAULT_AGENT_NAME = 'tree-search-agent';
 const DEFAULT_INVESTMENT_AGENT_NAME = 'investment-agent';
+const DEFAULT_EMAIL_AGENT_NAME = 'email-agent';
 export const AGENT_PREVIEW_FEATURES = 'WorkflowAgents=V1Preview';
 
 let cachedProjectClient;
@@ -35,6 +36,13 @@ export function getRequiredFoundryFamilyConfig(family) {
     return {
       ...baseConfig,
       agentName: process.env.AZURE_AI_INVESTMENT_AGENT_NAME || DEFAULT_INVESTMENT_AGENT_NAME,
+    };
+  }
+
+  if (normalizedFamily === 'email') {
+    return {
+      ...baseConfig,
+      agentName: process.env.AZURE_AI_EMAIL_AGENT_NAME || DEFAULT_EMAIL_AGENT_NAME,
     };
   }
 

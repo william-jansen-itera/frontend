@@ -1,5 +1,6 @@
 import { invokeTreeSearchAgent } from '@/server/utils/agent/treeGrounding/treeAgentService';
 import { invokeInvestmentAgent } from '@/server/utils/agent/investment/investmentAgentService';
+import { invokeEmailAgent } from '@/server/utils/agent/email/emailAgentService';
 import {
   INVESTMENT_FAMILY,
   getInvestmentPromptAgentPublishStatus,
@@ -7,6 +8,13 @@ import {
   publishInvestmentPromptAgent,
   unpublishInvestmentPromptAgent,
 } from '@/server/utils/agent/investment/investmentAgentCatalog';
+import {
+  EMAIL_FAMILY,
+  getEmailPromptAgentPublishStatus,
+  listDefinedEmailTools,
+  publishEmailPromptAgent,
+  unpublishEmailPromptAgent,
+} from '@/server/utils/agent/email/emailAgentCatalog';
 import {
   getTreeGroundingPromptAgentPublishStatus,
   listDefinedTreeGroundingTools,
@@ -79,6 +87,19 @@ const FAMILY_REGISTRY = new Map([
     getPromptAgentPublishStatus: getInvestmentPromptAgentPublishStatus,
     publishPromptAgent: publishInvestmentPromptAgent,
     unpublishPromptAgent: unpublishInvestmentPromptAgent,
+  })],
+  [EMAIL_FAMILY, buildFamilyRegistration({
+    family: EMAIL_FAMILY,
+    label: 'Email',
+    description: 'An email assistant that uses IMAP and SMTP-backed tools with personal-cache working datasets.',
+    orchestratorToolName: 'ask_email_family',
+    supportsPromptAgentPublishing: true,
+    requiresPublishedPromptAgent: true,
+    invoke: invokeEmailAgent,
+    listDefinedTools: listDefinedEmailTools,
+    getPromptAgentPublishStatus: getEmailPromptAgentPublishStatus,
+    publishPromptAgent: publishEmailPromptAgent,
+    unpublishPromptAgent: unpublishEmailPromptAgent,
   })],
   [TREE_GROUNDING_FAMILY, buildFamilyRegistration({
     family: TREE_GROUNDING_FAMILY,
