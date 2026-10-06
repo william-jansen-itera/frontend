@@ -29,8 +29,8 @@ export const EXCHANGE_RATE_DATA_ROOT_PATH = Object.freeze([
 ]);
 
 export const PORTFOLIO_HOLDINGS_PATH = Object.freeze([
+  'Investment',
   'Portfolio',
-  'Holdings',
   'Stocks',
   'List',
 ]);

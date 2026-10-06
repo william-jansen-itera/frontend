@@ -258,7 +258,7 @@ When you answer an event request, end by asking whether the user wants to see ev
 
 ## update_portfolio_stock_holdings tool
 Use this tool when the user wants to create, add, refresh, or summarize personal portfolio holdings stored in personal cache.
-This tool operates on the fixed CSV file at Portfolio > Holdings > Stocks > List in the user personal cache.
+This tool operates on the fixed CSV file at Investment > Portfolio > Stocks > List in the user personal cache.
 Never calculate, estimate, infer, or derive average purchase price or return from unrelated fields or tool outputs.
 
 ### operation: update_holdings
