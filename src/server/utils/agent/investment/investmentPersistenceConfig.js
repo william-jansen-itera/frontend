@@ -23,6 +23,11 @@ export const STOCK_PRICE_DATA_ROOT_PATH = Object.freeze([
   'Data',
 ]);
 
+export const EXCHANGE_RATE_DATA_ROOT_PATH = Object.freeze([
+  'Exchange rates',
+  'Data',
+]);
+
 export const PORTFOLIO_HOLDINGS_PATH = Object.freeze([
   'Portfolio',
   'Holdings',
@@ -36,6 +41,7 @@ export const VOLATILITY_ANALYSIS_LOG_FILE_NAME = 'closing-price-recommendations.
 export const VOLATILITY_ANALYSIS_STATE_FILE_NAME = 'closing-price-recommendations.json';
 export const VOLATILITY_CONFIG_EXTENSION = '.yaml';
 export const STOCK_PRICE_CSV_FILE_NAME = 'closing-prices.csv';
+export const EXCHANGE_RATE_CSV_FILE_NAME = 'exchange-rate.csv';
 export const PORTFOLIO_HOLDINGS_CSV_FILE_NAME = 'Portfolio stock holdings.csv';
 export const PORTFOLIO_HOLDINGS_TICKER_HEADER = 'ticker';
 export const PORTFOLIO_HOLDINGS_SHARE_COUNT_HEADER = 'share count';
@@ -78,6 +84,13 @@ export function buildVolatilityAnalysisPath(ticker) {
 
 export function buildStockPricePath(ticker) {
   return [...STOCK_PRICE_DATA_ROOT_PATH, 'Closing prices', String(ticker ?? '').trim().toUpperCase()];
+}
+
+export function buildExchangeRatePath(baseCurrency = 'USD', quoteCurrency = 'DKK') {
+  const normalizedBaseCurrency = String(baseCurrency ?? '').trim().toUpperCase() || 'USD';
+  const normalizedQuoteCurrency = String(quoteCurrency ?? '').trim().toUpperCase() || 'DKK';
+
+  return [...EXCHANGE_RATE_DATA_ROOT_PATH, 'Recent', `${normalizedBaseCurrency}/${normalizedQuoteCurrency}`];
 }
 
 export function buildPortfolioHoldingsPath() {

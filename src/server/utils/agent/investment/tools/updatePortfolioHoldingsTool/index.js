@@ -146,12 +146,14 @@ export function buildUpdatePortfolioHoldingsHandler({ includeDebug = false, upda
         emitStep('tool update_portfolio_stock_holdings update started', {
           entryCount: Array.isArray(entries) ? entries.length : 0,
         });
-        output = await collectPortfolioHoldings({
+        const updateResult = await collectPortfolioHoldings({
           treeId: resolvedTreeId,
           entries,
           updatedBy: resolvedUpdatedBy,
           onStep: emitStep,
         });
+        output = updateResult?.output ?? updateResult;
+        operationDebug = updateResult?.debug ?? null;
       } else if (operation === REMOVE_HOLDINGS_OPERATION) {
         emitStep('tool update_portfolio_stock_holdings remove started', {
           entryCount: Array.isArray(entries) ? entries.length : 0,

@@ -15,6 +15,7 @@ import {
   readSingleInvestmentTextAttachmentByFileName,
   replaceInvestmentLeafAttachment,
 } from '@/server/utils/agent/investment/investmentTreeRepository';
+import { getCachedOrFetchExchangeRate } from '@/server/utils/agent/investment/tools/exchangeRateRepository';
 import { normalizeTicker } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import { fetchHistoricalClosingPrices } from '@/server/utils/agent/investment/tools/getStockPriceTool/historicalPriceProvider';
 import { getCachedOrFetchPriceHistory } from '@/server/utils/agent/investment/tools/getStockPriceTool/stockPriceRepository';
@@ -39,8 +40,6 @@ const DERIVED_HEADERS = [
   PORTFOLIO_HOLDINGS_RETURN_PERCENTAGE_HEADER,
 ];
 const PORTFOLIO_HOLDINGS_PRICE_LOOKUP_CONCURRENCY = 4;
-
-const USD_TO_DKK_RATE_URL = 'https://api.frankfurter.dev/v2/rate/usd/dkk';
 
 const CANONICAL_HEADER_LOOKUP = new Map(
   [...REQUIRED_HEADERS, ...DERIVED_HEADERS].map((header) => [header.toLowerCase(), header]),
@@ -271,29 +270,10 @@ function convertDkkToUsd(value, usdToDkkRate) {
 }
 
 async function loadUsdToDkkRate() {
-  const response = await fetch(USD_TO_DKK_RATE_URL, {
-    cache: 'no-store',
+  return getCachedOrFetchExchangeRate({
+    baseCurrency: 'USD',
+    quoteCurrency: 'DKK',
   });
-
-  if (!response.ok) {
-    throw new Error(`USD to DKK rate request failed (${response.status}).`);
-  }
-
-  const payload = await response.json();
-  const rate = Number(payload?.rate);
-
-  if (!Number.isFinite(rate) || rate <= 0) {
-    throw new Error('USD to DKK rate response did not contain a valid rate.');
-  }
-
-  return {
-    base: String(payload?.base ?? 'USD').trim() || 'USD',
-    quote: String(payload?.quote ?? 'DKK').trim() || 'DKK',
-    date: String(payload?.date ?? '').trim() || null,
-    rate,
-    provider: 'frankfurter',
-    url: USD_TO_DKK_RATE_URL,
-  };
 }
 
 function buildTickerRowMap(rows) {
@@ -462,10 +442,15 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
       mode: 'update_holdings',
     });
     try {
-      usdToDkkRate = await loadUsdToDkkRate();
+      usdToDkkRate = await getCachedOrFetchExchangeRate({
+        baseCurrency: 'USD',
+        quoteCurrency: 'DKK',
+        updatedBy,
+      });
       onStep?.('tool update_portfolio_stock_holdings exchange rate completed', {
         mode: 'update_holdings',
         rate: usdToDkkRate?.rate ?? null,
+        cacheStatus: usdToDkkRate?.cacheStatus ?? null,
       });
     } catch (error) {
       onStep?.('tool update_portfolio_stock_holdings exchange rate failed', {
@@ -533,26 +518,31 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
   });
 
   return {
-    treeId: String(treeId),
-    operation: 'update_holdings',
-    currency: 'USD',
-    fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
-    pathSegments: buildPortfolioHoldingsPath(),
-    columns: savedDocument.columns,
-    rows: savedDocument.rows,
-    addedOrUpdatedTickers,
-    removedTickers: [],
-    pricedTickers: [],
-    skippedRows: [],
-    totals: {
-      pricedRowCount: 0,
-      skippedRowCount: 0,
-      totalPortfolioValue: 0,
-      totalPortfolioValueDkk: 0,
-      pricedTickerCount: 0,
+    output: {
+      treeId: String(treeId),
+      operation: 'update_holdings',
+      currency: 'USD',
+      fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
+      pathSegments: buildPortfolioHoldingsPath(),
+      columns: savedDocument.columns,
+      rows: savedDocument.rows,
+      addedOrUpdatedTickers,
+      removedTickers: [],
+      pricedTickers: [],
+      skippedRows: [],
+      totals: {
+        pricedRowCount: 0,
+        skippedRowCount: 0,
+        totalPortfolioValue: 0,
+        totalPortfolioValueDkk: 0,
+        pricedTickerCount: 0,
+      },
+      fileLink: savedDocument.fileLink,
+      warnings: [],
     },
-    fileLink: savedDocument.fileLink,
-    warnings: [],
+    debug: {
+      exchangeRate: usdToDkkRate,
+    },
   };
 }
 
@@ -662,9 +652,14 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
 
   try {
     onStep?.('tool update_portfolio_stock_holdings exchange rate started');
-    usdToDkkRate = await loadUsdToDkkRate();
+    usdToDkkRate = await getCachedOrFetchExchangeRate({
+      baseCurrency: 'USD',
+      quoteCurrency: 'DKK',
+      updatedBy,
+    });
     onStep?.('tool update_portfolio_stock_holdings exchange rate completed', {
       rate: usdToDkkRate?.rate ?? null,
+      cacheStatus: usdToDkkRate?.cacheStatus ?? null,
     });
   } catch {
     warnings.push('USD to DKK exchange rate could not be loaded. The value DKK column was left blank.');
@@ -878,20 +873,45 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     warnings.push('No holdings rows are stored yet. Add ticker rows first, and include share count before refreshing calculations that require pricing.');
   }
 
-  onStep?.('tool update_portfolio_stock_holdings save started', {
-    mode: 'refresh_calculations',
-    rowCount: rows.length,
+  const originalSerializedCsv = stringifyPortfolioHoldingsCsv({
+    columns,
+    rows: document.rows,
   });
-  const savedDocument = await savePortfolioHoldingsDocument({
-    treeId,
+  const refreshedSerializedCsv = stringifyPortfolioHoldingsCsv({
     columns,
     rows,
-    updatedBy,
   });
-  onStep?.('tool update_portfolio_stock_holdings save completed', {
-    mode: 'refresh_calculations',
-    rowCount: savedDocument.rows.length,
-  });
+  const didChangeFile = refreshedSerializedCsv !== originalSerializedCsv;
+
+  let savedDocument;
+
+  if (didChangeFile) {
+    onStep?.('tool update_portfolio_stock_holdings save started', {
+      mode: 'refresh_calculations',
+      rowCount: rows.length,
+    });
+    savedDocument = await savePortfolioHoldingsDocument({
+      treeId,
+      columns,
+      rows,
+      updatedBy,
+    });
+    onStep?.('tool update_portfolio_stock_holdings save completed', {
+      mode: 'refresh_calculations',
+      rowCount: savedDocument.rows.length,
+    });
+  } else {
+    savedDocument = {
+      columns,
+      rows,
+      fileLink: document.fileLink,
+    };
+    onStep?.('tool update_portfolio_stock_holdings save skipped', {
+      mode: 'refresh_calculations',
+      reason: 'no_file_changes',
+      rowCount: rows.length,
+    });
+  }
 
   return {
     output: {
@@ -917,6 +937,7 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
       warnings,
     },
     debug: {
+      didChangeFile,
       priceLookups,
       providerRequests,
       exchangeRate: usdToDkkRate,
