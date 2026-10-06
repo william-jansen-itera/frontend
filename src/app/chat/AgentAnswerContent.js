@@ -4,6 +4,7 @@ import Image from "next/image";
 import styles from "./page.module.css";
 
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
+const MARKDOWN_TABLE_SEPARATOR_PATTERN = /^:?-{3,}:?$/;
 
 function getImageExtension(candidate) {
   const normalizedCandidate = String(candidate ?? "").trim().toLowerCase();
@@ -70,7 +71,40 @@ function getAttachmentLinkLabel(rawLabel, rawUrl) {
   return getAttachmentFileNameFromUrl(rawUrl);
 }
 
-function buildAgentAnswerBlocks(answer) {
+function splitMarkdownTableRow(rawLine) {
+  const normalizedLine = String(rawLine ?? "").trim();
+
+  if (!normalizedLine.startsWith("|") || !normalizedLine.endsWith("|")) {
+    return null;
+  }
+
+  return normalizedLine.slice(1, -1).split("|").map((cell) => cell.trim());
+}
+
+function isMarkdownTableSeparatorRow(rawLine) {
+  const cells = splitMarkdownTableRow(rawLine);
+
+  return Array.isArray(cells)
+    && cells.length > 0
+    && cells.every((cell) => MARKDOWN_TABLE_SEPARATOR_PATTERN.test(cell.replace(/\s+/g, "")));
+}
+
+function isMarkdownTableHeaderRow(rawLine) {
+  const cells = splitMarkdownTableRow(rawLine);
+  return Array.isArray(cells) && cells.length >= 2;
+}
+
+function normalizeTableCells(cells, targetLength) {
+  const normalizedCells = Array.isArray(cells) ? [...cells] : [];
+
+  while (normalizedCells.length < targetLength) {
+    normalizedCells.push("");
+  }
+
+  return normalizedCells.slice(0, targetLength);
+}
+
+function buildInlineBlocks(answer) {
   const normalizedAnswer = String(answer ?? "");
   const attachmentPattern = /(!)?\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
   const blocks = [];
@@ -146,6 +180,84 @@ function buildAgentAnswerBlocks(answer) {
   return blocks.length > 0 ? blocks : [{ type: "inline", segments: [{ type: "text", content: normalizedAnswer }] }];
 }
 
+function buildAgentAnswerBlocks(answer) {
+  const normalizedAnswer = String(answer ?? "").replace(/\r\n?/g, "\n");
+  const lines = normalizedAnswer.split("\n");
+  const blocks = [];
+  let textBuffer = [];
+
+  const flushTextBuffer = () => {
+    if (textBuffer.length === 0) {
+      return;
+    }
+
+    blocks.push(...buildInlineBlocks(textBuffer.join("\n")));
+    textBuffer = [];
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const currentLine = lines[index];
+    const nextLine = lines[index + 1] ?? "";
+
+    if (isMarkdownTableHeaderRow(currentLine) && isMarkdownTableSeparatorRow(nextLine)) {
+      flushTextBuffer();
+
+      const headerCells = splitMarkdownTableRow(currentLine) ?? [];
+      const rows = [];
+      index += 2;
+
+      while (index < lines.length) {
+        const rowCells = splitMarkdownTableRow(lines[index]);
+
+        if (!rowCells) {
+          index -= 1;
+          break;
+        }
+
+        rows.push(normalizeTableCells(rowCells, headerCells.length));
+        index += 1;
+      }
+
+      blocks.push({
+        type: "table",
+        headers: headerCells,
+        rows,
+      });
+      continue;
+    }
+
+    textBuffer.push(currentLine);
+  }
+
+  flushTextBuffer();
+
+  return blocks.length > 0 ? blocks : buildInlineBlocks(normalizedAnswer);
+}
+
+function renderInlineSegments(segments, keyPrefix, blockIndex) {
+  return segments.map((segment, segmentIndex) => {
+    if (segment.type === "attachmentLink") {
+      return (
+        <a
+          key={`${keyPrefix}-link-${blockIndex}-${segmentIndex}`}
+          href={segment.href}
+          target="_blank"
+          rel="noreferrer"
+          className={styles.inlineAttachmentLink}
+        >
+          {segment.label}
+        </a>
+      );
+    }
+
+    return (
+      <span key={`${keyPrefix}-segment-${blockIndex}-${segmentIndex}`}>
+        {segment.content}
+      </span>
+    );
+  });
+}
+
 export function AgentAnswerContent({ answer, keyPrefix, textClassName }) {
   return buildAgentAnswerBlocks(answer).map((block, index) => {
     if (block.type === "image") {
@@ -177,30 +289,39 @@ export function AgentAnswerContent({ answer, keyPrefix, textClassName }) {
       );
     }
 
+    if (block.type === "table") {
+      return (
+        <div key={`${keyPrefix}-table-${index}`} className={styles.messageTableWrapper}>
+          <table className={styles.messageTable}>
+            <thead>
+              <tr>
+                {block.headers.map((header, headerIndex) => (
+                  <th key={`${keyPrefix}-table-${index}-header-${headerIndex}`}>
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr key={`${keyPrefix}-table-${index}-row-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={`${keyPrefix}-table-${index}-cell-${rowIndex}-${cellIndex}`}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
     if (block.type === "inline") {
       return (
         <p key={`${keyPrefix}-text-${index}`} className={textClassName}>
-          {block.segments.map((segment, segmentIndex) => {
-            if (segment.type === "attachmentLink") {
-              return (
-                <a
-                  key={`${keyPrefix}-link-${index}-${segmentIndex}`}
-                  href={segment.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={styles.inlineAttachmentLink}
-                >
-                  {segment.label}
-                </a>
-              );
-            }
-
-            return (
-              <span key={`${keyPrefix}-segment-${index}-${segmentIndex}`}>
-                {segment.content}
-              </span>
-            );
-          })}
+          {renderInlineSegments(block.segments, keyPrefix, index)}
         </p>
       );
     }

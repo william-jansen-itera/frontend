@@ -39,10 +39,13 @@ export const STOCK_PRICE_CSV_FILE_NAME = 'closing-prices.csv';
 export const PORTFOLIO_HOLDINGS_CSV_FILE_NAME = 'Portfolio stock holdings.csv';
 export const PORTFOLIO_HOLDINGS_TICKER_HEADER = 'ticker';
 export const PORTFOLIO_HOLDINGS_SHARE_COUNT_HEADER = 'share count';
+export const PORTFOLIO_HOLDINGS_AVERAGE_PURCHASE_PRICE_HEADER = 'average purchase price';
+export const PORTFOLIO_HOLDINGS_RETURN_SNAPSHOT_HEADER = 'return';
 export const PORTFOLIO_HOLDINGS_CLOSING_PRICE_HEADER = 'closing price';
 export const PORTFOLIO_HOLDINGS_VALUE_HEADER = 'value';
 export const PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER = 'value DKK';
 export const PORTFOLIO_HOLDINGS_PERCENTAGE_HEADER = 'percentage';
+export const PORTFOLIO_HOLDINGS_RETURN_PERCENTAGE_HEADER = 'return (%)';
 export const DEFAULT_MAX_HISTORY_DAYS = 365;
 
 export function getRequiredInvestmentPersistenceTreeId() {

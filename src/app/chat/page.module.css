@@ -672,6 +672,53 @@
   color: #0f172a;
 }
 
+.messageTableWrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: 0.45rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.messageTable {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: collapse;
+  color: #0f172a;
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.messageTable th,
+.messageTable td {
+  padding: 0.72rem 0.8rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+  white-space: nowrap;
+}
+
+.messageTable th {
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, rgba(240, 249, 255, 0.98), rgba(226, 232, 240, 0.92));
+  color: #0f172a;
+  font-size: 0.83rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.messageTable tbody tr:nth-child(even) {
+  background: rgba(248, 250, 252, 0.88);
+}
+
+.messageTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .attachmentPreviewRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

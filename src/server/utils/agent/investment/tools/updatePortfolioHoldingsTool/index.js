@@ -2,11 +2,13 @@ import { appendDebugStep, attachDebugToError } from '@/server/utils/agent/agentD
 import { buildInvestmentToolResult } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import {
   collectPortfolioHoldings,
+  removePortfolioHoldings,
   refreshPortfolioHoldingsCalculations,
 } from '@/server/utils/agent/investment/tools/updatePortfolioHoldingsTool/portfolioHoldingsRepository';
 
 export const UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL = 'update_portfolio_stock_holdings';
 export const UPDATE_HOLDINGS_OPERATION = 'update_holdings';
+export const REMOVE_HOLDINGS_OPERATION = 'remove_holdings';
 export const REFRESH_CALCULATIONS_OPERATION = 'refresh_calculations';
 
 export const updatePortfolioHoldingsToolOutputSchema = {
@@ -32,6 +34,10 @@ export const updatePortfolioHoldingsToolOutputSchema = {
       },
     },
     addedOrUpdatedTickers: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    removedTickers: {
       type: 'array',
       items: { type: 'string' },
     },
@@ -70,26 +76,26 @@ export const updatePortfolioHoldingsToolOutputSchema = {
       items: { type: 'string' },
     },
   },
-  required: ['treeId', 'operation', 'fileName', 'pathSegments', 'currency', 'columns', 'rows', 'addedOrUpdatedTickers', 'pricedTickers', 'skippedRows', 'totals', 'fileLink', 'warnings'],
+  required: ['treeId', 'operation', 'fileName', 'pathSegments', 'currency', 'columns', 'rows', 'addedOrUpdatedTickers', 'removedTickers', 'pricedTickers', 'skippedRows', 'totals', 'fileLink', 'warnings'],
   additionalProperties: false,
 };
 
 export const updatePortfolioHoldingsToolDefinition = {
   type: 'function',
   name: UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL,
-  description: 'Manage the personal-cache portfolio holdings CSV. Use update_holdings to create or upsert ticker and share count rows after the user provides them. Use refresh_calculations to update closing price, value, and percentage from the latest available closing prices and return the full current CSV dataset plus a file link.',
+  description: 'Manage the personal-cache portfolio holdings CSV. Use update_holdings to create or partially update stored per-ticker fields after the user provides them. Use remove_holdings to remove one or more ticker rows from the CSV. Each entry must include ticker and, for update_holdings, at least one explicitly user-provided field among shareCount, averagePurchasePrice, or returnSnapshot; use null for any other field that is not being updated. Never infer average purchase price or return from unrelated data. When update_holdings receives returnSnapshot, treat the user input as DKK for the full ticker position and convert it to USD before storing it in the CSV return column. During refresh_calculations, average purchase price may be derived only from the stored return in USD, share count, and the latest closing price when average purchase price is otherwise missing. Use refresh_calculations to update closing price, value, percentage, return, and return (%) from the latest available closing prices and return the full current CSV dataset plus a file link.',
   strict: true,
   parameters: {
     type: 'object',
     properties: {
       operation: {
         type: 'string',
-        description: 'Operation to run. Use update_holdings to add or update ticker rows, or refresh_calculations to recompute portfolio values from the stored CSV.',
-        enum: [UPDATE_HOLDINGS_OPERATION, REFRESH_CALCULATIONS_OPERATION],
+        description: 'Operation to run. Use update_holdings to add or update ticker rows, remove_holdings to delete ticker rows, or refresh_calculations to recompute portfolio values and return (%) from the stored CSV.',
+        enum: [UPDATE_HOLDINGS_OPERATION, REMOVE_HOLDINGS_OPERATION, REFRESH_CALCULATIONS_OPERATION],
       },
       entries: {
         type: 'array',
-        description: 'Ticker and share count pairs to write when operation is update_holdings. Use [] for refresh_calculations.',
+        description: 'Per-ticker entries used by update_holdings or remove_holdings. For update_holdings, each entry must include ticker and may update shareCount, averagePurchasePrice, and/or returnSnapshot. For remove_holdings, pass the ticker to remove and set the other fields to null. Use [] for refresh_calculations.',
         items: {
           type: 'object',
           properties: {
@@ -98,11 +104,19 @@ export const updatePortfolioHoldingsToolDefinition = {
               description: 'Stock ticker symbol, such as MSFT or AAPL.',
             },
             shareCount: {
-              type: 'number',
-              description: 'Share count to store for this ticker.',
+              type: ['number', 'null'],
+              description: 'Share count to store for this ticker. Use null when share count is not being updated in this entry.',
+            },
+            averagePurchasePrice: {
+              type: ['number', 'null'],
+              description: 'Average purchase price explicitly provided by the user for this ticker so return and return (%) can be calculated during refresh. Use null when it is not being updated or is not known. The system may derive this later only from an explicitly provided returnSnapshot stored in USD plus the latest closing price.',
+            },
+            returnSnapshot: {
+              type: ['number', 'null'],
+              description: 'Absolute gain or loss for the full ticker position explicitly provided by the user in DKK. Use null when it is not being updated or is not known. This is not a percent and may be negative. update_holdings converts it to USD before storing it in the CSV return column.',
             },
           },
-          required: ['ticker', 'shareCount'],
+          required: ['ticker', 'shareCount', 'averagePurchasePrice', 'returnSnapshot'],
           additionalProperties: false,
         },
       },
@@ -133,6 +147,16 @@ export function buildUpdatePortfolioHoldingsHandler({ includeDebug = false, upda
           entryCount: Array.isArray(entries) ? entries.length : 0,
         });
         output = await collectPortfolioHoldings({
+          treeId: resolvedTreeId,
+          entries,
+          updatedBy: resolvedUpdatedBy,
+          onStep: emitStep,
+        });
+      } else if (operation === REMOVE_HOLDINGS_OPERATION) {
+        emitStep('tool update_portfolio_stock_holdings remove started', {
+          entryCount: Array.isArray(entries) ? entries.length : 0,
+        });
+        output = await removePortfolioHoldings({
           treeId: resolvedTreeId,
           entries,
           updatedBy: resolvedUpdatedBy,

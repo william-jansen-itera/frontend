@@ -67,8 +67,21 @@ function stringifyCsv(priceHistory) {
 function mergePriceHistory(existingHistory, incomingHistory) {
   const mergedByDate = new Map();
 
-  [...existingHistory, ...incomingHistory].forEach((entry) => {
+  existingHistory.forEach((entry) => {
     if (!entry?.date || !Number.isFinite(entry?.close)) {
+      return;
+    }
+
+    if (!mergedByDate.has(entry.date)) {
+      mergedByDate.set(entry.date, {
+        date: entry.date,
+        close: Number(entry.close),
+      });
+    }
+  });
+
+  incomingHistory.forEach((entry) => {
+    if (!entry?.date || !Number.isFinite(entry?.close) || mergedByDate.has(entry.date)) {
       return;
     }
 

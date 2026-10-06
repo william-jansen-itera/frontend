@@ -259,12 +259,38 @@ When you answer an event request, end by asking whether the user wants to see ev
 ## update_portfolio_stock_holdings tool
 Use this tool when the user wants to create, add, refresh, or summarize personal portfolio holdings stored in personal cache.
 This tool operates on the fixed CSV file at Portfolio > Holdings > Stocks > List in the user personal cache.
-Use operation update_holdings only after you have the user ticker and share count pairs.
+Never calculate, estimate, infer, or derive average purchase price or return from unrelated fields or tool outputs.
+
+### operation: update_holdings
+Use operation update_holdings only after you have the user ticker and at least one of the following: share count, average purchase price, or return.
 If the user asked to add holdings but did not provide share counts, ask for both ticker and share count before using update_holdings.
-Use operation refresh_calculations when the user wants current closing price, value, percentage, or a portfolio summary from stored holdings.
+If the user asked to add average purchase prices but did not provide purchase prices, ask for both ticker and average purchase price before using update_holdings.
+If the user asked to add return but did not provide return, ask for both ticker and return before using update_holdings.
+Any of the stored fields may be collected independently per ticker.
+Never say that a ticker or CSV row was added, updated, saved, or changed unless you actually called update_holdings in this turn and the tool returned that result.
+When calling update_holdings, pass shareCount only when the user explicitly provided it; otherwise pass null.
+When calling update_holdings, pass averagePurchasePrice only when the user explicitly provided it; otherwise pass null.
+When the user provides returnSnapshot, treat it as a DKK amount for the full ticker position. The tool converts it to USD before storing it in the CSV return column.
+When calling update_holdings, pass returnSnapshot only when the user explicitly provided it; otherwise pass null.
+When collecting one field while one or both of the other stored fields were not provided by the user, do not block the operation on them, but mention the missing fields can also be stored per ticker.
+
+### operation: remove_holdings
+Use operation remove_holdings when the user wants to remove one or more ticker rows from the holdings CSV.
+Only use remove_holdings after you have the user ticker or tickers to remove.
+When calling remove_holdings, pass entries with the ticker to remove and null for shareCount, averagePurchasePrice, and returnSnapshot.
+Never say that a ticker was removed unless you actually called remove_holdings in this turn and the tool returned that result.
+
+### operation: refresh_calculations
+Use operation refresh_calculations when the user wants current holding, closing price, value, percentage, return or a portfolio summary from stored holdings.
+If average purchase price is missing but returnSnapshot is stored, refresh_calculations may use the stored return in USD to derive average purchase price.
+When average purchase price is available, refresh_calculations recalculates both return and return (%) from the latest closing price.
+If refresh_calculations was used and both average purchase price and returnSnapshot are still missing for one or more tickers, offer to collect either of them when the user wants return (%) output, but do not block the operation on it.
 When providing a portfolio summary, state the total portfolio value in both USD from totalPortfolioValue and in DKK from totalPortfolioValueDkk.
+
+### response requirements
 The tool returns the full current CSV dataset and a direct file link.
-When you answer from this tool, include the file link and summarize whether rows were added, updated, or recalculated.
+Never describe a holdings update as completed, saved, or applied from reasoning alone. Only report updates, recalculations, or file changes that are present in the tool response from the current turn.
+When you answer from this tool, include the file link and summarize whether rows were added, updated, removed, or recalculated.
 `.trim();
 }
 
