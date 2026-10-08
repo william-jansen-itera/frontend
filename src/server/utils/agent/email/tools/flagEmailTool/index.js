@@ -13,14 +13,17 @@ export const FLAG_EMAIL_TOOL = 'flag_email';
 export const flagEmailToolDefinition = {
   type: 'function',
   name: FLAG_EMAIL_TOOL,
-  description: 'Add or remove IMAP flags such as \\Seen, \\Flagged, or \\Answered for one email.',
+  description: 'Add or remove IMAP flags such as \\Seen, \\Flagged, or \\Answered on one email.',
   strict: true,
   parameters: {
     type: 'object',
     properties: {
       provider: { type: 'string' },
       folder: { type: 'string' },
-      uid: { type: 'string' },
+      uid: {
+        type: 'string',
+        description: 'String copied unchanged from data.emails[].uid in the latest retrieve_emails result. Do not use the array index, data.resultCount, meta.resultCount, or any value not present in data.emails[].uid.',
+      },
       mode: { type: 'string', enum: ['add', 'remove'] },
       flags: {
         type: 'array',

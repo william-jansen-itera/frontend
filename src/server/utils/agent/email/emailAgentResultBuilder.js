@@ -35,6 +35,7 @@ export async function buildEmailFamilyResult({
       normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
+      permissionToBroadenDetectionEnabled: false,
       debug,
     }),
   );

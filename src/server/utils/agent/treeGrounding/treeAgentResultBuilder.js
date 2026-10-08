@@ -67,6 +67,7 @@ export async function buildTreeGroundingFamilyResult({
       normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
+      permissionToBroadenDetectionEnabled: true,
       debug,
     }),
   );

@@ -3,9 +3,10 @@ import {
   readPersonalCacheTextAttachmentByFileName,
   replacePersonalCacheTextAttachment,
 } from '@/server/utils/agent/personalCacheTreeRepository';
+import { buildCachedEmailHeuristics } from '@/server/utils/agent/email/emailHeuristics';
 
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
-const RETRIEVAL_CACHE_TTL_MS = 20 * 60 * 1000;
+const RETRIEVAL_CACHE_TTL_MS = 30 * 60 * 1000;
 
 function normalizeProviderLabel(provider) {
   const normalizedProvider = String(provider ?? '').trim();
@@ -59,12 +60,34 @@ async function writeJsonAttachment({ treeId, pathSegments, fileName, value, upda
   });
 }
 
+function withCachedEmailHeuristics(message) {
+  if (!message || typeof message !== 'object') {
+    return message;
+  }
+
+  return {
+    ...message,
+    heuristicCache: buildCachedEmailHeuristics({
+      subject: String(message.subject ?? ''),
+      bodyText: String(message.bodyText ?? ''),
+    }),
+  };
+}
+
+function normalizeCachedMessages(messages) {
+  return Array.isArray(messages) ? messages.map(withCachedEmailHeuristics) : [];
+}
+
+function didJsonShapeChange(previousValue, nextValue) {
+  return JSON.stringify(previousValue) !== JSON.stringify(nextValue);
+}
+
 export async function storeLatestEmailRetrievalSnapshot({ treeId, provider, folder = 'INBOX', messages, updatedBy = null, sourceWindowSize = null }) {
   const snapshot = {
     datasetKey: randomUUID(),
     provider: normalizeProviderLabel(provider),
     folder: String(folder ?? 'INBOX').trim() || 'INBOX',
-    messages,
+    messages: Array.isArray(messages) ? messages.map(withCachedEmailHeuristics) : [],
     createdAt: new Date().toISOString(),
     sourceWindowSize: Number.isInteger(sourceWindowSize) && sourceWindowSize > 0 ? sourceWindowSize : null,
   };
@@ -81,11 +104,35 @@ export async function storeLatestEmailRetrievalSnapshot({ treeId, provider, fold
 }
 
 export async function loadLatestEmailRetrievalSnapshot({ treeId, provider, folder = 'INBOX' }) {
-  return readJsonAttachment({
+  const snapshot = await readJsonAttachment({
     treeId,
     pathSegments: buildEmailCachePath(provider, 'Retrievals'),
     fileName: buildRetrievalSnapshotFileName(folder),
   });
+
+  if (!snapshot) {
+    return null;
+  }
+
+  const normalizedMessages = normalizeCachedMessages(snapshot.messages);
+
+  if (didJsonShapeChange(snapshot.messages, normalizedMessages)) {
+    const normalizedSnapshot = {
+      ...snapshot,
+      messages: normalizedMessages,
+    };
+
+    await writeJsonAttachment({
+      treeId,
+      pathSegments: buildEmailCachePath(provider, 'Retrievals'),
+      fileName: buildRetrievalSnapshotFileName(folder),
+      value: normalizedSnapshot,
+    });
+
+    return normalizedSnapshot;
+  }
+
+  return snapshot;
 }
 
 export async function invalidateLatestEmailRetrievalSnapshot({ treeId, provider, folder = 'INBOX', updatedBy = null }) {
@@ -131,7 +178,7 @@ export async function storeCachedEmailMessage({ treeId, provider, uid, message, 
     fileName: buildCachedMessageFileName(uid),
     value: {
       cachedAt: new Date().toISOString(),
-      message,
+      message: withCachedEmailHeuristics(message),
     },
     updatedBy,
   });
@@ -144,7 +191,25 @@ export async function loadCachedEmailMessage({ treeId, provider, uid }) {
     fileName: buildCachedMessageFileName(uid),
   });
 
-  return cachedDocument?.message ?? null;
+  if (!cachedDocument?.message) {
+    return null;
+  }
+
+  const normalizedMessage = withCachedEmailHeuristics(cachedDocument.message);
+
+  if (didJsonShapeChange(cachedDocument.message, normalizedMessage)) {
+    await writeJsonAttachment({
+      treeId,
+      pathSegments: buildEmailCachePath(provider, 'Messages'),
+      fileName: buildCachedMessageFileName(uid),
+      value: {
+        ...cachedDocument,
+        message: normalizedMessage,
+      },
+    });
+  }
+
+  return normalizedMessage;
 }
 
 export async function invalidateCachedEmailMessage({ treeId, provider, uid, updatedBy = null }) {

@@ -8,7 +8,7 @@ export const SEND_EMAIL_TOOL = 'send_email';
 export const sendEmailToolDefinition = {
   type: 'function',
   name: SEND_EMAIL_TOOL,
-  description: 'Send an email using the configured SMTP account settings.',
+  description: 'Send one email using the configured SMTP account settings.',
   strict: true,
   parameters: {
     type: 'object',

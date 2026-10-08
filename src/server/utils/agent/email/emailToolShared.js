@@ -3,6 +3,10 @@ import { buildAgentToolResult } from '@/server/utils/agent/agentToolResult';
 export const EMAIL_FAMILY = 'email';
 
 function resolveResultCount(data) {
+  if (Array.isArray(data?.emails)) {
+    return data.emails.length;
+  }
+
   if (Array.isArray(data?.messages)) {
     return data.messages.length;
   }
@@ -13,6 +17,10 @@ function resolveResultCount(data) {
 
   if (Array.isArray(data?.classifications)) {
     return data.classifications.length;
+  }
+
+  if (Array.isArray(data?.analyses)) {
+    return data.analyses.length;
   }
 
   if (Array.isArray(data?.actionItems)) {

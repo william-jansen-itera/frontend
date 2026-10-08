@@ -318,14 +318,29 @@ async function isPermissionToBroadenAnswer({
   openAIClient,
   userMessage,
   groundedResponseReviewSteps,
+  enabled = true,
   debugTiming = null,
 }) {
+  if (!enabled) {
+    if (debugTiming && typeof debugTiming === 'object') {
+      debugTiming.executed = false;
+    }
+
+    return {
+      enabled: false,
+      matches: false,
+      source: null,
+      skippedReason: 'disabled_for_family',
+    };
+  }
+
   const hasAnyToolInvocations = Array.isArray(toolInvocations) && toolInvocations.length > 0;
   const hasAnyToolResults = hasToolResults(toolInvocations);
   const shouldOfferBroaderAnswerFromEmptyToolResults = hasAnyToolInvocations && !hasAnyToolResults;
 
   if (shouldOfferBroaderAnswerFromEmptyToolResults) {
     return {
+      enabled: true,
       matches: true,
       source: 'result_count',
     };
@@ -333,6 +348,7 @@ async function isPermissionToBroadenAnswer({
 
   if (!mentionsBroadening(answer)) {
     return {
+      enabled: true,
       matches: false,
       source: null,
     };
@@ -340,6 +356,7 @@ async function isPermissionToBroadenAnswer({
 
   if (mentionsPermission(answer)) {
     return {
+      enabled: true,
       matches: true,
       source: 'regex',
     };
@@ -347,6 +364,7 @@ async function isPermissionToBroadenAnswer({
 
   if (!(ENABLE_PERMISSION_TO_BROADER_MODEL_REVIEW && Boolean(answer))) {
     return {
+      enabled: true,
       matches: false,
       source: null,
     };
@@ -372,6 +390,7 @@ async function isPermissionToBroadenAnswer({
   }
 
   return {
+    enabled: true,
     matches: Boolean(groundedResponseReview.isRequestPermission),
     source: groundedResponseReview.isRequestPermission ? 'model_review' : null,
   };
@@ -412,6 +431,7 @@ export async function classifyAgentTurn({
   normalizedFollowUpSelection,
   openAIClient,
   normalizedMessage,
+  permissionToBroadenDetectionEnabled = true,
   debug = null,
 }) {
   const answer = extractAnswerText(finalResponse);
@@ -424,6 +444,7 @@ export async function classifyAgentTurn({
       openAIClient,
       userMessage: normalizedMessage,
       groundedResponseReviewSteps,
+      enabled: permissionToBroadenDetectionEnabled,
       debugTiming: debug?.timings?.broaderAnswerReview ?? null,
     }),
   );
@@ -447,6 +468,7 @@ export async function classifyAgentTurn({
       turnType,
       isGrounded,
       usedBroaderKnowledge,
+      permissionToBroadenDetectionEnabled,
       permissionToBroadenDetection,
       groundedResponseReview: groundedResponseReviewSteps,
       responseToolInvocations,
@@ -459,6 +481,7 @@ export async function classifyAgentTurn({
     turnType,
     isGrounded,
     usedBroaderKnowledge,
+    permissionToBroadenDetectionEnabled,
     permissionToBroadenDetection,
     groundedResponseReviewSteps,
     followUpOptions,

@@ -11,6 +11,8 @@ const DEFAULT_SCAN_MULTIPLIER = 5;
 const MIN_SCAN_LIMIT = 25;
 const MAX_SCAN_LIMIT = 100;
 
+export const REFRESH_RETRIEVAL_SCAN_LIMIT = MAX_SCAN_LIMIT;
+
 export function normalizeRetrievalLimit(value, fallback = 10) {
   return Math.max(1, Math.min(Number.parseInt(String(value ?? fallback), 10) || fallback, 25));
 }
@@ -21,14 +23,62 @@ export function computeRetrievalScanLimit(limit, fallback = 10) {
   return Math.max(MIN_SCAN_LIMIT, Math.min(normalizedLimit * DEFAULT_SCAN_MULTIPLIER, MAX_SCAN_LIMIT));
 }
 
-function normalizeAddressValue(addressValue) {
-  if (!addressValue || !Array.isArray(addressValue.value)) {
-    return [];
+function normalizeScanLimitOverride(value) {
+  const parsedValue = Number.parseInt(String(value ?? ''), 10);
+
+  if (!Number.isFinite(parsedValue)) {
+    return null;
   }
 
-  return addressValue.value
-    .map((entry) => String(entry?.address ?? '').trim())
+  return Math.max(MIN_SCAN_LIMIT, Math.min(parsedValue, MAX_SCAN_LIMIT));
+}
+
+function normalizeEnvelopeAddressEntry(entry) {
+  const directAddress = String(entry?.address ?? '').trim();
+  const mailbox = String(entry?.mailbox ?? '').trim();
+  const host = String(entry?.host ?? '').trim();
+  const name = normalizeWhitespace(entry?.name ?? entry?.displayName ?? '');
+  const address = directAddress || (mailbox && host ? `${mailbox}@${host}` : mailbox || '');
+
+  if (!name && !address) {
+    return null;
+  }
+
+  return {
+    name: name || null,
+    address: address || null,
+  };
+}
+
+function normalizeAddressValue(addressValue) {
+  const entries = Array.isArray(addressValue)
+    ? addressValue
+    : Array.isArray(addressValue?.value)
+      ? addressValue.value
+      : [];
+
+  return entries
+    .map((entry) => normalizeEnvelopeAddressEntry(entry))
     .filter(Boolean);
+}
+
+function normalizeAddressList(addressValue) {
+  return normalizeAddressValue(addressValue)
+    .map((entry) => entry.address || entry.name)
+    .filter(Boolean);
+}
+
+function buildPrimarySenderFields(addressValue) {
+  const primaryEntry = normalizeAddressValue(addressValue)[0] ?? null;
+
+  return {
+    from: primaryEntry
+      ? {
+        name: primaryEntry.name ?? null,
+        address: primaryEntry.address ?? null,
+      }
+      : null,
+  };
 }
 
 function normalizeMessageFlags(flags) {
@@ -97,14 +147,23 @@ function matchesDateBounds(messageDate, { since = null, before = null } = {}) {
   return true;
 }
 
-function matchesTextFilters(messageSummary, { fromContains, subjectContains, textQuery }) {
-  const fromValue = String(messageSummary.from ?? '').toLowerCase();
+function matchesTextFilters(messageSummary, { fromContains, subjectContains, textQuery, anyTextQueries }) {
+  const fromValue = [messageSummary.from?.name, messageSummary.from?.address]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
   const subjectValue = String(messageSummary.subject ?? '').toLowerCase();
   const previewValue = String(messageSummary.preview ?? '').toLowerCase();
   const bodyValue = String(messageSummary.bodyText ?? '').toLowerCase();
   const normalizedFromContains = String(fromContains ?? '').trim().toLowerCase();
   const normalizedSubjectContains = String(subjectContains ?? '').trim().toLowerCase();
   const normalizedTextQuery = String(textQuery ?? '').trim().toLowerCase();
+  const normalizedAnyTextQueries = Array.from(new Set(
+    Array.isArray(anyTextQueries)
+      ? anyTextQueries.map((value) => String(value ?? '').trim().toLowerCase()).filter(Boolean)
+      : [],
+  ));
+  const searchableValues = [subjectValue, previewValue, bodyValue];
 
   if (normalizedFromContains && !fromValue.includes(normalizedFromContains)) {
     return false;
@@ -114,7 +173,11 @@ function matchesTextFilters(messageSummary, { fromContains, subjectContains, tex
     return false;
   }
 
-  if (normalizedTextQuery && !subjectValue.includes(normalizedTextQuery) && !previewValue.includes(normalizedTextQuery) && !bodyValue.includes(normalizedTextQuery)) {
+  if (normalizedTextQuery && !searchableValues.some((value) => value.includes(normalizedTextQuery))) {
+    return false;
+  }
+
+  if (normalizedAnyTextQueries.length > 0 && !normalizedAnyTextQueries.some((query) => searchableValues.some((value) => value.includes(query)))) {
     return false;
   }
 
@@ -144,7 +207,7 @@ async function parseMessageSource(source) {
 export async function retrieveEmailsFromImap(accountConfig, filters = {}) {
   const folder = String(filters.folder ?? 'INBOX').trim() || 'INBOX';
   const limit = normalizeRetrievalLimit(filters.limit);
-  const scanLimit = computeRetrievalScanLimit(limit);
+  const scanLimit = normalizeScanLimitOverride(filters.scanLimit) ?? computeRetrievalScanLimit(limit);
   const returnAllScanned = filters.returnAllScanned === true;
 
   return withImapClient(accountConfig, async (client) => {
@@ -173,9 +236,9 @@ export async function retrieveEmailsFromImap(accountConfig, filters = {}) {
         messageId: String(message.envelope?.messageId ?? '').trim() || null,
         threadId: null,
         folder,
-        from: normalizeAddressValue(message.envelope?.from)[0] ?? '',
-        to: normalizeAddressValue(message.envelope?.to),
-        cc: normalizeAddressValue(message.envelope?.cc),
+        ...buildPrimarySenderFields(message.envelope?.from),
+        to: normalizeAddressList(message.envelope?.to),
+        cc: normalizeAddressList(message.envelope?.cc),
         subject: parsedSource.subject || normalizeWhitespace(message.envelope?.subject ?? ''),
         receivedAt: normalizeReceivedAt(message.internalDate ?? message.envelope?.date ?? null),
         flags,
@@ -233,9 +296,9 @@ export async function getImapMessageByUid(accountConfig, { uid, folder = 'INBOX'
         uid: String(message.uid),
         messageId: String(message.envelope?.messageId ?? '').trim() || null,
         folder,
-        from: normalizeAddressValue(message.envelope?.from)[0] ?? '',
-        to: normalizeAddressValue(message.envelope?.to),
-        cc: normalizeAddressValue(message.envelope?.cc),
+        ...buildPrimarySenderFields(message.envelope?.from),
+        to: normalizeAddressList(message.envelope?.to),
+        cc: normalizeAddressList(message.envelope?.cc),
         subject: parsedSource.subject || normalizeWhitespace(message.envelope?.subject ?? ''),
         receivedAt: normalizeReceivedAt(message.internalDate ?? message.envelope?.date ?? null),
         flags: normalizeMessageFlags(message.flags),

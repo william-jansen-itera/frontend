@@ -19,7 +19,10 @@ export const deleteEmailToolDefinition = {
     properties: {
       provider: { type: 'string' },
       folder: { type: 'string' },
-      uid: { type: 'string' },
+      uid: {
+        type: 'string',
+        description: 'String copied unchanged from data.emails[].uid in the latest retrieve_emails result. Do not use the array index, data.resultCount, meta.resultCount, or any value not present in data.emails[].uid.',
+      },
       expunge: { type: 'boolean' },
     },
     required: ['provider', 'folder', 'uid', 'expunge'],

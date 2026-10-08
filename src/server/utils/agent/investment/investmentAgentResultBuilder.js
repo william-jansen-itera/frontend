@@ -190,6 +190,7 @@ export async function buildInvestmentFamilyResult({
       normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
+      permissionToBroadenDetectionEnabled: false,
       debug,
     }),
   );

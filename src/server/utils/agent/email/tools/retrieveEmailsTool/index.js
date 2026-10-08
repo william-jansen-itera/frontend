@@ -7,12 +7,10 @@ import {
   storeLatestEmailRetrievalSnapshot,
 } from '@/server/utils/agent/email/emailCacheRepository';
 import {
-  classifyEmailContent,
-  extractActionItems,
-  extractDeadlines,
-  summarizeEmailContent,
+  buildCachedEmailHeuristics,
 } from '@/server/utils/agent/email/emailHeuristics';
 import {
+  REFRESH_RETRIEVAL_SCAN_LIMIT,
   computeRetrievalScanLimit,
   normalizeRetrievalLimit,
   retrieveEmailsFromImap,
@@ -22,6 +20,18 @@ export const RETRIEVE_EMAILS_TOOL = 'retrieve_emails';
 
 function normalizeContainsValue(value) {
   return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizeAnyTextQueries(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return Array.from(new Set(
+    values
+      .map((value) => normalizeContainsValue(value))
+      .filter(Boolean),
+  ));
 }
 
 function matchesDateBounds(message, { since = null, before = null } = {}) {
@@ -59,46 +69,52 @@ function matchesDateBounds(message, { since = null, before = null } = {}) {
 function buildHeuristicPlan(filters) {
   const includeHeuristics = Boolean(filters.includeHeuristics);
   const replyExpectedOnly = Boolean(filters.replyExpectedOnly);
-  const actionRequiredOnly = Boolean(filters.actionRequiredOnly);
+  const otherActionRequiredOnly = Boolean(filters.otherActionRequiredOnly);
   const deadlineMentionedOnly = Boolean(filters.deadlineMentionedOnly);
 
   return {
     includeHeuristics,
     replyExpectedOnly,
-    actionRequiredOnly,
+    otherActionRequiredOnly,
     deadlineMentionedOnly,
-    needsClassification: includeHeuristics || replyExpectedOnly || actionRequiredOnly,
-    needsActionItems: includeHeuristics || actionRequiredOnly,
-    needsDeadlines: includeHeuristics || deadlineMentionedOnly,
-    needsSummary: includeHeuristics,
+    needsClassification: includeHeuristics || replyExpectedOnly || otherActionRequiredOnly,
+    needsReplyItems: includeHeuristics || replyExpectedOnly,
+    needsActionItems: includeHeuristics || otherActionRequiredOnly,
+    needsDeadlineItems: includeHeuristics || deadlineMentionedOnly,
   };
 }
 
 function evaluateMessageHeuristics(message, heuristicPlan) {
-  const subject = String(message?.subject ?? '');
-  const bodyText = String(message?.bodyText ?? '');
+  const cachedHeuristics = message?.heuristicCache && typeof message.heuristicCache === 'object'
+    ? message.heuristicCache
+    : buildCachedEmailHeuristics({
+      subject: String(message?.subject ?? ''),
+      bodyText: String(message?.bodyText ?? ''),
+    });
   const heuristics = {};
 
   if (heuristicPlan.needsClassification) {
-    heuristics.classification = classifyEmailContent({
-      subject,
-      bodyText,
-    });
+    heuristics.classification = cachedHeuristics.classification ?? null;
+  }
+
+  if (heuristicPlan.needsReplyItems) {
+    heuristics.replyItems = Array.isArray(cachedHeuristics.replyItems)
+      ? cachedHeuristics.replyItems
+      : Array.isArray(cachedHeuristics.replyMatches)
+        ? cachedHeuristics.replyMatches
+        : [];
   }
 
   if (heuristicPlan.needsActionItems) {
-    heuristics.actionItems = extractActionItems(bodyText);
+    heuristics.actionItems = Array.isArray(cachedHeuristics.actionItems) ? cachedHeuristics.actionItems : [];
   }
 
-  if (heuristicPlan.needsDeadlines) {
-    heuristics.deadlines = extractDeadlines(bodyText);
-  }
-
-  if (heuristicPlan.needsSummary) {
-    heuristics.summary = summarizeEmailContent({
-      subject,
-      bodyText,
-    });
+  if (heuristicPlan.needsDeadlineItems) {
+    heuristics.deadlineItems = Array.isArray(cachedHeuristics.deadlineItems)
+      ? cachedHeuristics.deadlineItems
+      : Array.isArray(cachedHeuristics.deadlines)
+        ? cachedHeuristics.deadlines
+        : [];
   }
 
   return heuristics;
@@ -122,10 +138,12 @@ function matchesLocalFilters(message, filters, heuristics = null) {
   const fromContains = normalizeContainsValue(filters.fromContains);
   const subjectContains = normalizeContainsValue(filters.subjectContains);
   const textQuery = normalizeContainsValue(filters.textQuery);
-  const fromValue = normalizeContainsValue(message?.from);
+  const anyTextQueries = normalizeAnyTextQueries(filters.anyTextQueries);
+  const fromValue = normalizeContainsValue([message?.from?.name, message?.from?.address].filter(Boolean).join(' '));
   const subjectValue = normalizeContainsValue(message?.subject);
   const previewValue = normalizeContainsValue(message?.preview);
   const bodyValue = normalizeContainsValue(message?.bodyText);
+  const searchableValues = [subjectValue, previewValue, bodyValue];
 
   if (fromContains && !fromValue.includes(fromContains)) {
     return false;
@@ -135,7 +153,11 @@ function matchesLocalFilters(message, filters, heuristics = null) {
     return false;
   }
 
-  if (textQuery && !subjectValue.includes(textQuery) && !previewValue.includes(textQuery) && !bodyValue.includes(textQuery)) {
+  if (textQuery && !searchableValues.some((value) => value.includes(textQuery))) {
+    return false;
+  }
+
+  if (anyTextQueries.length > 0 && !anyTextQueries.some((query) => searchableValues.some((value) => value.includes(query)))) {
     return false;
   }
 
@@ -143,15 +165,15 @@ function matchesLocalFilters(message, filters, heuristics = null) {
     return false;
   }
 
-  if (filters.actionRequiredOnly && !heuristics?.classification?.actionRequired) {
+  if (filters.otherActionRequiredOnly && !heuristics?.classification?.otherActionRequired) {
     return false;
   }
 
-  if (filters.deadlineMentionedOnly && !Array.isArray(heuristics?.deadlines)) {
+  if (filters.deadlineMentionedOnly && !Array.isArray(heuristics?.deadlineItems)) {
     return false;
   }
 
-  if (filters.deadlineMentionedOnly && heuristics.deadlines.length === 0) {
+  if (filters.deadlineMentionedOnly && heuristics.deadlineItems.length === 0) {
     return false;
   }
 
@@ -159,20 +181,23 @@ function matchesLocalFilters(message, filters, heuristics = null) {
 }
 
 function buildReturnedMessage(message, heuristics, heuristicPlan) {
-  const { bodyText, ...baseMessage } = message;
-
-  if (!heuristicPlan.includeHeuristics && !heuristicPlan.replyExpectedOnly && !heuristicPlan.actionRequiredOnly && !heuristicPlan.deadlineMentionedOnly) {
-    return baseMessage;
-  }
+  const { bodyText, heuristicCache, ...baseMessage } = message;
 
   const returnedMessage = { ...baseMessage };
 
-  if (heuristicPlan.needsSummary && heuristics?.summary) {
-    returnedMessage.heuristicSummary = heuristics.summary;
+  if (!heuristicPlan.includeHeuristics && !heuristicPlan.replyExpectedOnly && !heuristicPlan.otherActionRequiredOnly && !heuristicPlan.deadlineMentionedOnly) {
+    return returnedMessage;
   }
 
   if (heuristicPlan.needsClassification && heuristics?.classification) {
     returnedMessage.heuristicClassification = heuristics.classification;
+  }
+
+  if (heuristicPlan.needsReplyItems && Array.isArray(heuristics?.replyItems)) {
+    returnedMessage.replyItemCount = heuristics.replyItems.length;
+    returnedMessage.replyItemsPreview = heuristicPlan.includeHeuristics
+      ? heuristics.replyItems.slice(0, 2)
+      : [];
   }
 
   if (heuristicPlan.needsActionItems && Array.isArray(heuristics?.actionItems)) {
@@ -182,9 +207,9 @@ function buildReturnedMessage(message, heuristics, heuristicPlan) {
       : [];
   }
 
-  if (heuristicPlan.needsDeadlines && Array.isArray(heuristics?.deadlines)) {
-    returnedMessage.deadlineCount = heuristics.deadlines.length;
-    returnedMessage.deadlines = heuristics.deadlines;
+  if (heuristicPlan.needsDeadlineItems && Array.isArray(heuristics?.deadlineItems)) {
+    returnedMessage.deadlineCount = heuristics.deadlineItems.length;
+    returnedMessage.deadlineItems = heuristics.deadlineItems;
   }
 
   return returnedMessage;
@@ -196,7 +221,7 @@ function applyRetrievalFilters(messages, filters) {
   const matchedMessages = [];
 
   for (const message of Array.isArray(messages) ? messages : []) {
-    const heuristics = (heuristicPlan.needsClassification || heuristicPlan.needsActionItems || heuristicPlan.needsDeadlines || heuristicPlan.needsSummary)
+    const heuristics = (heuristicPlan.needsClassification || heuristicPlan.needsReplyItems || heuristicPlan.needsActionItems || heuristicPlan.needsDeadlineItems)
       ? evaluateMessageHeuristics(message, heuristicPlan)
       : null;
 
@@ -214,54 +239,38 @@ function applyRetrievalFilters(messages, filters) {
   return matchedMessages;
 }
 
-function buildRetrievedMessageInsight(message) {
-  const subject = String(message?.subject ?? '');
-  const bodyText = String(message?.bodyText ?? '');
-  const classification = classifyEmailContent({
-    subject,
-    bodyText,
-  });
-  const actionItems = extractActionItems(bodyText);
-  const deadlines = extractDeadlines(bodyText);
-
-  return {
-    heuristicSummary: summarizeEmailContent({
-      subject,
-      bodyText,
-    }),
-    heuristicClassification: classification,
-    actionItemCount: actionItems.length,
-    actionItemsPreview: actionItems.slice(0, 2),
-    deadlineCount: deadlines.length,
-    deadlines,
-  };
-}
-
 export const retrieveEmailsToolDefinition = {
   type: 'function',
   name: RETRIEVE_EMAILS_TOOL,
-  description: 'Retrieve a bounded recent set of emails from the configured IMAP mailbox and cache the latest folder snapshot for follow-up email tools. Text filters are applied locally against the cached message subject, preview, and normalized body content, which is suitable for general-purpose IMAP providers such as Hover.',
+  description: 'Retrieve a bounded set of emails from a folder, usually from the latest cached retrieval snapshot and optionally from a fresh IMAP refresh when forceRefresh is true or the snapshot is stale. Apply local filters to the cached message subject, preview, and normalized body content. Supports exact textQuery matching and agent-composed OR-style anyTextQueries keyword matching for broader topical retrieval.',
   strict: true,
   parameters: {
     type: 'object',
     properties: {
-      provider: { type: 'string', description: 'Email provider key, such as hover.' },
+      provider: { type: 'string', description: 'Email account provider key, such as hover. This selects the configured mailbox account, not the sender of the email.' },
       folder: { type: 'string', description: 'Mailbox folder to read from, such as INBOX.' },
       forceRefresh: { type: 'boolean', description: 'When true, bypass any fresh cached folder snapshot and fetch the latest mailbox window from IMAP before filtering. Use this when the user explicitly wants the latest or newest emails.' },
-      includeHeuristics: { type: 'boolean', description: 'When true, include heuristic summary and classification fields on returned messages for list-level triage.' },
+      includeHeuristics: { type: 'boolean', description: 'When true, include heuristic classification, action, and deadline signals on returned messages for list-level triage.' },
       unreadOnly: { type: 'boolean', description: 'When true, only return emails that do not currently have the IMAP \\Seen flag.' },
       flaggedOnly: { type: 'boolean', description: 'When true, only return emails that currently have the IMAP \\Flagged flag.' },
       replyExpectedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that a reply is expected.' },
-      actionRequiredOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that an action or reply is required.' },
+      otherActionRequiredOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that some non-reply action is required.' },
       deadlineMentionedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically mentions a deadline or due time.' },
-      fromContains: { type: ['string', 'null'], description: 'Optional case-insensitive substring filter applied to the sender email address.' },
+      fromContains: { type: ['string', 'null'], description: 'Optional case-insensitive substring filter applied to the sender display name or email address.' },
       subjectContains: { type: ['string', 'null'], description: 'Optional case-insensitive substring filter applied to the message subject only.' },
       textQuery: { type: ['string', 'null'], description: 'Optional free-text topic or keyword filter, such as football, invoice, deadline, or project alpha. This is matched locally against the fetched message subject, preview, and normalized body text from a bounded recent IMAP result set.' },
+      anyTextQueries: {
+        type: ['array', 'null'],
+        description: 'Optional agent-composed OR-style keyword list for broad or fuzzy topical retrieval. A message matches when any keyword appears in the fetched message subject, preview, or normalized body text. For broad topics, prefer a recall-oriented list built in three steps: obvious synonyms first, obvious related terms second, and obvious subcategories third, usually ending up with about 8 to 12 total terms.',
+        items: { type: 'string' },
+        minItems: 1,
+        maxItems: 12,
+      },
       since: { type: ['string', 'null'], description: 'Optional inclusive lower date bound as an ISO date or datetime string.' },
       before: { type: ['string', 'null'], description: 'Optional inclusive upper date bound as an ISO date or datetime string.' },
       limit: { type: 'integer', minimum: 1, maximum: 25, description: 'Maximum number of matching emails to return after filtering. Keep this small because matching is done against a bounded recent IMAP fetch window.' },
     },
-    required: ['provider', 'folder', 'forceRefresh', 'unreadOnly', 'flaggedOnly', 'fromContains', 'subjectContains', 'textQuery', 'since', 'before', 'limit'],
+    required: ['provider', 'folder', 'forceRefresh', 'includeHeuristics', 'unreadOnly', 'flaggedOnly', 'replyExpectedOnly', 'otherActionRequiredOnly', 'deadlineMentionedOnly', 'fromContains', 'subjectContains', 'textQuery', 'anyTextQueries', 'since', 'before', 'limit'],
     additionalProperties: false,
   },
 };
@@ -295,11 +304,12 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
         unreadOnly: Boolean(args.unreadOnly),
         flaggedOnly: Boolean(args.flaggedOnly),
         replyExpectedOnly: Boolean(args.replyExpectedOnly),
-        actionRequiredOnly: Boolean(args.actionRequiredOnly),
+        otherActionRequiredOnly: Boolean(args.otherActionRequiredOnly),
         deadlineMentionedOnly: Boolean(args.deadlineMentionedOnly),
         fromContains: args.fromContains ?? null,
         subjectContains: args.subjectContains ?? null,
         textQuery: args.textQuery ?? null,
+        anyTextQueries: normalizeAnyTextQueries(args.anyTextQueries),
         since: args.since ?? null,
         before: args.before ?? null,
         limit: normalizeRetrievalLimit(args.limit),
@@ -316,11 +326,12 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
         emitStep('tool retrieve_emails loading messages', {
           folder: normalizedFolder,
           forceRefresh: normalizedQuery.forceRefresh,
-          snapshotWindowSize: computeRetrievalScanLimit(25),
+          snapshotWindowSize: REFRESH_RETRIEVAL_SCAN_LIMIT,
         });
         const retrievalResult = await retrieveEmailsFromImap(accountConfig, {
           folder: normalizedFolder,
           limit: 25,
+          scanLimit: REFRESH_RETRIEVAL_SCAN_LIMIT,
           returnAllScanned: true,
         });
         cachedSnapshot = await storeLatestEmailRetrievalSnapshot({
@@ -329,7 +340,7 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
           folder: normalizedFolder,
           messages: retrievalResult.messages,
           updatedBy: resolvedUpdatedBy,
-          sourceWindowSize: retrievalResult.scanLimit ?? computeRetrievalScanLimit(25),
+          sourceWindowSize: retrievalResult.scanLimit ?? REFRESH_RETRIEVAL_SCAN_LIMIT,
         });
         snapshotMessages = cachedSnapshot.messages;
         snapshotSource = normalizedQuery.forceRefresh ? 'imap_forced_refresh' : 'imap';
@@ -356,13 +367,7 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
           usedCachedSnapshot: snapshotSource === 'cache',
           canForceRefresh: true,
           refreshSuggested: snapshotSource === 'cache' && !normalizedQuery.forceRefresh,
-          messages: filteredMessages.map(({ bodyText, ...message }) => ({
-            ...message,
-            ...buildRetrievedMessageInsight({
-              ...message,
-              bodyText,
-            }),
-          })),
+          emails: filteredMessages,
           resultCount: filteredMessages.length,
         },
         includeDebug,
