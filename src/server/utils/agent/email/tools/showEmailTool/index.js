@@ -32,6 +32,8 @@ export const showEmailToolDefinition = {
 };
 
 function buildShownEmail(message) {
+  const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
+
   return {
     uid: String(message?.uid ?? '').trim() || null,
     messageId: message?.messageId ?? null,
@@ -45,6 +47,9 @@ function buildShownEmail(message) {
     flags: Array.isArray(message?.flags) ? message.flags : [],
     preview: message?.preview ?? null,
     bodyText: message?.bodyText ?? null,
+    attachments,
+    attachmentCount: attachments.length,
+    attachmentFileNames: attachments.map((attachment) => String(attachment?.fileName ?? '').trim()).filter(Boolean),
     heuristicClassification: message?.heuristicCache?.classification ?? null,
     replyItems: Array.isArray(message?.heuristicCache?.replyItems)
       ? message.heuristicCache.replyItems

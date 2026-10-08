@@ -182,8 +182,13 @@ function matchesLocalFilters(message, filters, heuristics = null) {
 
 function buildReturnedMessage(message, heuristics, heuristicPlan) {
   const { bodyText, heuristicCache, ...baseMessage } = message;
+  const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
 
-  const returnedMessage = { ...baseMessage };
+  const returnedMessage = {
+    ...baseMessage,
+    attachmentCount: attachments.length,
+    attachmentFileNames: attachments.map((attachment) => String(attachment?.fileName ?? '').trim()).filter(Boolean),
+  };
 
   if (!heuristicPlan.includeHeuristics && !heuristicPlan.replyExpectedOnly && !heuristicPlan.otherActionRequiredOnly && !heuristicPlan.deadlineMentionedOnly) {
     return returnedMessage;

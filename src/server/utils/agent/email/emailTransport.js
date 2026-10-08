@@ -184,6 +184,27 @@ function matchesTextFilters(messageSummary, { fromContains, subjectContains, tex
   return true;
 }
 
+function normalizeParsedAttachments(attachments) {
+  return Array.isArray(attachments)
+    ? attachments.map((attachment, index) => {
+      const normalizedFileName = String(attachment?.filename ?? '').trim();
+      const normalizedContentType = String(attachment?.contentType ?? '').trim();
+      const normalizedContentDisposition = String(attachment?.contentDisposition ?? '').trim();
+      const normalizedContentId = String(attachment?.cid ?? '').trim();
+      const normalizedSize = Number(attachment?.size ?? 0);
+
+      return {
+        fileName: normalizedFileName || `attachment-${index + 1}`,
+        contentType: normalizedContentType || null,
+        contentDisposition: normalizedContentDisposition || null,
+        contentId: normalizedContentId || null,
+        size: Number.isFinite(normalizedSize) && normalizedSize >= 0 ? normalizedSize : null,
+        isInline: normalizedContentDisposition.toLowerCase() === 'inline' || Boolean(attachment?.related),
+      };
+    })
+    : [];
+}
+
 async function parseMessageSource(source) {
   const parsedMessage = await simpleParser(source);
   const subject = normalizeWhitespace(parsedMessage.subject ?? '');
@@ -201,6 +222,7 @@ async function parseMessageSource(source) {
     html,
     normalizedBodyText,
     preview: buildPreview(normalizedBodyText),
+    attachments: normalizeParsedAttachments(parsedMessage.attachments),
   };
 }
 
@@ -244,6 +266,7 @@ export async function retrieveEmailsFromImap(accountConfig, filters = {}) {
         flags,
         preview: parsedSource.preview,
         bodyText: parsedSource.normalizedBodyText,
+        attachments: parsedSource.attachments,
       };
 
       if (!returnAllScanned) {
@@ -304,6 +327,7 @@ export async function getImapMessageByUid(accountConfig, { uid, folder = 'INBOX'
         flags: normalizeMessageFlags(message.flags),
         bodyText: parsedSource.normalizedBodyText,
         preview: parsedSource.preview,
+        attachments: parsedSource.attachments,
       };
     }
 

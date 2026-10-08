@@ -89,6 +89,7 @@ The tool may answer from a cached folder snapshot and only contacts IMAP when th
 When lastCheckedAt is present, mention when the snapshot was last checked. When usedCachedSnapshot is true, offer a fresh check.
 When answering from retrieve_emails, state the limit used from data.query.limit whenever you summarize the result set or say how many emails were returned.
 Use the returned heuristic classification, action, and deadline fields for list-level triage before analyze_email. Prefer them when they are enough. Enable only the heuristics the question needs.
+When present, use attachmentFileNames to mention attached file names directly from the retrieval result.
 Signals that matter: sender, subject wording, topic keywords, recency, unread, flagged, reply expectation, deadline mentions.
 folder defaults to INBOX unless the user names another folder.
 Treat phrases like "get emails from X" as a sender filter by default, usually using fromContains. Do not reinterpret "from X" as the email provider or account unless the user explicitly names the provider, account, mailbox, or says Hover.
@@ -119,7 +120,7 @@ Say that detailed content is unavailable only when analyze_email returned an err
 Use this tool to display one cached email without model analysis.
 Follow the UID contract above before calling this tool.
 Pass one uid string copied from retrieve_emails together with the same folder value.
-Answer from data.email.subject, data.email.from, data.email.receivedAt, data.email.flags, data.email.preview, and data.email.bodyText.
+Answer from data.email.subject, data.email.from, data.email.receivedAt, data.email.flags, data.email.preview, data.email.bodyText, and data.email.attachmentFileNames.
 Use the returned heuristicClassification, replyItems, actionItems, and deadlineItems when they help, but do not describe them as model analysis.
 
 ## flag_email tool
