@@ -21,6 +21,11 @@ import {
   FLAG_EMAIL_TOOL,
 } from '@/server/utils/agent/email/tools/flagEmailTool';
 import {
+  buildShowEmailHandler,
+  showEmailToolDefinition,
+  SHOW_EMAIL_TOOL,
+} from '@/server/utils/agent/email/tools/showEmailTool';
+import {
   buildRetrieveEmailsHandler,
   retrieveEmailsToolDefinition,
   RETRIEVE_EMAILS_TOOL,
@@ -41,6 +46,7 @@ export const EMAIL_FAMILY = 'email';
 function buildEmailToolDefinitions() {
   return [
     retrieveEmailsToolDefinition,
+    showEmailToolDefinition,
     analyzeEmailToolDefinition,
     deleteEmailToolDefinition,
     flagEmailToolDefinition,
@@ -66,7 +72,7 @@ Use tools for any factual claims about messages, message content, flags, deletio
 Never invent emails, message state, deadlines, flags, delivery results, or UIDs.
 
 ## UID contract
-Before analyze_email, flag_email, or delete_email, look up the UIDs in the latest retrieve_emails tool result in this conversation.
+Before show_email, analyze_email, flag_email, or delete_email, look up the UIDs in the latest retrieve_emails tool result in this conversation.
 Read data.emails[].uid. It is a string, for example "19613". Copy that string unchanged into uids, and copy data.folder into folder.
 Do this even if an earlier answer did not mention the UID. The answer is not the source. The tool result is.
 Do not use the array index, data.resultCount, or meta.resultCount. Do not invent, shorten, or retype a UID.
@@ -102,12 +108,19 @@ since and before only when the user gives a time window. Keep limit small.
 Every email included in an answer must be written as: subject — uid <data.emails[].uid>
 
 ## analyze_email tool
-Use this tool only for a deeper read than the retrieve_emails heuristics.
+Use this tool only for a deeper read than the retrieve_emails heuristics and the initial cached information.
 Follow the UID contract above before calling this tool.
 Always pass a uids list, including for one email. If several emails need the same deeper read, send all of their UIDs in one call, not one call per email.
 The response always returns data.analyses, including when only one email was analyzed.
 Answer from data.analyses[].summary, data.analyses[].classification, data.analyses[].replyItems, data.analyses[].questionItems, data.analyses[].actionItems, and data.analyses[].deadlineItems.
 Say that detailed content is unavailable only when analyze_email returned an error or no usable analysis.
+
+## show_email tool
+Use this tool to display one cached email without model analysis.
+Follow the UID contract above before calling this tool.
+Pass one uid string copied from retrieve_emails together with the same folder value.
+Answer from data.email.subject, data.email.from, data.email.receivedAt, data.email.flags, data.email.preview, and data.email.bodyText.
+Use the returned heuristicClassification, replyItems, actionItems, and deadlineItems when they help, but do not describe them as model analysis.
 
 ## flag_email tool
 Use for factual IMAP flag changes. Follow the UID contract above before calling this tool.
@@ -270,6 +283,7 @@ function buildEmailHandlerMap({ includeDebug = false, updatedBy = null, personal
   const handlerMap = new Map();
 
   handlerMap.set(RETRIEVE_EMAILS_TOOL, buildRetrieveEmailsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
+  handlerMap.set(SHOW_EMAIL_TOOL, buildShowEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(ANALYZE_EMAIL_TOOL, buildAnalyzeEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(FLAG_EMAIL_TOOL, buildFlagEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(DELETE_EMAIL_TOOL, buildDeleteEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
