@@ -1,6 +1,7 @@
 import mssql from 'mssql';
 
 const sql = mssql;
+const DEFAULT_SQL_IDLE_CLOSE_MS = 300_000;
 
 const config = {
   user: process.env.AZURE_SQL_USER,
@@ -15,13 +16,68 @@ const config = {
 };
 
 let sqlConnectionPromise;
+let sqlIdleCloseTimer;
+let sqlActiveOperationCount = 0;
+let sqlConnectionGeneration = 0;
 
 const SQL_STATUS_PROBE_QUERY = `
   SELECT DB_NAME() AS databaseName, SYSUTCDATETIME() AS serverUtcTime;
 `;
 
+function getSqlIdleCloseMs() {
+  const configuredValue = Number.parseInt(String(process.env.AZURE_SQL_IDLE_CLOSE_MS ?? ''), 10);
+
+  return Number.isFinite(configuredValue) && configuredValue >= 0
+    ? configuredValue
+    : DEFAULT_SQL_IDLE_CLOSE_MS;
+}
+
+function clearSqlIdleCloseTimer() {
+  if (!sqlIdleCloseTimer) {
+    return;
+  }
+
+  clearTimeout(sqlIdleCloseTimer);
+  sqlIdleCloseTimer = undefined;
+}
+
+function scheduleSqlIdleClose() {
+  clearSqlIdleCloseTimer();
+
+  if (!sqlConnectionPromise || sqlActiveOperationCount > 0) {
+    return;
+  }
+
+  const idleCloseMs = getSqlIdleCloseMs();
+
+  if (idleCloseMs < 0) {
+    return;
+  }
+
+  const scheduledGeneration = sqlConnectionGeneration;
+  sqlIdleCloseTimer = setTimeout(async () => {
+    if (sqlActiveOperationCount > 0 || !sqlConnectionPromise || scheduledGeneration !== sqlConnectionGeneration) {
+      return;
+    }
+
+    const activeConnectionPromise = sqlConnectionPromise;
+    sqlConnectionPromise = undefined;
+    clearSqlIdleCloseTimer();
+
+    try {
+      await activeConnectionPromise;
+      await sql.close();
+    } catch {
+      sqlConnectionPromise = undefined;
+    }
+  }, idleCloseMs);
+}
+
 function getSqlConnection() {
+  clearSqlIdleCloseTimer();
+
   if (!sqlConnectionPromise) {
+    sqlConnectionGeneration += 1;
     sqlConnectionPromise = sql.connect(config).catch((error) => {
       sqlConnectionPromise = undefined;
       throw error;
@@ -33,7 +89,14 @@ function getSqlConnection() {
 
 export async function withSqlConnection(callback) {
   const connection = await getSqlConnection();
-  return callback(connection);
+  sqlActiveOperationCount += 1;
+
+  try {
+    return await callback(connection);
+  } finally {
+    sqlActiveOperationCount = Math.max(0, sqlActiveOperationCount - 1);
+    scheduleSqlIdleClose();
+  }
 }
 
 export function isLikelySleepingSqlError(error) {
