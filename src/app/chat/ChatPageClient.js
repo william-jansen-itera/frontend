@@ -183,6 +183,22 @@ function formatDuration(value) {
   return `${(durationMs / 1000).toFixed(1)} s`;
 }
 
+function buildUserMessageLabel(user) {
+  const displayName = String(user?.displayName ?? "").trim();
+
+  if (displayName) {
+    return displayName;
+  }
+
+  const preferredUsername = String(user?.preferredUsername ?? user?.userDetails ?? "").trim();
+
+  if (preferredUsername) {
+    return preferredUsername;
+  }
+
+  return "User";
+}
+
 function formatJson(value) {
   if (value === undefined) {
     return "undefined";
@@ -797,6 +813,7 @@ function getLatestNoResultOfferTurn(turns, dismissedTurnId) {
 export default function ChatPageClient({ includeDebug }) {
   const { user, isAuthResolved } = useAuth();
   const isAdmin = hasClientPrincipalRole(user, "mdsadmins");
+  const userMessageLabel = buildUserMessageLabel(user);
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1651,7 +1668,7 @@ export default function ChatPageClient({ includeDebug }) {
                       </div>
 
                       <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
-                        <p className={styles.messageLabel}>User</p>
+                        <p className={styles.messageLabel}>{userMessageLabel}</p>
                         <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>
                       </div>
 

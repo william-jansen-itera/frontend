@@ -324,7 +324,7 @@ export async function GET(request) {
               AND deletedNodes.isDeleted = 1
             ORDER BY deletedNodes.updatedAt DESC, deletedNodes.treeId DESC, deletedNodes.sortPath ASC;
           `),
-        getIndividuallyDeletedAttachments(applicationIdentifier),
+        queryIndividuallyDeletedAttachments(applicationIdentifier),
       ]);
 
       return {

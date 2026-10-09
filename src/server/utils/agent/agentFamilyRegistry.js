@@ -103,8 +103,8 @@ const FAMILY_REGISTRY = new Map([
   })],
   [TREE_GROUNDING_FAMILY, buildFamilyRegistration({
     family: TREE_GROUNDING_FAMILY,
-    label: 'Tree Grounding',
-    description: 'A tree-backed prompt tool that returns grounded results from published trees with detailed descriptions.',
+    label: 'Knowledge Trees',
+    description: 'A tree-backed prompt tool that returns grounded results from published knowledge trees with detailed descriptions.',
     orchestratorToolName: 'ask_tree_grounding_family',
     supportsPromptAgentPublishing: true,
     requiresPublishedPromptAgent: true,

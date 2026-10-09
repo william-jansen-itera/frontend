@@ -258,7 +258,7 @@ export const retrieveEmailsToolDefinition = {
       replyExpectedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that a reply is expected.' },
       otherActionRequiredOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that some non-reply action is required.' },
       deadlineMentionedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically mentions a deadline or due time.' },
-      fromContains: { type: ['string', 'null'], description: 'Optional case-insensitive substring filter applied to the sender display name or email address.' },
+      fromContains: { type: ['string', 'null'], description: 'Optional case-insensitive substring filter applied to the sender display name or email address. When derived from the user request, preserve the literal sender wording and word order instead of paraphrasing or reordering it.' },
       subjectContains: { type: ['string', 'null'], description: 'Optional case-insensitive substring filter applied to the message subject only.' },
       textQuery: { type: ['string', 'null'], description: 'Optional free-text topic or keyword filter, such as football, invoice, deadline, or project alpha. This is matched locally against the fetched message subject, preview, and normalized body text from a bounded recent IMAP result set.' },
       anyTextQueries: {

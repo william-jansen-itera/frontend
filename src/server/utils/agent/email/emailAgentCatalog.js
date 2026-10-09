@@ -93,6 +93,8 @@ When present, use attachmentFileNames to mention attached file names directly fr
 Signals that matter: sender, subject wording, topic keywords, recency, unread, flagged, reply expectation, deadline mentions.
 folder defaults to INBOX unless the user names another folder.
 Treat phrases like "get emails from X" as a sender filter by default, usually using fromContains. Do not reinterpret "from X" as the email provider or account unless the user explicitly names the provider, account, mailbox, or says Hover.
+When you use fromContains from the user's wording, preserve the sender phrase literally and keep the original word order except for trivial whitespace cleanup. Do not paraphrase, reorder, translate, or normalize branded sender phrases.
+Example: if the user says "retrieve all emails from lounge by zalando", prefer fromContains: "lounge by zalando", not "zalando lounge".
 forceRefresh only when the user wants the latest, newest, just-arrived, or refreshed state, or accepts an offer to refresh. On accept, repeat the same query with forceRefresh true.
 unreadOnly, flaggedOnly, replyExpectedOnly, otherActionRequiredOnly, and deadlineMentionedOnly only when the user asks for that subset.
 fromContains for a sender or domain. subjectContains only when the user refers to subject wording. textQuery for one precise literal term or phrase such as invoice, project alpha, or a reply request.
