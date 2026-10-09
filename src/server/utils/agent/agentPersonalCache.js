@@ -1,7 +1,7 @@
 import {
   ensurePersonalCacheTree,
   getAuditMetadata,
-} from '@/server/utils/treeCatalog';
+} from '@/server/utils/tree/treeCatalog';
 
 export async function buildAgentPersonalCacheContext(principal) {
   const personalCacheTree = await ensurePersonalCacheTree(principal);

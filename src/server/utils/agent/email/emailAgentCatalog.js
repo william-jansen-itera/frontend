@@ -121,13 +121,16 @@ Use this tool to display one cached email without model analysis.
 Follow the UID contract above before calling this tool.
 Pass one uid string copied from retrieve_emails together with the same folder value.
 Answer from data.email.subject, data.email.from, data.email.receivedAt, data.email.flags, data.email.preview, data.email.bodyText, and data.email.attachmentFileNames.
+When you show the email, include the uid in the answer. Prefer the format: subject — uid <data.email.uid>.
 Use the returned heuristicClassification, replyItems, actionItems, and deadlineItems when they help, but do not describe them as model analysis.
 
 ## flag_email tool
 Use for factual IMAP flag changes. Follow the UID contract above before calling this tool.
+Always pass a uids list, including for one email. This tool only sets or removes the visual flagged or starred state for those emails.
 
 ## delete_email tool
 Use for deletion. Follow the UID contract above before calling this tool. Do not claim success unless the tool confirms it.
+Always pass a uids list, including for one email. With expunge false, this tool moves messages to Trash. Use expunge true only when the user clearly wants permanent deletion.
 
 ## author_email tool
 Use to prepare, revise, or propose draft content without sending. Use this whenever the user wants help writing but has not clearly asked to deliver the message yet.

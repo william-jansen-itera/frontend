@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { DEFAULT_SEARCH_PAGE_TOP, searchTreeContent } from '@/server/utils/azureSearch';
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { getAllowedTreeIds } from '@/server/utils/treeCatalog';
+import { getAllowedTreeIds } from '@/server/utils/tree/treeCatalog';
 
 function parseBooleanSetting(value, fallbackValue) {
   if (typeof value === 'boolean') {

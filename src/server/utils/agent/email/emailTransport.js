@@ -89,6 +89,20 @@ function normalizeMessageFlags(flags) {
   return Array.from(flags).map((flag) => String(flag ?? '').trim()).filter(Boolean);
 }
 
+function resolveTrashMailboxPath(mailboxes = []) {
+  const trashMailbox = mailboxes.find((mailbox) => String(mailbox?.specialUse ?? '').trim() === '\\Trash')
+    ?? mailboxes.find((mailbox) => {
+      const path = String(mailbox?.path ?? '').trim().toLowerCase();
+      const name = String(mailbox?.name ?? '').trim().toLowerCase();
+
+      return ['trash', 'deleted items', 'deleted messages'].includes(path)
+        || ['trash', 'deleted items', 'deleted messages'].includes(name);
+    })
+    ?? null;
+
+  return trashMailbox?.path ?? null;
+}
+
 function buildImapClient(accountConfig) {
   return new ImapFlow({
     host: accountConfig.imap.host,
@@ -335,23 +349,30 @@ export async function getImapMessageByUid(accountConfig, { uid, folder = 'INBOX'
   });
 }
 
-export async function updateImapMessageFlags(accountConfig, { uid, folder = 'INBOX', flags = [], mode = 'add' }) {
+export async function updateImapMessageFlags(accountConfig, { uid, uids, folder = 'INBOX', flags = [], mode = 'add' }) {
   return withImapClient(accountConfig, async (client) => {
     await client.mailboxOpen(folder);
     const normalizedFlags = Array.from(new Set((Array.isArray(flags) ? flags : []).map((flag) => String(flag ?? '').trim()).filter(Boolean)));
+    const normalizedUids = Array.from(new Set((Array.isArray(uids) ? uids : [uid]).map((value) => String(value ?? '').trim()).filter(Boolean)));
 
     if (normalizedFlags.length === 0) {
       throw new Error('At least one IMAP flag is required.');
     }
 
-    if (mode === 'remove') {
-      await client.messageFlagsRemove(String(uid), normalizedFlags, { uid: true });
-    } else {
-      await client.messageFlagsAdd(String(uid), normalizedFlags, { uid: true });
+    if (normalizedUids.length === 0) {
+      throw new Error('At least one email uid is required.');
+    }
+
+    for (const normalizedUid of normalizedUids) {
+      if (mode === 'remove') {
+        await client.messageFlagsRemove(normalizedUid, normalizedFlags, { uid: true });
+      } else {
+        await client.messageFlagsAdd(normalizedUid, normalizedFlags, { uid: true });
+      }
     }
 
     return {
-      uid: String(uid),
+      uids: normalizedUids,
       folder,
       mode: mode === 'remove' ? 'remove' : 'add',
       flags: normalizedFlags,
@@ -359,20 +380,58 @@ export async function updateImapMessageFlags(accountConfig, { uid, folder = 'INB
   });
 }
 
-export async function deleteImapMessage(accountConfig, { uid, folder = 'INBOX', expunge = false }) {
+export async function deleteImapMessage(accountConfig, { uid, uids, folder = 'INBOX', expunge = false }) {
   return withImapClient(accountConfig, async (client) => {
     await client.mailboxOpen(folder);
-    await client.messageFlagsAdd(String(uid), ['\\Deleted'], { uid: true });
+    const normalizedUids = Array.from(new Set((Array.isArray(uids) ? uids : [uid]).map((value) => String(value ?? '').trim()).filter(Boolean)));
 
-    if (expunge) {
-      await client.messageDelete(String(uid), { uid: true });
+    if (normalizedUids.length === 0) {
+      throw new Error('At least one email uid is required.');
+    }
+
+    if (!expunge) {
+      const trashMailboxPath = resolveTrashMailboxPath(await client.list());
+
+      if (!trashMailboxPath) {
+        throw new Error('A Trash mailbox could not be found for this account.');
+      }
+
+      const movedMessages = [];
+
+      for (const normalizedUid of normalizedUids) {
+        const moveResult = await client.messageMove(normalizedUid, trashMailboxPath, { uid: true });
+        const destinationUid = moveResult?.uidMap?.get(Number(normalizedUid));
+
+        movedMessages.push({
+          sourceUid: normalizedUid,
+          destinationUid: Number.isFinite(destinationUid) ? String(destinationUid) : null,
+        });
+      }
+
+      return {
+        uids: normalizedUids,
+        folder,
+        destinationFolder: trashMailboxPath,
+        movedMessages,
+        expunge: false,
+        deleted: true,
+        movedToTrash: true,
+      };
+    }
+
+    for (const normalizedUid of normalizedUids) {
+      await client.messageFlagsAdd(normalizedUid, ['\\Deleted'], { uid: true });
+      await client.messageDelete(normalizedUid, { uid: true });
     }
 
     return {
-      uid: String(uid),
+      uids: normalizedUids,
       folder,
+      destinationFolder: null,
+      movedMessages: normalizedUids.map((sourceUid) => ({ sourceUid, destinationUid: null })),
       expunge: Boolean(expunge),
       deleted: true,
+      movedToTrash: false,
     };
   });
 }

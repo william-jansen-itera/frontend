@@ -3,7 +3,8 @@ import {
   ensurePersonalCacheLeafPath,
   findPersonalCacheLeafPathNode,
 } from '@/server/utils/agent/personalCacheTreeRepository';
-import { sql, withSqlConnection } from '@/server/utils/sql';
+import { withSqlConnection } from '@/server/utils/sql';
+import { queryTreeNodeDetailRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 
 function normalizeProviderLabel(provider) {
   const normalizedProvider = String(provider ?? '').trim();
@@ -119,72 +120,6 @@ export function normalizeEmailAccountConfig(value) {
   };
 }
 
-async function querySecretRecord({ treeId, nodeId }) {
-  const result = await new sql.Request()
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('node_id', sql.Int, Number(nodeId))
-    .query(`
-      SELECT TOP 1
-        CAST(COALESCE(tnd.is_secret, 0) AS BIT) AS isSecret,
-        ISNULL(tnd.notes, '') AS notes,
-        tnd.secret_metadata AS secretMetadata
-      FROM tree_nodes tn
-      LEFT JOIN tree_node_details tnd ON tnd.tree_node_id = tn.id
-      WHERE tn.tree_instance_id = @tree_instance_id
-        AND tn.id = @node_id
-        AND tn.deleted_at IS NULL;
-    `);
-
-  return result.recordset[0] ?? null;
-}
-
-async function upsertSecretRecord({ treeId, nodeId, notes, secretMetadata, updatedBy = null }) {
-  await new sql.Request()
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('tree_node_id', sql.Int, Number(nodeId))
-    .input('notes', sql.NVarChar(sql.MAX), String(notes ?? ''))
-    .input('is_secret', sql.Bit, 1)
-    .input('secret_metadata', sql.NVarChar(sql.MAX), serializeSecretMetadata(secretMetadata))
-    .input('updated_by_object_id', sql.NVarChar(100), updatedBy?.updatedByObjectId ?? null)
-    .input('updated_by_user_details', sql.NVarChar(320), updatedBy?.updatedByUserDetails ?? null)
-    .query(`
-      MERGE tree_node_details AS target
-      USING (
-        SELECT @tree_node_id AS tree_node_id
-      ) AS source
-        ON target.tree_node_id = source.tree_node_id
-      WHEN MATCHED THEN
-        UPDATE SET
-          notes = @notes,
-          is_secret = @is_secret,
-          secret_metadata = @secret_metadata,
-          updated_by_object_id = @updated_by_object_id,
-          updated_by_user_details = @updated_by_user_details,
-          updated_at = SYSUTCDATETIME()
-      WHEN NOT MATCHED THEN
-        INSERT (
-          tree_node_id,
-          notes,
-          is_secret,
-          secret_metadata,
-          updated_by_object_id,
-          updated_by_user_details,
-          created_at,
-          updated_at
-        )
-        VALUES (
-          @tree_node_id,
-          @notes,
-          @is_secret,
-          @secret_metadata,
-          @updated_by_object_id,
-          @updated_by_user_details,
-          SYSUTCDATETIME(),
-          SYSUTCDATETIME()
-        );
-    `);
-}
-
 export async function ensureEmailAccountConfigLeaf({ treeId, provider = 'hover' }) {
   return ensurePersonalCacheLeafPath({
     treeId,
@@ -195,7 +130,7 @@ export async function ensureEmailAccountConfigLeaf({ treeId, provider = 'hover' 
 export async function storeEmailAccountConfig({ treeId, provider = 'hover', accountConfig, updatedBy = null }) {
   return withSqlConnection(async () => {
     const leafNode = await ensureEmailAccountConfigLeaf({ treeId, provider });
-    const existingRecord = await querySecretRecord({ treeId, nodeId: leafNode.id });
+    const existingRecord = await queryTreeNodeDetailRecord(treeId, leafNode.id);
     const existingSecretMetadata = normalizeSecretMetadata(existingRecord?.secretMetadata);
     const normalizedConfig = normalizeEmailAccountConfig(accountConfig);
     const brokerResult = await invokeSecretFunction({
@@ -207,11 +142,11 @@ export async function storeEmailAccountConfig({ treeId, provider = 'hover', acco
     });
     const secretMetadata = normalizeSecretMetadata(brokerResult?.secretMetadata);
 
-    await upsertSecretRecord({
-      treeId,
+    await upsertTreeNodeDetails({
       nodeId: leafNode.id,
       notes: `${normalizeProviderLabel(provider)} email account config`,
-      secretMetadata,
+      isSecret: true,
+      secretMetadata: serializeSecretMetadata(secretMetadata),
       updatedBy,
     });
 
@@ -235,7 +170,7 @@ export async function loadEmailAccountConfig({ treeId, provider = 'hover' }) {
       throw new Error(`Email account settings were not found for provider ${normalizeProviderLabel(provider)}.`);
     }
 
-    const record = await querySecretRecord({ treeId, nodeId: leafNode.id });
+    const record = await queryTreeNodeDetailRecord(treeId, leafNode.id);
     const secretMetadata = normalizeSecretMetadata(record?.secretMetadata);
 
     if (!record?.isSecret || !secretMetadata) {

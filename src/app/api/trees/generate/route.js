@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { generateTreeNodesFromDescription } from '@/server/utils/treeGenerationService';
+import { generateTreeNodesFromDescription } from '@/server/utils/tree/treeGenerationService';
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { appendGeneratedNodesToTree, assertTreeAccess, getTreeForPopulation, getTreeList } from '@/server/utils/treeCatalog';
+import { appendGeneratedNodesToTree, assertTreeAccess, getTreeForPopulation, getTreeList } from '@/server/utils/tree/treeCatalog';
 
 function parseTreeId(value) {
   const parsedValue = Number.parseInt(String(value ?? ''), 10);

@@ -1,9 +1,10 @@
 import {
-  ensureInvestmentTreePath,
-  findInvestmentTreePathNode,
-  readSingleInvestmentTextAttachmentByFileName,
-  replaceInvestmentLeafAttachment,
-} from '@/server/utils/agent/investment/investmentTreeRepository';
+  deleteTreePath,
+  ensureTreePath,
+  findTreePathNode,
+  readSingleTreeTextAttachmentByFileName,
+  replaceTreeLeafAttachment,
+} from '@/server/utils/tree/treePathRepository';
 
 export const PERSONAL_CACHE_TREE_OPTIONS = Object.freeze({
   allowPrivate: true,
@@ -12,7 +13,7 @@ export const PERSONAL_CACHE_TREE_OPTIONS = Object.freeze({
 });
 
 export async function ensurePersonalCacheLeafPath({ treeId, pathSegments }) {
-  return ensureInvestmentTreePath({
+  return ensureTreePath({
     treeId,
     pathSegments,
     treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
@@ -20,14 +21,14 @@ export async function ensurePersonalCacheLeafPath({ treeId, pathSegments }) {
 }
 
 export async function findPersonalCacheLeafPathNode({ treeId, pathSegments }) {
-  return findInvestmentTreePathNode({
+  return findTreePathNode({
     treeId,
     pathSegments,
   });
 }
 
 export async function readPersonalCacheTextAttachmentByFileName({ treeId, pathSegments, fileName }) {
-  return readSingleInvestmentTextAttachmentByFileName({
+  return readSingleTreeTextAttachmentByFileName({
     treeId,
     pathSegments,
     fileName,
@@ -43,12 +44,21 @@ export async function replacePersonalCacheTextAttachment({
   content,
   updatedBy = null,
 }) {
-  return replaceInvestmentLeafAttachment({
+  return replaceTreeLeafAttachment({
     treeId,
     pathSegments,
     fileName,
     contentType,
     content,
+    updatedBy,
+    treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
+  });
+}
+
+export async function deletePersonalCachePath({ treeId, pathSegments, updatedBy = null }) {
+  return deleteTreePath({
+    treeId,
+    pathSegments,
     updatedBy,
     treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
   });

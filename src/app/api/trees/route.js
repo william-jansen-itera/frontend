@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateTreeDescriptionDraft } from '@/server/utils/treeDescriptionDraft';
+import { generateTreeDescriptionDraft } from '@/server/utils/tree/treeDescriptionDraft';
 import { publishStoredTreeDescriptions } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
@@ -18,7 +18,7 @@ import {
   updateTreeOwner,
   updateTreeTitle,
   updateTreeVisibility,
-} from '@/server/utils/treeCatalog';
+} from '@/server/utils/tree/treeCatalog';
 
 function parseTreeId(value) {
   const parsedValue = Number.parseInt(String(value ?? ''), 10);

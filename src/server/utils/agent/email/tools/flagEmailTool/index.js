@@ -1,7 +1,7 @@
 import { attachDebugToError } from '@/server/utils/agent/agentDebug';
 import {
-  invalidateLatestEmailRetrievalSnapshot,
   loadCachedEmailMessage,
+  updateLatestEmailRetrievalSnapshotFlags,
   updateCachedEmailMessageFlags,
 } from '@/server/utils/agent/email/emailCacheRepository';
 import { buildEmailToolResult } from '@/server/utils/agent/email/emailToolShared';
@@ -9,31 +9,44 @@ import { loadEmailAccountConfig } from '@/server/utils/agent/email/emailAccountC
 import { updateImapMessageFlags } from '@/server/utils/agent/email/emailTransport';
 
 export const FLAG_EMAIL_TOOL = 'flag_email';
+const FLAG_EMAIL_IMAP_FLAG = '\\Flagged';
 
 export const flagEmailToolDefinition = {
   type: 'function',
   name: FLAG_EMAIL_TOOL,
-  description: 'Add or remove IMAP flags such as \\Seen, \\Flagged, or \\Answered on one email.',
+  description: 'Set or remove the visual flagged or starred state on one or more emails.',
   strict: true,
   parameters: {
     type: 'object',
     properties: {
       provider: { type: 'string' },
       folder: { type: 'string' },
-      uid: {
-        type: 'string',
-        description: 'String copied unchanged from data.emails[].uid in the latest retrieve_emails result. Do not use the array index, data.resultCount, meta.resultCount, or any value not present in data.emails[].uid.',
-      },
-      mode: { type: 'string', enum: ['add', 'remove'] },
-      flags: {
+      uids: {
+        description: 'Strings copied unchanged from data.emails[].uid in the latest retrieve_emails result. Do not use the array index, data.resultCount, meta.resultCount, or any value not present in data.emails[].uid.',
         type: 'array',
         items: { type: 'string' },
+        minItems: 1,
       },
+      mode: { type: 'string', enum: ['add', 'remove'] },
     },
-    required: ['provider', 'folder', 'uid', 'mode', 'flags'],
+    required: ['provider', 'folder', 'uids', 'mode'],
     additionalProperties: false,
   },
 };
+
+function normalizeFlagTargetUids(args) {
+  const uidValues = [];
+
+  for (const uid of Array.isArray(args?.uids) ? args.uids : []) {
+    const normalizedUid = String(uid ?? '').trim();
+
+    if (normalizedUid) {
+      uidValues.push(normalizedUid);
+    }
+  }
+
+  return Array.from(new Set(uidValues));
+}
 
 export function buildFlagEmailHandler({ includeDebug = false, updatedBy = null, personalCacheTreeId = null } = {}) {
   return async function flagEmailHandler(args, agentContext = null) {
@@ -49,45 +62,68 @@ export function buildFlagEmailHandler({ includeDebug = false, updatedBy = null, 
         treeId: resolvedTreeId,
         provider: args.provider,
       });
-      const output = await updateImapMessageFlags(accountConfig, args);
-      let messageCacheUpdated = false;
-      let snapshotInvalidated = false;
+      const targetUids = normalizeFlagTargetUids(args);
+
+      if (targetUids.length === 0) {
+        throw new Error('At least one email uid is required to update the flagged state.');
+      }
+
+      const output = await updateImapMessageFlags(accountConfig, {
+        folder: args.folder,
+        uids: targetUids,
+        flags: [FLAG_EMAIL_IMAP_FLAG],
+        mode: args.mode,
+      });
+      let messageCacheUpdatedCount = 0;
+      let snapshotUpdated = false;
 
       try {
-        const cachedMessage = await loadCachedEmailMessage({
-          treeId: resolvedTreeId,
-          provider: args.provider,
-          uid: args.uid,
-        });
+        for (const uid of targetUids) {
+          const cachedMessage = await loadCachedEmailMessage({
+            treeId: resolvedTreeId,
+            provider: args.provider,
+            folder: args.folder,
+            uid,
+          });
 
-        if (cachedMessage) {
+          if (!cachedMessage) {
+            continue;
+          }
+
           const currentFlags = Array.isArray(cachedMessage.flags) ? cachedMessage.flags : [];
           const requestedFlags = Array.isArray(output.flags) ? output.flags : [];
           const nextFlags = output.mode === 'remove'
             ? currentFlags.filter((flag) => !requestedFlags.includes(flag))
             : Array.from(new Set([...currentFlags, ...requestedFlags]));
 
-          messageCacheUpdated = await updateCachedEmailMessageFlags({
+          const cacheUpdated = await updateCachedEmailMessageFlags({
             treeId: resolvedTreeId,
             provider: args.provider,
-            uid: args.uid,
+            folder: args.folder,
+            uid,
             flags: nextFlags,
             updatedBy: resolvedUpdatedBy,
           });
+
+          if (cacheUpdated) {
+            messageCacheUpdatedCount += 1;
+          }
         }
       } catch {
-        messageCacheUpdated = false;
+        messageCacheUpdatedCount = 0;
       }
 
       try {
-        snapshotInvalidated = await invalidateLatestEmailRetrievalSnapshot({
+        snapshotUpdated = await updateLatestEmailRetrievalSnapshotFlags({
           treeId: resolvedTreeId,
           provider: args.provider,
           folder: args.folder,
+          uids: targetUids,
+          flags: Array.isArray(output.flags) ? output.flags : [],
           updatedBy: resolvedUpdatedBy,
         });
       } catch {
-        snapshotInvalidated = false;
+        snapshotUpdated = false;
       }
 
       return buildEmailToolResult({
@@ -97,8 +133,8 @@ export function buildFlagEmailHandler({ includeDebug = false, updatedBy = null, 
         includeDebug,
         debug: includeDebug ? {
           ...output,
-          messageCacheUpdated,
-          snapshotInvalidated,
+          messageCacheUpdatedCount,
+          snapshotUpdated,
         } : null,
       });
     } catch (error) {

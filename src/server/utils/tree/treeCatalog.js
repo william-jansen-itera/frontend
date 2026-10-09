@@ -6,6 +6,7 @@ import {
 import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
 import { hasClientPrincipalRole, normalizeClientPrincipal } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
+import { createTreeNodeRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 
 const MAX_NON_LEAF_TITLES = 64;
 const MAX_LEAF_TITLE_EXEMPLARS = 48;
@@ -451,49 +452,20 @@ function normalizeGeneratedTreeNotes(value) {
   return String(value ?? '').trim();
 }
 
-async function upsertTreeNodeDetails(request, treeNodeId, notes) {
-  await request
-    .input('tree_node_id', sql.Int, treeNodeId)
-    .input('notes', sql.NVarChar(sql.MAX), notes)
-    .query(`
-      MERGE tree_node_details AS target
-      USING (SELECT @tree_node_id AS tree_node_id) AS source
-        ON target.tree_node_id = source.tree_node_id
-      WHEN MATCHED THEN
-        UPDATE SET
-          notes = @notes,
-          updated_at = SYSUTCDATETIME()
-      WHEN NOT MATCHED THEN
-        INSERT (tree_node_id, notes, created_at, updated_at)
-        VALUES (@tree_node_id, @notes, SYSUTCDATETIME(), SYSUTCDATETIME());
-    `);
-}
-
-async function insertGeneratedNodeBranch({ transaction, treeInstanceId, parentId, nodes, startingSortOrder = 0 }) {
+async function insertGeneratedNodeBranch({ transaction, treeInstanceId, parentId, nodes }) {
   let insertedCount = 0;
 
   for (const [nodeIndex, node] of nodes.entries()) {
     const isLeafNode = !Array.isArray(node.children);
     const nodeText = normalizeGeneratedTreeText(node.title);
-    const insertResult = await new sql.Request(transaction)
-      .input('tree_instance_id', sql.Int, treeInstanceId)
-      .input('parent_id', sql.Int, parentId)
-      .input('text', sql.NVarChar(255), nodeText)
-      .input('is_leaf_node', sql.Bit, isLeafNode ? 1 : 0)
-      .input('is_expanded', sql.Bit, isLeafNode ? 0 : 1)
-      .input('draggable', sql.Bit, 1)
-      .input('sort_order', sql.Int, startingSortOrder + nodeIndex)
-      .query(`
-        DECLARE @createdNodes TABLE (createdNodeId INT);
-
-        INSERT INTO tree_nodes (tree_instance_id, parent_id, text, is_leaf_node, is_expanded, draggable, sort_order)
-        OUTPUT INSERTED.id INTO @createdNodes (createdNodeId)
-        VALUES (@tree_instance_id, @parent_id, @text, @is_leaf_node, @is_expanded, @draggable, @sort_order);
-
-        SELECT createdNodeId FROM @createdNodes;
-      `);
-
-    const createdNodeId = Number(insertResult.recordset[0]?.createdNodeId);
+    const createdNode = await createTreeNodeRecord({
+      parentId,
+      treeInstanceId,
+      name: nodeText,
+      ensureLeafDetails: isLeafNode,
+      transaction,
+    });
+    const createdNodeId = Number(createdNode.createdNodeId);
 
     if (!createdNodeId) {
       throw new Error('A generated tree node could not be inserted.');
@@ -502,11 +474,11 @@ async function insertGeneratedNodeBranch({ transaction, treeInstanceId, parentId
     insertedCount += 1;
 
     if (isLeafNode) {
-      await upsertTreeNodeDetails(
-        new sql.Request(transaction),
-        createdNodeId,
-        normalizeGeneratedTreeNotes(node.notes),
-      );
+      await upsertTreeNodeDetails({
+        nodeId: createdNodeId,
+        notes: normalizeGeneratedTreeNotes(node.notes),
+        transaction,
+      });
       continue;
     }
 
@@ -515,7 +487,6 @@ async function insertGeneratedNodeBranch({ transaction, treeInstanceId, parentId
       treeInstanceId,
       parentId: createdNodeId,
       nodes: node.children,
-      startingSortOrder: 0,
     });
   }
 
@@ -1445,23 +1416,11 @@ export async function appendGeneratedNodesToTree({ treeId, generatedNodes }) {
 
     try {
       await transaction.begin();
-
-      const rootSortOrderResult = await new sql.Request(transaction)
-        .input('tree_instance_id', sql.Int, Number(treeId))
-        .query(`
-          SELECT ISNULL(MAX(sort_order), -1) AS maxRootSortOrder
-          FROM tree_nodes
-          WHERE tree_instance_id = @tree_instance_id
-            AND parent_id IS NULL;
-        `);
-
-      const maxRootSortOrder = Number(rootSortOrderResult.recordset[0]?.maxRootSortOrder ?? -1);
       const totalNodeCount = await insertGeneratedNodeBranch({
         transaction,
         treeInstanceId: Number(treeId),
         parentId: null,
         nodes: generatedNodes,
-        startingSortOrder: maxRootSortOrder + 1,
       });
 
       await new sql.Request(transaction)

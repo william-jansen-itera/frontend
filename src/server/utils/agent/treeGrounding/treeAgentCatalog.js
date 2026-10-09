@@ -2,7 +2,7 @@ import { DEFAULT_TOOL_TOP, searchTreeContent } from '@/server/utils/azureSearch'
 import {
   getTreeList,
   updateTreeDescriptionPublishedStates,
-} from '@/server/utils/treeCatalog';
+} from '@/server/utils/tree/treeCatalog';
 import {
   AGENT_PREVIEW_FEATURES,
   deleteProjectPromptAgent,

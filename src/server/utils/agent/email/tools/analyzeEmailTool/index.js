@@ -420,6 +420,7 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
         let message = await loadCachedEmailMessage({
           treeId: resolvedTreeId,
           provider: args.provider,
+          folder: normalizedFolder,
           uid,
         });
 
@@ -443,20 +444,21 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
             await storeCachedEmailMessage({
               treeId: resolvedTreeId,
               provider: args.provider,
+              folder: normalizedFolder,
               uid: message.uid,
               message,
               updatedBy: resolvedUpdatedBy,
             });
           } else if (Array.isArray(resolvedSnapshotMessages)) {
             throw new Error(
-              `Wrong message uid was provided: ${uid}. The requested email does not match any message in the latest retrieval snapshot for folder ${normalizedFolder}.`,
+              `Wrong message uid was provided: ${uid}. This uid does not exist in the latest retrieve_emails result for folder ${normalizedFolder} in this conversation. Look up data.emails[].uid in that latest retrieve_emails result and retry with one of those exact uid strings. Do not invent or transform the uid.`,
             );
           }
         }
 
         if (!message) {
           throw new Error(
-            `Email uid ${uid} is not available in the current cache for folder ${normalizedFolder}. Retrieve emails for that folder first, then analyze one of the returned UIDs.`,
+            `Email uid ${uid} is not available in the current cache for folder ${normalizedFolder}. Run retrieve_emails for that folder, then look up data.emails[].uid in the latest retrieve_emails result in this conversation and retry with one of those exact uid strings. Do not invent or transform the uid.`,
           );
         }
 
@@ -486,6 +488,7 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
         analyses.map((analysis, index) => storeCachedEmailMessage({
           treeId: resolvedTreeId,
           provider: args.provider,
+          folder: normalizedFolder,
           uid: analysis.uid,
           message: {
             ...messages[index],

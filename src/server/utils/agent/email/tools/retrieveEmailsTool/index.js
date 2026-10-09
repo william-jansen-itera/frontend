@@ -254,7 +254,7 @@ export const retrieveEmailsToolDefinition = {
       forceRefresh: { type: 'boolean', description: 'When true, bypass any fresh cached folder snapshot and fetch the latest mailbox window from IMAP before filtering. Use this when the user explicitly wants the latest or newest emails.' },
       includeHeuristics: { type: 'boolean', description: 'When true, include heuristic classification, action, and deadline signals on returned messages for list-level triage.' },
       unreadOnly: { type: 'boolean', description: 'When true, only return emails that do not currently have the IMAP \\Seen flag.' },
-      flaggedOnly: { type: 'boolean', description: 'When true, only return emails that currently have the IMAP \\Flagged flag.' },
+      flaggedOnly: { type: 'boolean', description: 'When true, only return emails that currently have the visual flagged or starred IMAP \\Flagged state.' },
       replyExpectedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that a reply is expected.' },
       otherActionRequiredOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that some non-reply action is required.' },
       deadlineMentionedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically mentions a deadline or due time.' },

@@ -5,6 +5,16 @@ import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { restoreNodeAttachmentBlobIfDeleted } from '@/server/utils/blobStorage';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
+import {
+  queryDeletedAttachmentForUndelete,
+  queryDeletedNodeAttachmentBlobs,
+  queryDeletedNodeForUndelete,
+  queryDeletedNodeSecretMetadata,
+  queryDeletedTreeAttachmentBlobs,
+  queryDeletedTreeForUndelete,
+  queryDeletedTreeSecretMetadata,
+  queryIndividuallyDeletedAttachments,
+} from '@/server/utils/tree/treeRecordRepository';
 
 function normalizeSecretMetadata(value) {
   const candidate = typeof value === 'string'
@@ -53,101 +63,26 @@ function assertAdminPrincipal(principal) {
   }
 }
 
-async function getIndividuallyDeletedAttachments(applicationIdentifier) {
-  const result = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .query(`
-      SELECT
-        CAST(files.id AS VARCHAR(20)) AS id,
-        CAST(ti.id AS VARCHAR(20)) AS treeId,
-        CAST(tn.id AS VARCHAR(20)) AS nodeId,
-        CAST(files.tree_node_id AS VARCHAR(20)) AS treeNodeId,
-        COALESCE(NULLIF(ti.display_name, ''), CONCAT('Tree ', ti.id)) AS treeDisplayName,
-        COALESCE(NULLIF(nodeSearch.title, ''), CONCAT('Node ', tn.id)) AS nodeTitle,
-        COALESCE(NULLIF(files.original_file_name, ''), CONCAT('Attachment ', files.id)) AS fileName,
-        COALESCE(nodeSearch.breadcrumb, tn.text, CONCAT('Node ', tn.id)) AS breadcrumb,
-        files.deleted_at AS deletedAt,
-        files.blob_name AS blobName,
-        files.blob_url AS blobUrl
-      FROM tree_node_detail_files files
-      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      LEFT JOIN dbo.vw_tree_search_nodes nodeSearch
-        ON nodeSearch.appIdentifier = ai.app_identifier
-       AND TRY_CAST(nodeSearch.treeId AS INT) = ti.id
-       AND TRY_CAST(nodeSearch.nodeId AS INT) = tn.id
-       AND nodeSearch.sourceType = 'node'
-      WHERE ai.app_identifier = @application_identifier
-        AND files.deleted_at IS NOT NULL
-        AND tn.deleted_at IS NULL
-        AND ti.deleted_at IS NULL
-      ORDER BY files.deleted_at DESC, files.id DESC;
-    `);
-
-  return result.recordset;
-}
-
 async function undeleteTree(applicationIdentifier, treeId) {
   const restoredAt = new Date();
-  const treeResult = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .query(`
-      SELECT TOP 1 ti.deleted_at AS deletedAt
-      FROM tree_instance ti
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.id = @tree_instance_id
-        AND ti.deleted_at IS NOT NULL;
-    `);
-
-  const treeDeletedAt = treeResult.recordset[0]?.deletedAt ?? null;
+  const treeDeletedAt = (await queryDeletedTreeForUndelete(applicationIdentifier, treeId))?.deletedAt ?? null;
 
   if (!treeDeletedAt) {
     throw new Error('Tree was not found for undelete');
   }
 
-  const attachments = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('tree_deleted_at', sql.DateTime2, treeDeletedAt)
-    .query(`
-      SELECT files.blob_name AS blobName
-      FROM tree_node_detail_files files
-      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.id = @tree_instance_id
-        AND ti.deleted_at = @tree_deleted_at
-        AND files.deleted_at = @tree_deleted_at;
-    `);
+  const [attachments, secrets] = await Promise.all([
+    queryDeletedTreeAttachmentBlobs(applicationIdentifier, treeId, treeDeletedAt),
+    queryDeletedTreeSecretMetadata(applicationIdentifier, treeId, treeDeletedAt),
+  ]);
 
-  const secrets = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('tree_deleted_at', sql.DateTime2, treeDeletedAt)
-    .query(`
-      SELECT CAST(tn.id AS VARCHAR(20)) AS treeNodeId, tnd.secret_metadata AS secretMetadata
-      FROM tree_node_details tnd
-      INNER JOIN tree_nodes tn ON tn.id = tnd.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.id = @tree_instance_id
-        AND ti.deleted_at = @tree_deleted_at
-        AND CAST(COALESCE(tnd.is_secret, 0) AS BIT) = 1
-        AND tnd.secret_metadata IS NOT NULL;
-    `);
-
-  for (const attachment of attachments.recordset) {
+  for (const attachment of attachments) {
     await restoreNodeAttachmentBlobIfDeleted(attachment.blobName);
   }
 
   await restoreDeletedSecrets(
     treeId,
-    secrets.recordset
+    secrets
       .map((record) => ({
         treeNodeId: record.treeNodeId,
         secretMetadata: normalizeSecretMetadata(record.secretMetadata),
@@ -193,98 +128,24 @@ async function undeleteTree(applicationIdentifier, treeId) {
 
 async function undeleteNode(applicationIdentifier, treeId, nodeId) {
   const restoredAt = new Date();
-  const nodeResult = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('node_id', sql.Int, Number(nodeId))
-    .query(`
-      SELECT TOP 1 tn.deleted_at AS deletedAt
-      FROM tree_nodes tn
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND tn.tree_instance_id = @tree_instance_id
-        AND tn.id = @node_id
-        AND tn.deleted_at IS NOT NULL
-        AND ti.deleted_at IS NULL;
-    `);
-
-  const nodeDeletedAt = nodeResult.recordset[0]?.deletedAt ?? null;
+  const nodeDeletedAt = (await queryDeletedNodeForUndelete(applicationIdentifier, treeId, nodeId))?.deletedAt ?? null;
 
   if (!nodeDeletedAt) {
     throw new Error('Node was not found for undelete or its tree is still deleted');
   }
 
-  const attachments = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('node_id', sql.Int, Number(nodeId))
-    .input('node_deleted_at', sql.DateTime2, nodeDeletedAt)
-    .query(`
-      WITH Descendants AS (
-        SELECT tn.id
-        FROM tree_nodes tn
-        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-        WHERE ai.app_identifier = @application_identifier
-          AND tn.tree_instance_id = @tree_instance_id
-          AND tn.id = @node_id
-          AND tn.deleted_at = @node_deleted_at
-          AND ti.deleted_at IS NULL
+  const [attachments, secrets] = await Promise.all([
+    queryDeletedNodeAttachmentBlobs(applicationIdentifier, treeId, nodeId, nodeDeletedAt),
+    queryDeletedNodeSecretMetadata(applicationIdentifier, treeId, nodeId, nodeDeletedAt),
+  ]);
 
-        UNION ALL
-
-        SELECT child.id
-        FROM tree_nodes child
-        INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
-        WHERE child.tree_instance_id = @tree_instance_id
-          AND child.deleted_at = @node_deleted_at
-      )
-      SELECT files.blob_name AS blobName
-      FROM tree_node_detail_files files
-      INNER JOIN Descendants ON Descendants.id = files.tree_node_id
-      WHERE files.deleted_at = @node_deleted_at;
-    `);
-
-  const secrets = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('node_id', sql.Int, Number(nodeId))
-    .input('node_deleted_at', sql.DateTime2, nodeDeletedAt)
-    .query(`
-      WITH Descendants AS (
-        SELECT tn.id
-        FROM tree_nodes tn
-        INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-        INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-        WHERE ai.app_identifier = @application_identifier
-          AND tn.tree_instance_id = @tree_instance_id
-          AND tn.id = @node_id
-          AND tn.deleted_at = @node_deleted_at
-          AND ti.deleted_at IS NULL
-
-        UNION ALL
-
-        SELECT child.id
-        FROM tree_nodes child
-        INNER JOIN Descendants parent_descendant ON child.parent_id = parent_descendant.id
-        WHERE child.tree_instance_id = @tree_instance_id
-          AND child.deleted_at = @node_deleted_at
-      )
-      SELECT CAST(Descendants.id AS VARCHAR(20)) AS treeNodeId, tnd.secret_metadata AS secretMetadata
-      FROM Descendants
-      INNER JOIN tree_node_details tnd ON tnd.tree_node_id = Descendants.id
-      WHERE CAST(COALESCE(tnd.is_secret, 0) AS BIT) = 1
-        AND tnd.secret_metadata IS NOT NULL;
-    `);
-
-  for (const attachment of attachments.recordset) {
+  for (const attachment of attachments) {
     await restoreNodeAttachmentBlobIfDeleted(attachment.blobName);
   }
 
   await restoreDeletedSecrets(
     treeId,
-    secrets.recordset
+    secrets
       .map((record) => ({
         treeNodeId: record.treeNodeId,
         secretMetadata: normalizeSecretMetadata(record.secretMetadata),
@@ -370,29 +231,7 @@ async function undeleteNode(applicationIdentifier, treeId, nodeId) {
 }
 
 async function undeleteAttachment(applicationIdentifier, treeId, attachmentId) {
-  const attachmentResult = await new sql.Request()
-    .input('application_identifier', sql.NVarChar, applicationIdentifier)
-    .input('tree_instance_id', sql.Int, Number(treeId))
-    .input('attachment_id', sql.Int, Number(attachmentId))
-    .query(`
-      SELECT TOP 1
-        files.blob_name AS blobName,
-        files.deleted_at AS deletedAt,
-        CAST(files.id AS VARCHAR(20)) AS attachmentId,
-        CAST(tn.id AS VARCHAR(20)) AS nodeId
-      FROM tree_node_detail_files files
-      INNER JOIN tree_nodes tn ON tn.id = files.tree_node_id
-      INNER JOIN tree_instance ti ON ti.id = tn.tree_instance_id
-      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
-      WHERE ai.app_identifier = @application_identifier
-        AND ti.id = @tree_instance_id
-        AND files.id = @attachment_id
-        AND files.deleted_at IS NOT NULL
-        AND tn.deleted_at IS NULL
-        AND ti.deleted_at IS NULL;
-    `);
-
-  const attachment = attachmentResult.recordset[0] ?? null;
+  const attachment = await queryDeletedAttachmentForUndelete(applicationIdentifier, treeId, attachmentId);
 
   if (!attachment) {
     throw new Error('Attachment was not found for undelete or its node is still deleted');

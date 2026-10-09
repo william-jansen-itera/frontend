@@ -2,7 +2,7 @@ import {
   getProjectClient,
   getRequiredFoundryConfig,
 } from '@/server/utils/foundryAgentClient';
-import { getTreeRoutingProfile } from '@/server/utils/treeCatalog';
+import { getTreeRoutingProfile } from '@/server/utils/tree/treeCatalog';
 
 function formatTopicList(values) {
   return Array.from(new Set((values ?? []).map((value) => String(value ?? '').trim()).filter(Boolean)));

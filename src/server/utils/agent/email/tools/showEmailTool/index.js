@@ -113,6 +113,7 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
       let message = await loadCachedEmailMessage({
         treeId: resolvedTreeId,
         provider: args.provider,
+        folder: normalizedFolder,
         uid: normalizedUid,
       });
 
@@ -139,20 +140,21 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
           await storeCachedEmailMessage({
             treeId: resolvedTreeId,
             provider: args.provider,
+            folder: normalizedFolder,
             uid: message.uid,
             message,
             updatedBy: resolvedUpdatedBy,
           });
         } else if (snapshotMessages.length > 0) {
           throw new Error(
-            `Wrong message uid was provided: ${normalizedUid}. The requested email does not match any message in the latest retrieval snapshot for folder ${normalizedFolder}.`,
+            `Wrong message uid was provided: ${normalizedUid}. This uid does not exist in the latest retrieve_emails result for folder ${normalizedFolder} in this conversation. Look up data.emails[].uid in that latest retrieve_emails result and retry with one of those exact uid strings. Do not invent or transform the uid.`,
           );
         }
       }
 
       if (!message) {
         throw new Error(
-          `Email uid ${normalizedUid} is not available in the current cache for folder ${normalizedFolder}. Retrieve emails for that folder first, then show one of the returned UIDs.`,
+          `Email uid ${normalizedUid} is not available in the current cache for folder ${normalizedFolder}. Run retrieve_emails for that folder, then look up data.emails[].uid in the latest retrieve_emails result in this conversation and retry with one of those exact uid strings. Do not invent or transform the uid.`,
         );
       }
 
