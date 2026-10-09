@@ -127,10 +127,12 @@ Use the returned heuristicClassification, replyItems, actionItems, and deadlineI
 ## flag_email tool
 Use for factual IMAP flag changes. Follow the UID contract above before calling this tool.
 Always pass a uids list, including for one email. This tool only sets or removes the visual flagged or starred state for those emails.
+If the user wants the same flag change for multiple emails in the same folder, send one flag_email call with all target UIDs, not one call per email.
 
 ## delete_email tool
 Use for deletion. Follow the UID contract above before calling this tool. Do not claim success unless the tool confirms it.
 Always pass a uids list, including for one email. With expunge false, this tool moves messages to Trash. Use expunge true only when the user clearly wants permanent deletion.
+If the user wants the same delete action for multiple emails in the same folder, send one delete_email call with all target UIDs, not one call per email.
 
 ## author_email tool
 Use to prepare, revise, or propose draft content without sending. Use this whenever the user wants help writing but has not clearly asked to deliver the message yet.
