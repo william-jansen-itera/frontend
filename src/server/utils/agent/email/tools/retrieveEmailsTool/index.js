@@ -87,10 +87,7 @@ function buildHeuristicPlan(filters) {
 function evaluateMessageHeuristics(message, heuristicPlan) {
   const cachedHeuristics = message?.heuristicCache && typeof message.heuristicCache === 'object'
     ? message.heuristicCache
-    : buildCachedEmailHeuristics({
-      subject: String(message?.subject ?? ''),
-      bodyText: String(message?.bodyText ?? ''),
-    });
+    : null;
   const heuristics = {};
 
   if (heuristicPlan.needsClassification) {
@@ -339,11 +336,20 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
           scanLimit: REFRESH_RETRIEVAL_SCAN_LIMIT,
           returnAllScanned: true,
         });
+        const cachedMessages = Array.isArray(retrievalResult.messages)
+          ? retrievalResult.messages.map((message) => ({
+            ...message,
+            heuristicCache: buildCachedEmailHeuristics({
+              subject: String(message?.subject ?? ''),
+              bodyText: String(message?.bodyText ?? ''),
+            }),
+          }))
+          : [];
         cachedSnapshot = await storeLatestEmailRetrievalSnapshot({
           treeId: resolvedTreeId,
           provider: args.provider,
           folder: normalizedFolder,
-          messages: retrievalResult.messages,
+          messages: cachedMessages,
           updatedBy: resolvedUpdatedBy,
           sourceWindowSize: retrievalResult.scanLimit ?? REFRESH_RETRIEVAL_SCAN_LIMIT,
         });

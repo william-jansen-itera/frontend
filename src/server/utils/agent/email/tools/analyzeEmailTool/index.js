@@ -359,6 +359,19 @@ function buildMessageAnalysis(message, modelAnalysis) {
   };
 }
 
+function buildStoredMessageAnalysis(analysis) {
+  return {
+    analyzedAt: new Date().toISOString(),
+    summary: analysis.summary,
+    keyPoints: Array.isArray(analysis.keyPoints) ? analysis.keyPoints : [],
+    replyItems: Array.isArray(analysis.replyItems) ? analysis.replyItems : [],
+    questionItems: Array.isArray(analysis.questionItems) ? analysis.questionItems : [],
+    actionItems: Array.isArray(analysis.actionItems) ? analysis.actionItems : [],
+    deadlineItems: Array.isArray(analysis.deadlineItems) ? analysis.deadlineItems : [],
+    classification: analysis.classification ?? null,
+  };
+}
+
 export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = null, personalCacheTreeId = null } = {}) {
   return async function analyzeEmailHandler(args, agentContext = null) {
     const resolvedTreeId = agentContext?.personalCacheTreeId ?? personalCacheTreeId ?? null;
@@ -468,6 +481,20 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
 
         return buildMessageAnalysis(message, modelAnalysis);
       });
+
+      await Promise.all(
+        analyses.map((analysis, index) => storeCachedEmailMessage({
+          treeId: resolvedTreeId,
+          provider: args.provider,
+          uid: analysis.uid,
+          message: {
+            ...messages[index],
+            analysisCache: buildStoredMessageAnalysis(analysis),
+          },
+          updatedBy: resolvedUpdatedBy,
+        })),
+      );
+
       return buildEmailToolResult({
         toolName: ANALYZE_EMAIL_TOOL,
         toolResultType: 'email_analysis',

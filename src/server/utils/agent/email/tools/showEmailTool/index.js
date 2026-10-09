@@ -33,6 +33,32 @@ export const showEmailToolDefinition = {
 
 function buildShownEmail(message) {
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
+  const analysisCache = message?.analysisCache && typeof message.analysisCache === 'object'
+    ? message.analysisCache
+    : null;
+  const storedHeuristics = message?.heuristicCache && typeof message.heuristicCache === 'object'
+    ? message.heuristicCache
+    : null;
+  const classification = analysisCache?.classification ?? storedHeuristics?.classification ?? null;
+  const replyItems = Array.isArray(analysisCache?.replyItems)
+    ? analysisCache.replyItems
+    : Array.isArray(storedHeuristics?.replyItems)
+      ? storedHeuristics.replyItems
+      : Array.isArray(storedHeuristics?.replyMatches)
+        ? storedHeuristics.replyMatches
+        : [];
+  const actionItems = Array.isArray(analysisCache?.actionItems)
+    ? analysisCache.actionItems
+    : Array.isArray(storedHeuristics?.actionItems)
+      ? storedHeuristics.actionItems
+      : [];
+  const deadlineItems = Array.isArray(analysisCache?.deadlineItems)
+    ? analysisCache.deadlineItems
+    : Array.isArray(storedHeuristics?.deadlineItems)
+      ? storedHeuristics.deadlineItems
+      : Array.isArray(storedHeuristics?.deadlines)
+        ? storedHeuristics.deadlines
+        : [];
 
   return {
     uid: String(message?.uid ?? '').trim() || null,
@@ -50,20 +76,11 @@ function buildShownEmail(message) {
     attachments,
     attachmentCount: attachments.length,
     attachmentFileNames: attachments.map((attachment) => String(attachment?.fileName ?? '').trim()).filter(Boolean),
-    heuristicClassification: message?.heuristicCache?.classification ?? null,
-    replyItems: Array.isArray(message?.heuristicCache?.replyItems)
-      ? message.heuristicCache.replyItems
-      : Array.isArray(message?.heuristicCache?.replyMatches)
-        ? message.heuristicCache.replyMatches
-        : [],
-    actionItems: Array.isArray(message?.heuristicCache?.actionItems)
-      ? message.heuristicCache.actionItems
-      : [],
-    deadlineItems: Array.isArray(message?.heuristicCache?.deadlineItems)
-      ? message.heuristicCache.deadlineItems
-      : Array.isArray(message?.heuristicCache?.deadlines)
-        ? message.heuristicCache.deadlines
-        : [],
+    heuristicClassification: classification,
+    analysisCache,
+    replyItems,
+    actionItems,
+    deadlineItems,
   };
 }
 
