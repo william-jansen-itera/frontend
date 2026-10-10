@@ -3,16 +3,19 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Image from "next/image";
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
+import { ADMIN_SECTIONS } from "./admin/adminShared";
 import {
   ALL_VISIBILITY_VALUES,
   buildVisibilityHref,
   PUBLIC_PRIVATE_VISIBILITY_VALUES,
   usePersistedVisibility,
 } from "./usePersistedVisibility";
+
+const adminNavChildren = ADMIN_SECTIONS;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,15 +31,19 @@ const navLinks = [
   { href: "/notes", label: "Notes", requiresRole: "mdsusers" },
   { href: "/search", label: "Search", requiresRole: "mdsusers" },
   { href: "/chat", label: "Agent", requiresRole: "mdsusers" },
-  { href: "/review", label: "Review", requiresAuthenticated: true },
+  { href: "/review", label: "Review", requiresRole: "mdsusers" },
   { href: "/me", label: "Me", requiresAuthenticated: true },
-  { href: "/admin", label: "Admin", requiresRole: "mdsadmins" },
+  { href: "/admin", label: "Admin", requiresRole: "mdsadmins", children: adminNavChildren },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
   { href: "/architecture", label: "Architecture", requiresRole: "mdsadmins" },
 ];
 
 function getPageSurfaceClassName(pathname) {
+  if (pathname.startsWith("/admin")) {
+    return "appPageSurface appPageSurfaceAbout";
+  }
+
   if (pathname === "/notes") {
     return "appPageSurface appPageSurfaceNotes";
   }
@@ -72,12 +79,15 @@ function getPageSurfaceClassName(pathname) {
   if (pathname === "/architecture") {
     return "appPageSurface appPageSurfaceAbout";
   }
+  return "appPageSurface appPageSurfaceHome";
+}
 
-  if (pathname === "/admin") {
-    return "appPageSurface appPageSurfaceAbout";
+function isNavLinkActive(pathname, href) {
+  if (href === "/admin") {
+    return pathname === href || pathname.startsWith(`${href}/`);
   }
 
-  return "appPageSurface appPageSurfaceHome";
+  return pathname === href;
 }
 
 function getNavAllowedVisibilityValues(href) {
@@ -122,6 +132,8 @@ function HeaderAuthControls({
 
 function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "public" }) {
   const [mobileMenuPathname, setMobileMenuPathname] = useState(null);
+  const [openNavGroupHref, setOpenNavGroupHref] = useState(null);
+  const navRef = useRef(null);
   const isMobileMenuOpen = mobileMenuPathname === pathname;
 
   const buildNavHref = (href) => buildVisibilityHref(
@@ -143,13 +155,78 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
     return true;
   });
 
+  useEffect(() => {
+    if (!openNavGroupHref) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (!navRef.current?.contains(event.target)) {
+        setOpenNavGroupHref(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [openNavGroupHref]);
+
   const renderNavLinks = ({ mobile = false } = {}) => {
     const className = mobile ? "appNavLinks appNavLinksMobile" : "appNavLinks";
 
     return (
       <div className={className}>
         {visibleNavLinks.map((link) => {
-          const isActive = pathname === link.href;
+          const isActive = isNavLinkActive(pathname, link.href);
+
+          if (Array.isArray(link.children) && link.children.length > 0) {
+            const groupClassName = mobile ? "appNavGroup appNavGroupMobile" : "appNavGroup";
+            const isGroupOpen = openNavGroupHref === link.href;
+            const submenuClassName = [
+              mobile ? "appNavSubmenu appNavSubmenuMobile" : "appNavSubmenu",
+              isGroupOpen ? "appNavSubmenuOpen" : "",
+            ].filter(Boolean).join(" ");
+            const submenuId = `nav-submenu-${link.href.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase()}`;
+
+            return (
+              <div key={link.href} className={groupClassName}>
+                <button
+                  type="button"
+                  className={`appNavLink appNavLinkButton appNavLinkWithChildren ${isActive || isGroupOpen ? "appNavLinkActive" : ""}`.trim()}
+                  aria-expanded={isGroupOpen}
+                  aria-controls={submenuId}
+                  onClick={() => setOpenNavGroupHref((current) => (current === link.href ? null : link.href))}
+                >
+                  <span>{link.label}</span>
+                  <span className="appNavLinkChevron" aria-hidden="true">▾</span>
+                </button>
+
+                <div id={submenuId} className={submenuClassName}>
+                  {link.children.map((childLink) => {
+                    const isChildActive = pathname === childLink.href;
+
+                    return (
+                      <Link
+                        key={childLink.href}
+                        href={buildNavHref(childLink.href)}
+                        className={`appNavSubmenuLink ${isChildActive ? "appNavSubmenuLinkActive" : ""}`.trim()}
+                        onClick={() => {
+                          setOpenNavGroupHref(null);
+                          if (mobile) {
+                            setMobileMenuPathname(null);
+                          }
+                        }}
+                      >
+                        {childLink.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
 
           return (
             <Link
@@ -169,7 +246,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
   return (
     <div className={getPageSurfaceClassName(pathname)}>
       <header className="appChrome">
-        <nav className="appNav" aria-label="Primary">
+        <nav ref={navRef} className="appNav" aria-label="Primary">
           <div className="appNavMainRow">
             <div className="appNavBrandGroup">
               <Link href={buildNavHref("/")} className="appBrandLink" aria-label="MDS home">

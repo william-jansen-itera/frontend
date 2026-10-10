@@ -1,10 +1,10 @@
-import styles from "./page.module.css";
+import styles from "../page.module.css";
 import {
   buildFamilyActivationLabel,
   buildFamilyActionConfirmationMessage,
   buildFamilyPublishLabel,
-  formatFamilyLastPublished,
   formatFamilyActionMessage,
+  formatFamilyLastPublished,
   formatFamilyPromptAgentStatus,
   getFamilyDefinedTools,
   getFamilyStatusClassName,
@@ -21,14 +21,9 @@ export function AgentFamilyPublishingPanel({
   onAction,
 }) {
   return (
-    <section className={`appPanelShell ${styles.agentManagementPanel}`}>
-      <div className={`appPanelTopBar ${styles.panelHeader}`}>
-        <div>
-          <p className="appEyebrow">Agent Family Publishing</p>
-        </div>
-      </div>
-      <div className={styles.agentManagementBody}>
-        <p className={styles.agentManagementIntro}>
+    <section className={`appTopLevelPanel ${styles.panel}`}>
+      <div className={styles.panelBody}>
+        <p className={styles.sectionDescription}>
           View registered agent families and publish or re-publish Azure prompt agents for supported families.
         </p>
 

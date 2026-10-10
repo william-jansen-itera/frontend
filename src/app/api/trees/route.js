@@ -2,9 +2,7 @@ import { NextResponse } from 'next/server';
 import { generateTreeDescriptionDraft } from '@/server/utils/tree/treeDescriptionDraft';
 import { publishStoredTreeDescriptions } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 import { getEntraUserByObjectId, searchEntraUsers } from '@/server/utils/swaRoleMapping';
-import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import {
   addTreeEditor,
   createTree,
@@ -39,14 +37,6 @@ function getPayloadVisibility(payload) {
   return String(payload?.visibility ?? '').trim() || 'public';
 }
 
-function isAdminPrincipal(principal) {
-  return hasClientPrincipalRole(principal, 'mdsadmins');
-}
-
-function isAuthenticatedPrincipal(principal) {
-  return Boolean(String(principal?.objectId ?? principal?.userId ?? '').trim());
-}
-
 function getErrorStatus(error, defaultStatus = 500) {
   const status = Number(error?.status);
 
@@ -60,20 +50,11 @@ function getErrorStatus(error, defaultStatus = 500) {
 export async function GET(request) {
   try {
     const principal = parseClientPrincipal(request);
-    const { searchParams } = new URL(request.url);
-    const includeDeleted = String(searchParams.get('includeDeleted') ?? '').trim().toLowerCase() === 'true';
-    const deletedOnly = String(searchParams.get('deletedOnly') ?? '').trim().toLowerCase() === 'true';
-
-    if ((includeDeleted || deletedOnly) && !isAdminPrincipal(principal)) {
-      return NextResponse.json({ error: 'Admin role mdsadmins is required' }, { status: 403 });
-    }
 
     return NextResponse.json(await getTreeList({
       principal,
       visibility: getVisibilityFilter(request),
-      enforceAccess: deletedOnly ? false : true,
-      includeDeleted,
-      deletedOnly,
+      enforceAccess: true,
     }));
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
@@ -89,10 +70,6 @@ export async function POST(request) {
     if (action === 'search-transfer-targets') {
       const query = String(payload?.query ?? '').trim();
 
-      if (!isAuthenticatedPrincipal(principal)) {
-        return NextResponse.json({ error: 'Authentication is required' }, { status: 401 });
-      }
-
       if (query.length < 2) {
         return NextResponse.json({ error: 'Invalid request, query must contain at least 2 characters' }, { status: 400 });
       }
@@ -104,10 +81,6 @@ export async function POST(request) {
 
     if (action === 'search-editor-targets') {
       const query = String(payload?.query ?? '').trim();
-
-      if (!isAuthenticatedPrincipal(principal)) {
-        return NextResponse.json({ error: 'Authentication is required' }, { status: 401 });
-      }
 
       if (query.length < 2) {
         return NextResponse.json({ error: 'Invalid request, query must contain at least 2 characters' }, { status: 400 });
@@ -432,24 +405,9 @@ export async function DELETE(request) {
     const principal = parseClientPrincipal(request);
     const parsedTreeId = parseTreeId(searchParams.get('treeId'));
     const visibility = searchParams.get('visibility') ?? 'public';
-    const shouldPurge = String(searchParams.get('purge') ?? '').trim().toLowerCase() === 'true';
 
     if (!parsedTreeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
-    }
-
-    if (shouldPurge) {
-      if (!isAdminPrincipal(principal)) {
-        return NextResponse.json({ error: 'Admin role mdsadmins is required' }, { status: 403 });
-      }
-
-      await invokePurgeFunction({ action: 'purge-tree', treeId: parsedTreeId });
-
-      return NextResponse.json({
-        success: true,
-        purged: true,
-        trees: await getTreeList({ principal, visibility, enforceAccess: true }),
-      });
     }
 
     await deleteTree({ treeId: parsedTreeId, principal, enforceAccess: true });
@@ -486,8 +444,6 @@ export async function DELETE(request) {
       });
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'The request failed';
-    const status = getPurgeProxyErrorStatus(err);
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }

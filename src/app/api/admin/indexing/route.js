@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { parseClientPrincipal } from '@/server/utils/auth';
-import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import {
   requestSearchIndexerReset,
   requestSearchIndexerRun,
@@ -8,12 +6,6 @@ import {
 
 const SQL_INDEXER_NAME = process.env.AZURE_SEARCH_SQL_INDEXER_NAME || 'tree-sql-indexer';
 const BLOB_INDEXER_NAME = process.env.AZURE_SEARCH_BLOB_INDEXER_NAME || 'tree-blob-indexer';
-
-function assertAdminPrincipal(principal) {
-  if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
-    throw new Error('Admin role mdsadmins is required');
-  }
-}
 
 function normalizeTarget(target) {
   const normalizedTarget = String(target ?? '').trim().toLowerCase();
@@ -103,9 +95,6 @@ async function performOperationSequence(target, mode) {
 
 export async function POST(request) {
   try {
-    const principal = parseClientPrincipal(request);
-    assertAdminPrincipal(principal);
-
     const payload = await request.json();
     const target = normalizeTarget(payload?.target);
     const mode = normalizeMode(payload?.mode);
@@ -123,8 +112,7 @@ export async function POST(request) {
     return NextResponse.json(result, { status });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'The request failed';
-    const status = message === 'Admin role mdsadmins is required' ? 403 : 500;
 
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

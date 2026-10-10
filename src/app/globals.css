@@ -99,12 +99,18 @@ body {
 
 .appChrome {
   padding: 0 var(--page-shell-padding) 0;
+  position: relative;
+  z-index: 20;
+  overflow: visible;
 }
 .appPageShell {
   padding: 0 var(--page-shell-padding) var(--page-shell-padding);
 }
 
 .appNav {
+  position: relative;
+  z-index: 21;
+  overflow: visible;
   max-width: var(--page-content-width);
   margin: 0 auto 1.4rem;
   padding: 1rem 1.25rem;
@@ -359,7 +365,16 @@ body {
   flex-wrap: wrap;
 }
 
+.appNavGroup {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .appNavLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.55rem 0.85rem;
   border-radius: 999px;
   color: #475569;
@@ -367,6 +382,14 @@ body {
   font-weight: 700;
   text-decoration: none;
   transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.appNavLinkButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .appNavLink:hover,
@@ -380,6 +403,72 @@ body {
   background: linear-gradient(135deg, rgba(204, 251, 241, 0.92), rgba(219, 234, 254, 0.92));
   color: #0f172a;
   box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.18);
+}
+
+.appNavLinkWithChildren {
+  padding-right: 0.75rem;
+}
+
+.appNavLinkChevron {
+  font-size: 0.75rem;
+  line-height: 1;
+  color: #64748b;
+}
+
+.appNavGroup:focus-within .appNavLinkChevron,
+.appNavLinkActive .appNavLinkChevron {
+  color: currentColor;
+}
+
+.appNavSubmenu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 0.3rem;
+  min-width: 14rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.12);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
+}
+
+.appNavSubmenuOpen {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.appNavSubmenuLink {
+  display: block;
+  padding: 0.7rem 0.85rem;
+  border-radius: 14px;
+  color: #334155;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.appNavSubmenuLink:hover,
+.appNavSubmenuLink:focus-visible {
+  background: rgba(219, 234, 254, 0.72);
+  color: #0f172a;
+  outline: none;
+}
+
+.appNavSubmenuLinkActive {
+  background: rgba(204, 251, 241, 0.72);
+  color: #0f172a;
 }
 
 .appAuthGroup {
@@ -486,6 +575,34 @@ body {
     display: block;
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .appNavGroupMobile {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .appNavGroupMobile .appNavLink {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .appNavSubmenuMobile {
+    position: static;
+    min-width: 0;
+    padding: 0.2rem 0 0 0.85rem;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .appNavSubmenuMobile .appNavSubmenuLink {
+    padding: 0.6rem 0.75rem;
   }
 
   .appAuthGroupMobile {

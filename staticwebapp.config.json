@@ -17,6 +17,10 @@
         "allowedRoles": ["mdsusers"]
     },
     {
+      "route": "/review*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
       "route": "/architecture*",
       "allowedRoles": ["mdsadmins"]
     },
@@ -42,7 +46,7 @@
     },
     {
       "route": "/api/review",
-      "allowedRoles": ["authenticated"]
+      "allowedRoles": ["mdsusers"]
     },
     {
       "route": "/api/search*",

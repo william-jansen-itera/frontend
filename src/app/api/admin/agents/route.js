@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRelevantPrincipalDetails, parseClientPrincipal } from '@/server/utils/auth';
+import { getRelevantPrincipalDetails, requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import {
   getAgentFamilyRegistration,
 } from '@/server/utils/agent/agentFamilyRegistry';
@@ -9,12 +9,15 @@ import {
   listAgentFamilyStatuses,
 } from '@/server/utils/agent/agentFamilyAvailability';
 import { setAgentFamilyActiveState } from '@/server/utils/agent/agentFamilyStateRepository';
-import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 
-function assertAdminPrincipal(principal) {
-  if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
-    throw new Error('Admin role mdsadmins is required');
+function getErrorStatus(error, defaultStatus = 500) {
+  const status = Number(error?.status);
+
+  if (Number.isInteger(status) && status >= 400 && status < 600) {
+    return status;
   }
+
+  return defaultStatus;
 }
 
 async function buildFamilyStatus(registration) {
@@ -41,24 +44,20 @@ function buildUpdatedByFromPrincipal(principal) {
 
 export async function GET(request) {
   try {
-    const principal = parseClientPrincipal(request);
-    assertAdminPrincipal(principal);
-
     return NextResponse.json({
       families: await buildAllFamilyStatuses(),
     });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Agent families could not be loaded.' },
-      { status: 403 },
+      { status: getErrorStatus(error) },
     );
   }
 }
 
 export async function POST(request) {
   try {
-    const principal = parseClientPrincipal(request);
-    assertAdminPrincipal(principal);
+    const principal = requireAuthenticatedPrincipal(request);
     const payload = await request.json();
     const family = String(payload?.family ?? '').trim();
     const action = String(payload?.action ?? 'publish').trim();
@@ -168,8 +167,7 @@ export async function POST(request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Agent family action could not be completed.';
-    const status = message === 'Admin role mdsadmins is required' ? 403 : 500;
 
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: message }, { status: getErrorStatus(error) });
   }
 }

@@ -4,16 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/app/useAuth";
-import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import styles from "./page.module.css";
 import { AgentAnswerContent } from "./AgentAnswerContent";
-import { AgentFamilyPublishingPanel } from "./AgentFamilyPublishingPanel";
 import {
   buildChatPlaceholder,
-  buildFamilyActionConfirmationMessage,
-  fetchAgentFamilyManagementState,
   fetchAvailableChatFamilies,
-  formatFamilyActionMessage,
   normalizeChatFamilySelection,
   parseApiResponseBody,
   setChatFamilySearchParam,
@@ -28,6 +23,27 @@ import {
 
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
+let fallbackTurnSequence = 0;
+let fallbackRequestSequence = 0;
+
+function createTurnId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  fallbackTurnSequence += 1;
+  return `turn-${fallbackTurnSequence}`;
+}
+
+function createRequestId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  fallbackRequestSequence += 1;
+  return `request-${fallbackRequestSequence}`;
+}
+
 function renderHighlightedText(text, keyPrefix) {
   const normalizedText = String(text ?? "");
   const parts = normalizedText.split("[[H]]");
@@ -811,8 +827,7 @@ function getLatestNoResultOfferTurn(turns, dismissedTurnId) {
 }
 
 export default function ChatPageClient({ includeDebug }) {
-  const { user, isAuthResolved } = useAuth();
-  const isAdmin = hasClientPrincipalRole(user, "mdsadmins");
+  const { user } = useAuth();
   const userMessageLabel = buildUserMessageLabel(user);
   const pathname = usePathname();
   const router = useRouter();
@@ -837,11 +852,6 @@ export default function ChatPageClient({ includeDebug }) {
   const [chatFamily, setChatFamily] = useState(null);
   const [addActionState, setAddActionState] = useState(null);
   const [writableTreeIds, setWritableTreeIds] = useState([]);
-  const [agentFamilies, setAgentFamilies] = useState([]);
-  const [isAgentFamiliesLoading, setIsAgentFamiliesLoading] = useState(false);
-  const [agentFamiliesStatusMessage, setAgentFamiliesStatusMessage] = useState("");
-  const [agentFamiliesError, setAgentFamiliesError] = useState("");
-  const [agentFamilyPendingItems, setAgentFamilyPendingItems] = useState({});
   const chatFeedRef = useRef(null);
   const defaultChatFamily = availableChatFamilies[0]?.family ?? null;
 
@@ -859,34 +869,6 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugEmpty = showTurnInspector && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
   const shouldShowVisibilityControl = chatFamily === "treeGrounding";
-
-  const setAgentFamilyPending = (key, isPending) => {
-    setAgentFamilyPendingItems((currentState) => ({
-      ...currentState,
-      [key]: isPending,
-    }));
-  };
-
-  const loadAgentFamilies = async () => {
-    if (!isAdmin) {
-      setAgentFamilies([]);
-      setIsAgentFamiliesLoading(false);
-      return;
-    }
-
-    setIsAgentFamiliesLoading(true);
-
-    try {
-      const families = await fetchAgentFamilyManagementState();
-      setAgentFamilies(families);
-      setAgentFamiliesError("");
-    } catch (error) {
-      setAgentFamilies([]);
-      setAgentFamiliesError(getErrorMessage(error, "Agent families could not be loaded"));
-    } finally {
-      setIsAgentFamiliesLoading(false);
-    }
-  };
 
   const loadAvailableFamilies = async () => {
     const payload = await fetchAvailableChatFamilies();
@@ -974,7 +956,9 @@ export default function ChatPageClient({ includeDebug }) {
   useEffect(() => {
     if (availableChatFamilies.length === 0) {
       if (chatFamily !== null) {
-        setChatFamily(null);
+        Promise.resolve().then(() => {
+          setChatFamily(null);
+        });
       }
       return;
     }
@@ -982,7 +966,9 @@ export default function ChatPageClient({ includeDebug }) {
     const normalizedRequestedFamily = normalizeChatFamilySelection(requestedFamilyParam, availableChatFamilies, defaultChatFamily);
 
     if (chatFamily !== normalizedRequestedFamily) {
-      setChatFamily(normalizedRequestedFamily);
+      Promise.resolve().then(() => {
+        setChatFamily(normalizedRequestedFamily);
+      });
       return;
     }
 
@@ -1038,57 +1024,12 @@ export default function ChatPageClient({ includeDebug }) {
     };
   }, [isVisibilityReady]);
 
-  useEffect(() => {
-    if (!isAuthResolved) {
-      return undefined;
-    }
-
-    if (!isAdmin) {
-      setAgentFamilies([]);
-      setAgentFamiliesStatusMessage("");
-      setAgentFamiliesError("");
-      setIsAgentFamiliesLoading(false);
-      return undefined;
-    }
-
-    let isCancelled = false;
-
-    setIsAgentFamiliesLoading(true);
-
-    fetchAgentFamilyManagementState()
-      .then((families) => {
-        if (isCancelled) {
-          return;
-        }
-
-        setAgentFamilies(families);
-        setAgentFamiliesError("");
-      })
-      .catch((error) => {
-        if (isCancelled) {
-          return;
-        }
-
-        setAgentFamilies([]);
-        setAgentFamiliesError(getErrorMessage(error, "Agent families could not be loaded"));
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsAgentFamiliesLoading(false);
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [isAdmin, isAuthResolved]);
-
   const writableTreeIdSet = new Set(writableTreeIds);
 
   async function submitTurn({ question, message, followUpSelection = null }) {
-    const turnId = `${Date.now()}`;
+    const turnId = createTurnId();
     const history = buildHistoryFromTurns(turns);
-    const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const requestId = createRequestId();
     const requestStartedAt = new Date().toISOString();
 
     setIsSubmitting(true);
@@ -1417,51 +1358,6 @@ export default function ChatPageClient({ includeDebug }) {
     }
   }
 
-  async function handleAgentFamilyAction(family, action, confirmationMessage, formatMessage) {
-    const normalizedFamily = String(family?.family ?? "").trim();
-    const familyLabel = String(family?.label ?? normalizedFamily).trim();
-
-    if (!normalizedFamily) {
-      return;
-    }
-
-    const confirmed = window.confirm(confirmationMessage || buildFamilyActionConfirmationMessage(family, action));
-
-    if (!confirmed) {
-      return;
-    }
-
-    const pendingKey = `${action}:${normalizedFamily}`;
-    setAgentFamilyPending(pendingKey, true);
-    setAgentFamiliesStatusMessage("");
-    setAgentFamiliesError("");
-
-    try {
-      const response = await fetch("/api/admin/agents", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          family: normalizedFamily,
-          action,
-        }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || `Action ${action} could not be completed for ${familyLabel}`);
-      }
-
-      setAgentFamiliesStatusMessage((formatMessage || formatFamilyActionMessage)(family, action, payload?.operation));
-      await Promise.all([loadAgentFamilies(), loadAvailableFamilies()]);
-    } catch (error) {
-      setAgentFamiliesError(getErrorMessage(error, `Action ${action} could not be completed for ${familyLabel}`));
-    } finally {
-      setAgentFamilyPending(pendingKey, false);
-    }
-  }
-
   return (
     <main className="appPageShell">
       <section className={`${styles.workspaceGrid} ${!showTurnInspector ? styles.workspaceGridSingle : ""}`}>
@@ -1681,16 +1577,6 @@ export default function ChatPageClient({ includeDebug }) {
             </div>
           </div>
 
-          {isAdmin ? (
-            <AgentFamilyPublishingPanel
-              agentFamilies={agentFamilies}
-              isLoading={isAgentFamiliesLoading}
-              statusMessage={agentFamiliesStatusMessage}
-              errorMessage={agentFamiliesError}
-              pendingItems={agentFamilyPendingItems}
-              onAction={handleAgentFamilyAction}
-            />
-          ) : null}
         </div>
 
         {showTurnInspector ? (

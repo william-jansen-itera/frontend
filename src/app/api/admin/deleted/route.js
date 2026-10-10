@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { parseClientPrincipal } from '@/server/utils/auth';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
-import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import { restoreNodeAttachmentBlobIfDeleted } from '@/server/utils/blobStorage';
 import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
 import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
@@ -15,6 +13,16 @@ import {
   queryDeletedTreeSecretMetadata,
   queryIndividuallyDeletedAttachments,
 } from '@/server/utils/tree/treeRecordRepository';
+
+function getErrorStatus(error, defaultStatus = 500) {
+  const status = Number(error?.status);
+
+  if (Number.isInteger(status) && status >= 400 && status < 600) {
+    return status;
+  }
+
+  return defaultStatus;
+}
 
 function normalizeSecretMetadata(value) {
   const candidate = typeof value === 'string'
@@ -54,12 +62,6 @@ async function restoreDeletedSecrets(treeId, secretRecords) {
       nodeId: String(secretRecord.treeNodeId),
       secretMetadata: secretRecord.secretMetadata,
     });
-  }
-}
-
-function assertAdminPrincipal(principal) {
-  if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
-    throw new Error('Admin role mdsadmins is required');
   }
 }
 
@@ -278,9 +280,6 @@ async function undeleteAttachment(applicationIdentifier, treeId, attachmentId) {
 
 export async function GET(request) {
   try {
-    const principal = parseClientPrincipal(request);
-    assertAdminPrincipal(principal);
-
     const applicationIdentifier = getRequiredApplicationIdentifier();
 
     return NextResponse.json(await withSqlConnection(async () => {
@@ -367,20 +366,23 @@ export async function GET(request) {
       };
     }));
   } catch (err) {
-    const status = err instanceof Error && err.message === 'Admin role mdsadmins is required' ? 403 : 500;
-    return NextResponse.json({ error: err.message }, { status });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 
 export async function DELETE(request) {
   try {
-    const principal = parseClientPrincipal(request);
-    assertAdminPrincipal(principal);
-
     const payload = await request.json();
     const action = String(payload?.action ?? '').trim().toLowerCase();
 
-    if (action !== 'purge-all-trees' && action !== 'purge-all-nodes' && action !== 'purge-all-attachments' && action !== 'purge-attachment') {
+    if (
+      action !== 'purge-all-trees'
+      && action !== 'purge-all-nodes'
+      && action !== 'purge-all-attachments'
+      && action !== 'purge-attachment'
+      && action !== 'purge-tree'
+      && action !== 'purge-node'
+    ) {
       return NextResponse.json({ error: 'Invalid request, a supported action is required' }, { status: 400 });
     }
 
@@ -390,6 +392,23 @@ export async function DELETE(request) {
 
       if (!Number.isFinite(treeId) || !Number.isFinite(attachmentId)) {
         throw new Error('Invalid request, treeId and attachmentId are required');
+      }
+    }
+
+    if (action === 'purge-tree') {
+      const treeId = Number(payload?.treeId);
+
+      if (!Number.isFinite(treeId)) {
+        throw new Error('Invalid request, treeId is required');
+      }
+    }
+
+    if (action === 'purge-node') {
+      const treeId = Number(payload?.treeId);
+      const nodeId = Number(payload?.nodeId);
+
+      if (!Number.isFinite(treeId) || !Number.isFinite(nodeId)) {
+        throw new Error('Invalid request, treeId and nodeId are required');
       }
     }
 
@@ -403,8 +422,7 @@ export async function DELETE(request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'The request failed';
     const status = getPurgeProxyErrorStatus(err, {
-      forbiddenMessages: ['Admin role mdsadmins is required'],
-      badRequestIncludes: ['treeId and attachmentId are required', 'not found for purge', 'node is still deleted'],
+      badRequestIncludes: ['treeId is required', 'treeId and nodeId are required', 'treeId and attachmentId are required', 'not found for purge', 'node is still deleted'],
     });
     return NextResponse.json({ error: message }, { status });
   }
@@ -412,9 +430,6 @@ export async function DELETE(request) {
 
 export async function PATCH(request) {
   try {
-    const principal = parseClientPrincipal(request);
-    assertAdminPrincipal(principal);
-
     const payload = await request.json();
     const action = String(payload?.action ?? '').trim().toLowerCase();
     const applicationIdentifier = getRequiredApplicationIdentifier();
@@ -457,11 +472,9 @@ export async function PATCH(request) {
     return NextResponse.json({ error: 'Invalid request, a supported action is required' }, { status: 400 });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'The request failed';
-    const status = message === 'Admin role mdsadmins is required'
-      ? 403
-      : message.includes('not found for undelete') || message.includes('tree is still deleted') || message.includes('node is still deleted')
+    const status = message.includes('not found for undelete') || message.includes('tree is still deleted') || message.includes('node is still deleted')
         ? 400
-        : 500;
+        : getErrorStatus(err);
     return NextResponse.json({ error: message }, { status });
   }
 }

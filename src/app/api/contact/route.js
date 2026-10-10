@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import { logException, logTrace } from '@/server/utils/logging';
-import { listRecentContactRequests, recordContactRequest } from '@/server/utils/contactRequestRepository';
+import { recordContactRequest } from '@/server/utils/contactRequestRepository';
 import { buildUserAgentSummary } from '@/server/utils/userAgent';
-import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
-import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 
 function normalizeText(value) {
   return String(value ?? '').trim();
@@ -26,38 +24,6 @@ function normalizeContactProfile(value) {
   }
 
   return '';
-}
-
-function assertAdminPrincipal(principal) {
-  if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
-    throw new Error('Admin role mdsadmins is required');
-  }
-}
-
-export async function GET(request) {
-  try {
-    const principal = requireAuthenticatedPrincipal(request);
-    assertAdminPrincipal(principal);
-
-    return NextResponse.json({
-      requests: await listRecentContactRequests(),
-    });
-  } catch (error) {
-    if (Number(error?.status) === 401) {
-      return NextResponse.json({ error: 'Authentication is required.' }, { status: 401 });
-    }
-
-    if (error instanceof Error && error.message === 'Admin role mdsadmins is required') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    await logException(error);
-
-    return NextResponse.json(
-      { error: 'Contact requests could not be loaded right now.' },
-      { status: 500 },
-    );
-  }
 }
 
 export async function POST(request) {

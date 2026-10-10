@@ -77,8 +77,8 @@ export async function GET(request) {
 
       return {
         trees: treeResult.recordset.filter((tree) => reviewableTreeIds.has(String(tree.id))),
-        nodes: nodeResult.recordset.filter((node) => reviewableTreeIds.has(String(node.treeId))),
-        attachments: attachmentResult.recordset.filter((attachment) => reviewableTreeIds.has(String(attachment.treeId))),
+        nodes: nodeResult.filter((node) => reviewableTreeIds.has(String(node.treeId))),
+        attachments: attachmentResult.filter((attachment) => reviewableTreeIds.has(String(attachment.treeId))),
       };
     });
 

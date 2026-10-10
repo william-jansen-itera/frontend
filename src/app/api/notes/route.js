@@ -1,8 +1,6 @@
 
 import { NextResponse } from 'next/server';
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { getPurgeProxyErrorStatus, invokePurgeFunction } from '@/server/utils/purgeFunctionClient';
-import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
 import {
   CreateTreeNode,
   getNodeDetails,
@@ -341,7 +339,6 @@ export async function DELETE(request) {
     const idParam = searchParams.get('id');
     const treeIdParam = searchParams.get('treeId');
     const attachmentIdParam = searchParams.get('attachmentId');
-    const shouldPurge = String(searchParams.get('purge') ?? '').trim().toLowerCase() === 'true';
 
     if (attachmentIdParam) {
       if (!treeIdParam) {
@@ -361,32 +358,14 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Invalid request, id and treeId are required' }, { status: 400 });
     }
 
-    if (!shouldPurge) {
-      await assertWritableTreeForRequest(request, treeIdParam);
-    } else if (!hasClientPrincipalRole(principal, 'mdsadmins')) {
-      return NextResponse.json({ error: 'Admin role mdsadmins is required' }, { status: 403 });
-    }
+    await assertWritableTreeForRequest(request, treeIdParam);
 
     const treeInstanceId = parseInt(treeIdParam, 10);
     const nodeId = parseInt(idParam, 10);
 
-    if (shouldPurge) {
-      const result = await invokePurgeFunction({
-        action: 'purge-node',
-        treeId: treeInstanceId,
-        nodeId,
-      });
-
-      return NextResponse.json(result);
-    }
-
     return NextResponse.json(await deleteTreeNode({ id: nodeId, treeInstanceId }));
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'The request failed';
-    const status = getPurgeProxyErrorStatus(err, {
-      forbiddenMessages: ['Admin role mdsadmins is required'],
-    });
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 

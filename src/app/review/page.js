@@ -2,50 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { buildAuditLabel, getErrorMessage } from "@/app/shared/displayFormatting";
 import { useAuth } from "@/app/useAuth";
-import styles from "../admin/page.module.css";
-
-function getErrorMessage(error, fallbackMessage) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return fallbackMessage;
-}
-
-function formatTimestamp(value) {
-  if (!value) {
-    return "Unknown time";
-  }
-
-  const parsedValue = new Date(value);
-
-  if (Number.isNaN(parsedValue.getTime())) {
-    return "Unknown time";
-  }
-
-  return parsedValue.toLocaleString();
-}
-
-function buildAuditLabel(userDetails, timestamp, defaultLabel = null) {
-  const parts = [];
-  const normalizedUserDetails = String(userDetails ?? "").trim();
-  const formattedTimestamp = timestamp ? formatTimestamp(timestamp) : null;
-
-  if (normalizedUserDetails) {
-    parts.push(normalizedUserDetails);
-  }
-
-  if (formattedTimestamp && formattedTimestamp !== "Unknown time") {
-    parts.push(formattedTimestamp);
-  }
-
-  if (parts.length === 0) {
-    return defaultLabel;
-  }
-
-  return parts.join(" • ");
-}
+import styles from "./page.module.css";
 
 function formatReviewStatusLabel(value) {
   const normalizedValue = String(value ?? "submitted").trim().toLowerCase();
