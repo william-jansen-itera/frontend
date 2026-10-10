@@ -1,4 +1,5 @@
 import mssql from 'mssql';
+import { getRequiredApplicationIdentifier } from '@/server/utils/applicationIdentifier';
 
 const sql = mssql;
 const DEFAULT_SQL_IDLE_CLOSE_MS = 300_000;
@@ -8,7 +9,6 @@ const config = {
   password: process.env.AZURE_SQL_PASSWORD,
   server: process.env.AZURE_SQL_SERVER,
   database: process.env.AZURE_SQL_DATABASE,
-  applicationIdentifier: process.env.APPLICATION_IDENTIFIER,
   options: {
     encrypt: process.env.AZURE_SQL_ENCRYPT === 'true',
     trustServerCertificate: false,
@@ -127,12 +127,4 @@ export async function confirmSqlIsResponsive() {
   return withSqlConnection(async () => new sql.Request().query(SQL_STATUS_PROBE_QUERY));
 }
 
-export function getRequiredApplicationIdentifier() {
-  if (!config.applicationIdentifier) {
-    throw new Error('Application identifier env var is not configured');
-  }
-
-  return config.applicationIdentifier;
-}
-
-export { sql };
+export { getRequiredApplicationIdentifier, sql };

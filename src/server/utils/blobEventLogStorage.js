@@ -39,25 +39,6 @@ function sanitizeMetadataValue(value) {
     .slice(0, 1024);
 }
 
-function buildPageVisitPrefix(appIdentifier) {
-  return `analytics/${sanitizePathSegment(appIdentifier)}/page-visits`;
-}
-
-function buildPageVisitLogBlobName(appIdentifier) {
-  return `${buildPageVisitPrefix(appIdentifier)}/events.ndjson`;
-}
-
-function buildPageVisitMetadata(eventPayload) {
-  return {
-    applicationidentifier: sanitizeMetadataValue(eventPayload.appIdentifier),
-    eventtype: 'pagevisit',
-    pagepath: sanitizeMetadataValue(eventPayload.pagePath),
-    clientip: sanitizeMetadataValue(eventPayload.clientIp),
-    deviceclass: sanitizeMetadataValue(eventPayload.deviceClass),
-    browserfamily: sanitizeMetadataValue(eventPayload.browserFamily),
-  };
-}
-
 function parseJsonLines(text) {
   return text
     .split(/\r?\n/)
@@ -82,9 +63,16 @@ async function downloadBlobText(blobClient) {
   return content.toString('utf8');
 }
 
-export async function writePageVisitEvent(eventPayload) {
+export function sanitizeBlobPathSegment(value) {
+  return sanitizePathSegment(value);
+}
+
+export function sanitizeBlobMetadataValue(value) {
+  return sanitizeMetadataValue(value);
+}
+
+export async function appendJsonLineBlobRecord({ blobName, eventPayload, metadata = {} }) {
   const containerClient = getContainerClient();
-  const blobName = buildPageVisitLogBlobName(eventPayload.appIdentifier);
   const appendBlobClient = containerClient.getAppendBlobClient(blobName);
   const content = Buffer.from(`${JSON.stringify(eventPayload)}\n`, 'utf8');
 
@@ -92,21 +80,15 @@ export async function writePageVisitEvent(eventPayload) {
     blobHTTPHeaders: {
       blobContentType: 'application/x-ndjson; charset=utf-8',
     },
-    metadata: buildPageVisitMetadata(eventPayload),
+    metadata,
   });
 
   await appendBlobClient.appendBlock(content, content.length);
-
-  return {
-    blobName,
-    recordedAt: eventPayload.recordedAt,
-  };
 }
 
-export async function listPageVisitEvents(appIdentifier) {
+export async function listJsonLineBlobRecords(blobName) {
   const containerClient = getContainerClient();
-  const logBlobName = buildPageVisitLogBlobName(appIdentifier);
-  const logBlobClient = containerClient.getBlobClient(logBlobName);
+  const logBlobClient = containerClient.getBlobClient(blobName);
   const logContent = await downloadBlobText(logBlobClient);
 
   return logContent ? parseJsonLines(logContent) : [];

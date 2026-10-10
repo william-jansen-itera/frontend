@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { logException, logTrace } from '@/server/utils/logging';
-import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
+import { listRecentContactRequests, recordContactRequest } from '@/server/utils/contactRequestRepository';
 import { buildUserAgentSummary } from '@/server/utils/userAgent';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { hasClientPrincipalRole } from '@/shared/clientPrincipal';
@@ -39,28 +39,8 @@ export async function GET(request) {
     const principal = requireAuthenticatedPrincipal(request);
     assertAdminPrincipal(principal);
 
-    const result = await withSqlConnection(async () => new sql.Request()
-      .input('app_identifier', sql.NVarChar(128), getRequiredApplicationIdentifier())
-      .query(`
-        SELECT
-          id,
-          contact_profile AS contactProfile,
-          name,
-          company,
-          email,
-          phone,
-          wants_call AS wantsCall,
-          message,
-          user_agent AS userAgent,
-          created_at AS createdAt
-        FROM dbo.contact_requests
-        WHERE app_identifier = @app_identifier
-          AND created_at >= DATEADD(DAY, -30, SYSUTCDATETIME())
-        ORDER BY created_at DESC, id DESC;
-      `));
-
     return NextResponse.json({
-      requests: result.recordset,
+      requests: await listRecentContactRequests(),
     });
   } catch (error) {
     if (Number(error?.status) === 401) {
@@ -117,41 +97,16 @@ export async function POST(request) {
       return NextResponse.json({ error: 'A phone number is required if you want a call.' }, { status: 400 });
     }
 
-    await withSqlConnection(async () => {
-      await new sql.Request()
-        .input('app_identifier', sql.NVarChar(128), getRequiredApplicationIdentifier())
-        .input('contact_profile', sql.NVarChar(20), contactProfile)
-        .input('name', sql.NVarChar(200), name)
-        .input('company', sql.NVarChar(200), company || null)
-        .input('email', sql.NVarChar(320), email)
-        .input('phone', sql.NVarChar(64), phone || null)
-        .input('wants_call', sql.Bit, wantsCall)
-        .input('message', sql.NVarChar(sql.MAX), message)
-        .input('user_agent', sql.NVarChar(1000), userAgentSummary)
-        .query(`
-          INSERT INTO dbo.contact_requests (
-            app_identifier,
-            contact_profile,
-            name,
-            company,
-            email,
-            phone,
-            wants_call,
-            message,
-            user_agent
-          )
-          VALUES (
-            @app_identifier,
-            @contact_profile,
-            @name,
-            @company,
-            @email,
-            @phone,
-            @wants_call,
-            @message,
-            @user_agent
-          );
-        `);
+    await recordContactRequest({
+      contactProfile,
+      name,
+      company: company || null,
+      email,
+      phone: phone || null,
+      wantsCall,
+      message,
+      userAgent: userAgentSummary,
+      userAgentRaw: rawUserAgent,
     });
 
     await logTrace(JSON.stringify({

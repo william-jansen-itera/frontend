@@ -1,8 +1,8 @@
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { getRequiredApplicationIdentifier } from '@/server/utils/sql';
+import { getRequiredApplicationIdentifier } from '@/server/utils/applicationIdentifier';
 import { classifyBrowserFamily, classifyDeviceClass } from '@/server/utils/userAgent';
 import { isLocalDevelopmentHost } from '@/shared/clientPrincipal';
-import { listPageVisitEvents, writePageVisitEvent } from '@/server/utils/analyticsStorage';
+import { listPageVisitEvents, writePageVisitEvent } from '@/server/utils/pageVisitAnalyticsRepository';
 
 const ALLOWED_PAGE_PATHS = new Set(['/', '/about', '/contact']);
 const IGNORED_ANALYTICS_IPS = new Set(

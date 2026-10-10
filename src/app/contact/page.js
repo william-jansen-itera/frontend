@@ -322,19 +322,24 @@ export default function ContactPage() {
           ) : contactRequests.length > 0 ? (
             <div className={styles.requestList}>
               {contactRequests.map((request) => (
-                <article key={request.id} className={styles.requestItem}>
+                <article key={request.eventId} className={styles.requestItem}>
                   <div className={styles.requestHeader}>
                     <h3 className={styles.requestTitle}>{request.name}</h3>
                     <p className={styles.requestMeta}>{formatSubmittedAt(request.createdAt)}</p>
                   </div>
 
                   <div className={styles.requestDetails}>
+                    <p><strong>Name:</strong> {request.name}</p>
                     <p><strong>Email:</strong> {request.email}</p>
+                    {request.appIdentifier ? <p><strong>Application:</strong> {request.appIdentifier}</p> : null}
+                    <p><strong>Event ID:</strong> {request.eventId}</p>
+                    <p><strong>Recorded at:</strong> {formatSubmittedAt(request.createdAt)}</p>
                     <p><strong>Using as:</strong> {request.contactProfile}</p>
                     {request.company ? <p><strong>Company:</strong> {request.company}</p> : null}
                     {request.phone ? <p><strong>Phone:</strong> {request.phone}</p> : null}
                     <p><strong>Call requested:</strong> {request.wantsCall ? "Yes" : "No"}</p>
                     {request.userAgent ? <p><strong>User agent:</strong> {request.userAgent}</p> : null}
+                    {request.userAgentRaw ? <p><strong>Raw user agent:</strong> {request.userAgentRaw}</p> : null}
                   </div>
 
                   <p className={styles.requestMessage}>{request.message}</p>
