@@ -1,6 +1,7 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer';
 import {
   buildPreview,
   extractNormalizedMessageText,
@@ -10,6 +11,7 @@ import {
 const DEFAULT_SCAN_MULTIPLIER = 5;
 const MIN_SCAN_LIMIT = 25;
 const MAX_SCAN_LIMIT = 100;
+const MAX_UNSUBSCRIBE_HTML_ANALYSIS_CHARS = 50000;
 
 export const REFRESH_RETRIEVAL_SCAN_LIMIT = MAX_SCAN_LIMIT;
 
@@ -101,6 +103,20 @@ function resolveTrashMailboxPath(mailboxes = []) {
     ?? null;
 
   return trashMailbox?.path ?? null;
+}
+
+function resolveSentMailboxPath(mailboxes = []) {
+  const sentMailbox = mailboxes.find((mailbox) => String(mailbox?.specialUse ?? '').trim() === '\\Sent')
+    ?? mailboxes.find((mailbox) => {
+      const path = String(mailbox?.path ?? '').trim().toLowerCase();
+      const name = String(mailbox?.name ?? '').trim().toLowerCase();
+
+      return ['sent', 'sent items', 'sent messages', 'sent mail'].includes(path)
+        || ['sent', 'sent items', 'sent messages', 'sent mail'].includes(name);
+    })
+    ?? null;
+
+  return sentMailbox?.path ?? null;
 }
 
 function buildImapClient(accountConfig) {
@@ -219,11 +235,508 @@ function normalizeParsedAttachments(attachments) {
     : [];
 }
 
+function normalizeHeaderToken(value) {
+  return String(value ?? '').trim();
+}
+
+const UNSUBSCRIBE_BODY_LINK_LABELS = new Set(['unsubscribe', 'afmeld', 'afmelde']);
+const MANUAL_UNSUBSCRIBE_KEYWORDS = ['unsubscribe', 'afmeld', 'afmelde', 'afmelden', 'uitschrijven'];
+
+function containsManualUnsubscribeKeyword(value) {
+  const normalizedValue = String(value ?? '').toLowerCase();
+
+  return MANUAL_UNSUBSCRIBE_KEYWORDS.some((keyword) => normalizedValue.includes(keyword));
+}
+
+function limitHtmlForAnalysis(value) {
+  return String(value ?? '').slice(0, MAX_UNSUBSCRIBE_HTML_ANALYSIS_CHARS);
+}
+
+function collectAnchorTagCandidatesFromSlice(html) {
+  const normalizedHtml = String(html ?? '');
+
+  if (!normalizedHtml) {
+    return [];
+  }
+
+  const lowerHtml = normalizedHtml.toLowerCase();
+  const anchors = [];
+  let index = 0;
+
+  while (index < normalizedHtml.length) {
+    const anchorStart = lowerHtml.indexOf('<a', index);
+
+    if (anchorStart === -1) {
+      break;
+    }
+
+    const openTagEnd = normalizedHtml.indexOf('>', anchorStart + 2);
+
+    if (openTagEnd === -1) {
+      break;
+    }
+
+    const closeTagStart = lowerHtml.indexOf('</a>', openTagEnd + 1);
+
+    if (closeTagStart === -1) {
+      break;
+    }
+
+    anchors.push({
+      attributes: normalizedHtml.slice(anchorStart + 2, openTagEnd),
+      bodyContent: normalizedHtml.slice(openTagEnd + 1, closeTagStart),
+    });
+
+    index = closeTagStart + 4;
+  }
+
+  return anchors;
+}
+
+function stripHtmlTagsForAnalysis(value) {
+  const html = limitHtmlForAnalysis(value);
+  let result = '';
+  let index = 0;
+
+  while (index < html.length) {
+    const currentChar = html[index];
+
+    if (currentChar === '<') {
+      const tagEnd = html.indexOf('>', index + 1);
+
+      if (tagEnd === -1) {
+        break;
+      }
+
+      result += ' ';
+      index = tagEnd + 1;
+      continue;
+    }
+
+    result += currentChar;
+    index += 1;
+  }
+
+  return result;
+}
+
+function extractAnchorTagCandidates(html) {
+  const normalizedHtml = String(html ?? '');
+
+  if (!normalizedHtml) {
+    return [];
+  }
+
+  const headSlice = normalizedHtml.slice(0, MAX_UNSUBSCRIBE_HTML_ANALYSIS_CHARS);
+  const tailStart = Math.max(0, normalizedHtml.length - MAX_UNSUBSCRIBE_HTML_ANALYSIS_CHARS);
+  const tailSlice = normalizedHtml.slice(tailStart);
+  const candidates = [
+    ...collectAnchorTagCandidatesFromSlice(tailSlice),
+    ...collectAnchorTagCandidatesFromSlice(headSlice),
+  ];
+
+  return Array.from(new Map(
+    candidates.map((candidate) => [
+      `${candidate.attributes}::${candidate.bodyContent}`,
+      candidate,
+    ]),
+  ).values());
+}
+
+function containsUnsubscribeKeyword(value) {
+  const normalizedValue = normalizeWhitespace(decodeBasicHtmlEntities(stripHtmlTagsForAnalysis(value))).toLowerCase();
+
+  if (!normalizedValue) {
+    return false;
+  }
+
+  return containsManualUnsubscribeKeyword(normalizedValue);
+}
+
+function parseListUnsubscribeHeaderValue(value) {
+  const normalizedValue = normalizeHeaderToken(value);
+
+  if (!normalizedValue) {
+    return [];
+  }
+
+  const extractedBracketValues = Array.from(normalizedValue.matchAll(/<([^>]+)>/g), (match) => normalizeHeaderToken(match[1]));
+  const candidateValues = extractedBracketValues.length > 0
+    ? extractedBracketValues
+    : normalizedValue.split(',').map((entry) => normalizeHeaderToken(entry));
+
+  return Array.from(new Set(candidateValues.filter(Boolean).map((entry) => {
+    const lowerEntry = entry.toLowerCase();
+
+    if (lowerEntry.startsWith('mailto:')) {
+      return {
+        type: 'mailto',
+        value: entry,
+      };
+    }
+
+    if (lowerEntry.startsWith('http://') || lowerEntry.startsWith('https://')) {
+      return {
+        type: 'url',
+        value: entry,
+      };
+    }
+
+    return {
+      type: 'other',
+      value: entry,
+    };
+  }).map((entry) => JSON.stringify(entry)))).map((entry) => JSON.parse(entry));
+}
+
+function normalizeHeaderLookupValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeHeaderToken(entry)).filter(Boolean).join(', ');
+  }
+
+  if (value && typeof value === 'object') {
+    if (typeof value.text === 'string') {
+      return normalizeHeaderToken(value.text);
+    }
+
+    if (typeof value.value === 'string') {
+      return normalizeHeaderToken(value.value);
+    }
+  }
+
+  return normalizeHeaderToken(value);
+}
+
+function decodeBasicHtmlEntities(value) {
+  return String(value ?? '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function normalizeBodyLinkLabel(value) {
+  return normalizeWhitespace(
+    decodeBasicHtmlEntities(stripHtmlTagsForAnalysis(value)),
+  ).toLowerCase();
+}
+
+function extractHtmlAttributeValue(attributeSource, attributeName) {
+  const normalizedAttributeName = String(attributeName ?? '').trim();
+
+  if (!normalizedAttributeName) {
+    return '';
+  }
+
+  const attributePattern = new RegExp(`${normalizedAttributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`, 'i');
+  const match = String(attributeSource ?? '').match(attributePattern);
+
+  if (!match) {
+    return '';
+  }
+
+  return normalizeHeaderToken(match[1] ?? match[2] ?? match[3] ?? '');
+}
+
+function buildUnsubscribeBodyLinkMethod(url) {
+  const normalizedUrl = normalizeHeaderToken(url);
+  const lowerUrl = normalizedUrl.toLowerCase();
+
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  if (lowerUrl.startsWith('mailto:')) {
+    return {
+      type: 'mailto',
+      value: normalizedUrl,
+    };
+  }
+
+  if (lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) {
+    return {
+      type: 'url',
+      value: normalizedUrl,
+    };
+  }
+
+  return {
+    type: 'other',
+    value: normalizedUrl,
+  };
+}
+
+function extractUnsubscribeBodyLink(html) {
+  const anchorMatches = extractAnchorTagCandidates(html);
+
+  if (anchorMatches.length === 0) {
+    return null;
+  }
+
+  for (const match of anchorMatches) {
+    const attributes = String(match.attributes ?? '');
+    const bodyContent = String(match.bodyContent ?? '');
+    const href = extractHtmlAttributeValue(attributes, 'href');
+    const normalizedBodyLabel = normalizeBodyLinkLabel(bodyContent);
+
+    if (!href) {
+      continue;
+    }
+
+    if (!UNSUBSCRIBE_BODY_LINK_LABELS.has(normalizedBodyLabel)) {
+      continue;
+    }
+
+    return {
+      label: normalizedBodyLabel,
+      url: href,
+      method: buildUnsubscribeBodyLinkMethod(href),
+    };
+  }
+
+  return null;
+}
+
+function extractManualUnsubscribeBodyInstruction(html) {
+  const anchorMatches = extractAnchorTagCandidates(html);
+
+  if (anchorMatches.length === 0) {
+    return null;
+  }
+
+  for (const match of anchorMatches) {
+    const attributes = String(match.attributes ?? '');
+    const bodyContent = String(match.bodyContent ?? '');
+    const href = extractHtmlAttributeValue(attributes, 'href');
+    const normalizedLabel = normalizeBodyLinkLabel(bodyContent);
+
+    if (!href || !normalizedLabel) {
+      continue;
+    }
+
+    if (UNSUBSCRIBE_BODY_LINK_LABELS.has(normalizedLabel)) {
+      continue;
+    }
+
+    if (!containsManualUnsubscribeKeyword(normalizedLabel)) {
+      continue;
+    }
+
+    return {
+      text: normalizedLabel,
+      url: href,
+      emailAddresses: [],
+    };
+  }
+
+  return null;
+}
+
+function extractHeaderLineValue(headerLines, key) {
+  const normalizedKey = String(key ?? '').trim().toLowerCase();
+
+  if (!normalizedKey || !Array.isArray(headerLines)) {
+    return '';
+  }
+
+  const matchingLine = headerLines.find((headerLine) => String(headerLine?.key ?? '').trim().toLowerCase() === normalizedKey);
+
+  if (!matchingLine) {
+    return '';
+  }
+
+  if (typeof matchingLine.line === 'string') {
+    const separatorIndex = matchingLine.line.indexOf(':');
+
+    if (separatorIndex >= 0) {
+      return normalizeHeaderToken(matchingLine.line.slice(separatorIndex + 1));
+    }
+  }
+
+  return normalizeHeaderToken(matchingLine?.value);
+}
+
+function extractRelevantManualInstructionText(value) {
+  const normalizedValue = normalizeWhitespace(value);
+
+  if (!normalizedValue) {
+    return '';
+  }
+
+  const lowerValue = normalizedValue.toLowerCase();
+  const keywordIndex = MANUAL_UNSUBSCRIBE_KEYWORDS
+    .map((keyword) => lowerValue.indexOf(keyword))
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right)[0] ?? -1;
+
+  if (keywordIndex < 0) {
+    return normalizedValue;
+  }
+
+  const separatorPattern = /[.!?;:|•·]/;
+  let start = 0;
+
+  for (let index = keywordIndex - 1; index >= 0; index -= 1) {
+    if (separatorPattern.test(normalizedValue[index])) {
+      start = index + 1;
+      break;
+    }
+  }
+
+  const prefixSegment = normalizedValue.slice(start, keywordIndex);
+  const capitalizedWordPattern = /(?:^|\s)([A-ZÆØÅ][^\s]*)/g;
+  let capitalizedMatch = capitalizedWordPattern.exec(prefixSegment);
+  let capitalizedStart = -1;
+
+  while (capitalizedMatch) {
+    capitalizedStart = start + capitalizedMatch.index + capitalizedMatch[0].length - capitalizedMatch[1].length;
+    capitalizedMatch = capitalizedWordPattern.exec(prefixSegment);
+  }
+
+  if (capitalizedStart >= start && keywordIndex - capitalizedStart <= 80) {
+    start = capitalizedStart;
+  }
+
+  let end = normalizedValue.length;
+
+  for (let index = keywordIndex; index < normalizedValue.length; index += 1) {
+    if (separatorPattern.test(normalizedValue[index])) {
+      end = index;
+      break;
+    }
+  }
+
+  return normalizeWhitespace(normalizedValue.slice(start, end));
+}
+
+function findManualUnsubscribeInstruction(bodyText, html) {
+  const normalizedBodyText = normalizeWhitespace(bodyText ?? '');
+
+  const manualBodyInstruction = extractManualUnsubscribeBodyInstruction(html);
+
+  if (manualBodyInstruction) {
+    return manualBodyInstruction;
+  }
+
+  if (!normalizedBodyText) {
+    return null;
+  }
+
+  const sentenceCandidates = normalizedBodyText
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => normalizeWhitespace(sentence))
+    .filter(Boolean);
+
+  for (const sentence of sentenceCandidates) {
+    const lowerSentence = sentence.toLowerCase();
+
+    if (!MANUAL_UNSUBSCRIBE_KEYWORDS.some((keyword) => lowerSentence.includes(keyword))) {
+      continue;
+    }
+
+    const instructionText = extractRelevantManualInstructionText(sentence);
+
+    return {
+      text: instructionText || sentence,
+      url: null,
+      emailAddresses: Array.from(new Set(
+        Array.from((instructionText || sentence).matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi), (match) => String(match[0] ?? '').trim())
+          .filter(Boolean),
+      )),
+    };
+  }
+
+  return null;
+}
+
+function extractUnsubscribeMetadata(parsedMessage) {
+  const headers = parsedMessage?.headers;
+  const headerLines = Array.isArray(parsedMessage?.headerLines) ? parsedMessage.headerLines : [];
+  const normalizedHeaderText = headerLines
+    .map((headerLine) => normalizeHeaderToken(headerLine?.line ?? headerLine?.value ?? ''))
+    .filter(Boolean)
+    .join(' ');
+  const normalizedBodyText = normalizeWhitespace(parsedMessage?.text ?? '');
+  const normalizedHtml = typeof parsedMessage?.html === 'string' ? parsedMessage.html : '';
+  const bodyLink = extractUnsubscribeBodyLink(parsedMessage?.html);
+  const listUnsubscribeValue = normalizeHeaderLookupValue(headers?.get?.('list-unsubscribe'))
+    || extractHeaderLineValue(headerLines, 'list-unsubscribe');
+  const listUnsubscribePostValue = normalizeHeaderLookupValue(headers?.get?.('list-unsubscribe-post'))
+    || extractHeaderLineValue(headerLines, 'list-unsubscribe-post');
+  const headerMethods = parseListUnsubscribeHeaderValue(listUnsubscribeValue);
+  const normalizedPostValue = listUnsubscribePostValue.toLowerCase();
+  const headerHasOneClick = normalizedPostValue.includes('list-unsubscribe=one-click');
+  const headerMailtoMethod = headerMethods.find((entry) => entry?.type === 'mailto') ?? null;
+  const headerUrlMethod = headerMethods.find((entry) => entry?.type === 'url') ?? null;
+  const bodyUrlMethod = bodyLink?.method?.type === 'url'
+    ? bodyLink.method
+    : null;
+  const actionableMethod = headerMailtoMethod
+    ?? (headerHasOneClick ? headerUrlMethod : null)
+    ?? bodyUrlMethod;
+  const actionableHttpMethod = actionableMethod?.type === 'url' && headerHasOneClick
+    ? 'POST'
+    : 'GET';
+  const actionableLink = actionableMethod?.value ?? null;
+  const supportsAutomatedUnsubscribe = Boolean(actionableLink);
+  const actionableFromHeaders = headerMethods.length > 0;
+  const actionableFromBody = Boolean(bodyLink);
+  const detectedFromHeaders = containsUnsubscribeKeyword(normalizedHeaderText) || actionableFromHeaders;
+  const detectedFromBody = containsUnsubscribeKeyword(normalizedBodyText) || containsUnsubscribeKeyword(normalizedHtml) || actionableFromBody;
+  const detected = detectedFromHeaders || detectedFromBody || supportsAutomatedUnsubscribe;
+  const type = detected
+    ? supportsAutomatedUnsubscribe ? 'actionable' : 'manual'
+    : null;
+  const manualInstruction = supportsAutomatedUnsubscribe || !detected
+    ? null
+    : findManualUnsubscribeInstruction(normalizedBodyText, normalizedHtml);
+  const link = type === 'actionable'
+    ? actionableLink
+    : manualInstruction?.url ?? bodyLink?.url ?? headerUrlMethod?.value ?? headerMailtoMethod?.value ?? null;
+  const hasLink = Boolean(link);
+
+  return {
+    unsubscribe: {
+      detected,
+      type,
+      hasLink,
+      link,
+      manualInstructionText: manualInstruction?.text ?? null,
+    },
+    execution: supportsAutomatedUnsubscribe
+      ? {
+        httpMethod: actionableHttpMethod,
+      }
+      : null,
+  };
+}
+
+export function buildExposedUnsubscribeMetadata(unsubscribe) {
+  const normalizedUnsubscribe = unsubscribe && typeof unsubscribe === 'object'
+    ? unsubscribe
+    : null;
+  const detected = Boolean(normalizedUnsubscribe?.detected);
+  const normalizedType = normalizedUnsubscribe?.type === 'actionable' || normalizedUnsubscribe?.type === 'manual'
+    ? normalizedUnsubscribe.type
+    : null;
+
+  return {
+    detected,
+    type: detected ? normalizedType : null,
+    hasLink: Boolean(normalizedUnsubscribe?.hasLink),
+    link: String(normalizedUnsubscribe?.link ?? '').trim() || null,
+    manualInstructionText: String(normalizedUnsubscribe?.manualInstructionText ?? '').trim() || null,
+  };
+}
+
 async function parseMessageSource(source) {
   const parsedMessage = await simpleParser(source);
   const subject = normalizeWhitespace(parsedMessage.subject ?? '');
   const text = normalizeWhitespace(parsedMessage.text ?? '');
   const html = typeof parsedMessage.html === 'string' ? parsedMessage.html : '';
+  const unsubscribeMetadata = extractUnsubscribeMetadata(parsedMessage);
   const normalizedBodyText = extractNormalizedMessageText({
     subject,
     text,
@@ -237,6 +750,8 @@ async function parseMessageSource(source) {
     normalizedBodyText,
     preview: buildPreview(normalizedBodyText),
     attachments: normalizeParsedAttachments(parsedMessage.attachments),
+    unsubscribe: unsubscribeMetadata.unsubscribe,
+    unsubscribeExecution: unsubscribeMetadata.execution,
   };
 }
 
@@ -281,6 +796,8 @@ export async function retrieveEmailsFromImap(accountConfig, filters = {}) {
         preview: parsedSource.preview,
         bodyText: parsedSource.normalizedBodyText,
         attachments: parsedSource.attachments,
+        unsubscribe: parsedSource.unsubscribe,
+        unsubscribeExecution: parsedSource.unsubscribeExecution,
       };
 
       if (!returnAllScanned) {
@@ -342,6 +859,8 @@ export async function getImapMessageByUid(accountConfig, { uid, folder = 'INBOX'
         bodyText: parsedSource.normalizedBodyText,
         preview: parsedSource.preview,
         attachments: parsedSource.attachments,
+        unsubscribe: parsedSource.unsubscribe,
+        unsubscribeExecution: parsedSource.unsubscribeExecution,
       };
     }
 
@@ -437,17 +956,10 @@ export async function deleteImapMessage(accountConfig, { uid, uids, folder = 'IN
 }
 
 export async function sendEmailViaSmtp(accountConfig, message) {
-  const transport = nodemailer.createTransport({
-    host: accountConfig.smtp.host,
-    port: accountConfig.smtp.port,
-    secure: accountConfig.smtp.secure,
-    auth: {
-      user: accountConfig.smtp.user,
-      pass: accountConfig.smtp.password,
-    },
-  });
-
-  const info = await transport.sendMail({
+  const normalizedDate = message?.date instanceof Date && !Number.isNaN(message.date.getTime())
+    ? message.date
+    : new Date();
+  const mailOptions = {
     from: message.from || accountConfig.smtp.user,
     to: message.to,
     cc: message.cc,
@@ -458,12 +970,90 @@ export async function sendEmailViaSmtp(accountConfig, message) {
     replyTo: message.replyTo || undefined,
     inReplyTo: message.inReplyTo || undefined,
     references: Array.isArray(message.references) ? message.references : undefined,
+    date: normalizedDate,
+  };
+  const transport = nodemailer.createTransport({
+    host: accountConfig.smtp.host,
+    port: accountConfig.smtp.port,
+    secure: accountConfig.smtp.secure,
+    auth: {
+      user: accountConfig.smtp.user,
+      pass: accountConfig.smtp.password,
+    },
   });
+
+  const info = await transport.sendMail(mailOptions);
+  const sentMailboxResult = await withImapClient(accountConfig, async (client) => {
+    const sentMailboxPath = resolveSentMailboxPath(await client.list());
+
+    if (!sentMailboxPath) {
+      return {
+        savedToSent: false,
+        sentMailboxPath: null,
+        sentMailboxError: 'A Sent mailbox could not be found for this account.',
+      };
+    }
+
+    const rawMessage = await new MailComposer({
+      ...mailOptions,
+      messageId: info.messageId ?? undefined,
+    }).compile().build();
+
+    const appendResult = await client.append(sentMailboxPath, rawMessage, ['\\Seen'], normalizedDate);
+
+    return {
+      savedToSent: appendResult !== false,
+      sentMailboxPath,
+      sentMailboxError: appendResult === false ? 'Appending the sent email to the Sent mailbox did not succeed.' : null,
+    };
+  }).catch((error) => ({
+    savedToSent: false,
+    sentMailboxPath: null,
+    sentMailboxError: String(error?.message ?? 'Appending the sent email to the Sent mailbox failed.'),
+  }));
 
   return {
     accepted: Array.isArray(info.accepted) ? info.accepted : [],
     rejected: Array.isArray(info.rejected) ? info.rejected : [],
     messageId: info.messageId ?? null,
     response: info.response ?? null,
+    savedToSent: sentMailboxResult.savedToSent,
+    sentMailboxPath: sentMailboxResult.sentMailboxPath,
+    sentMailboxError: sentMailboxResult.sentMailboxError,
+  };
+}
+
+function decodeMailtoValue(value) {
+  return decodeURIComponent(String(value ?? '').replace(/\+/g, ' '));
+}
+
+function parseMailtoAddressList(value) {
+  return Array.from(new Set(
+    String(value ?? '')
+      .split(',')
+      .map((entry) => normalizeHeaderToken(decodeMailtoValue(entry)))
+      .filter(Boolean),
+  ));
+}
+
+function parseMailtoUnsubscribeUrl(mailtoUrl) {
+  const normalizedValue = String(mailtoUrl ?? '').trim();
+  const withoutScheme = normalizedValue.slice('mailto:'.length);
+  const queryIndex = withoutScheme.indexOf('?');
+  const addressSegment = queryIndex >= 0 ? withoutScheme.slice(0, queryIndex) : withoutScheme;
+  const querySegment = queryIndex >= 0 ? withoutScheme.slice(queryIndex + 1) : '';
+  const searchParams = new URLSearchParams(querySegment);
+  const to = parseMailtoAddressList(addressSegment);
+  const cc = parseMailtoAddressList(searchParams.get('cc'));
+  const bcc = parseMailtoAddressList(searchParams.get('bcc'));
+  const subject = normalizeHeaderToken(decodeMailtoValue(searchParams.get('subject') ?? ''));
+  const body = decodeMailtoValue(searchParams.get('body') ?? '').trim();
+
+  return {
+    to,
+    cc,
+    bcc,
+    subject,
+    body,
   };
 }

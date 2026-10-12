@@ -2,6 +2,22 @@ import { buildAgentToolResult } from '@/server/utils/agent/agentToolResult';
 
 export const EMAIL_FAMILY = 'email';
 
+function stripInternalEmailFields(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripInternalEmailFields(entry));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const { unsubscribeExecution, ...rest } = value;
+
+  return Object.fromEntries(
+    Object.entries(rest).map(([key, entryValue]) => [key, stripInternalEmailFields(entryValue)]),
+  );
+}
+
 function resolveResultCount(data) {
   if (Array.isArray(data?.emails)) {
     return data.emails.length;
@@ -35,7 +51,7 @@ export function buildEmailToolResult({ toolName, toolResultType, data, includeDe
     sourceToolFamily: EMAIL_FAMILY,
     toolName,
     toolResultType,
-    data,
+    data: stripInternalEmailFields(data),
     meta: {
       resultCount: resolveResultCount(data),
       generatedAt: new Date().toISOString(),

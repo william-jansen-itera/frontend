@@ -1366,19 +1366,6 @@ export default function ChatPageClient({ includeDebug }) {
             <section className={styles.heroCard}>
             <div className={`appPanelTopBar ${styles.promptPanelHeader}`}>
               <p className="appEyebrow">Prompt</p>
-              {shouldShowVisibilityControl ? (
-                <label className={styles.toolbarLabel}>
-                  <select
-                    value={visibility}
-                    onChange={handleVisibilityChange}
-                    disabled={isSubmitting || !isVisibilityReady}
-                  >
-                    <option value="public">Public</option>
-                    <option value="private">Private</option>
-                    <option value="both">Both</option>
-                  </select>
-                </label>
-              ) : null}
               <label className={styles.toolbarLabel}>
                 <select
                   value={chatFamily ?? ""}
@@ -1393,6 +1380,19 @@ export default function ChatPageClient({ includeDebug }) {
                   ))}
                 </select>
               </label>
+              {shouldShowVisibilityControl ? (
+                <label className={styles.toolbarLabel}>
+                  <select
+                    value={visibility}
+                    onChange={handleVisibilityChange}
+                    disabled={isSubmitting || !isVisibilityReady}
+                  >
+                    <option value="public">Public</option>
+                    <option value="private">Private</option>
+                    <option value="both">Both</option>
+                  </select>
+                </label>
+              ) : null}
               {isPromptInOptionMode ? null : (
                 <button
                   type="submit"

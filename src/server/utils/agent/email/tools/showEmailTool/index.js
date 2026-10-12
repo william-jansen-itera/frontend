@@ -1,5 +1,6 @@
 import { appendDebugStep, attachDebugToError } from '@/server/utils/agent/agentDebug';
 import { buildEmailToolResult } from '@/server/utils/agent/email/emailToolShared';
+import { buildExposedUnsubscribeMetadata } from '@/server/utils/agent/email/emailTransport';
 import {
   loadCachedEmailMessage,
   loadLatestEmailRetrievalSnapshot,
@@ -73,6 +74,7 @@ function buildShownEmail(message) {
     flags: Array.isArray(message?.flags) ? message.flags : [],
     preview: message?.preview ?? null,
     bodyText: message?.bodyText ?? null,
+    unsubscribe: buildExposedUnsubscribeMetadata(message?.unsubscribe),
     attachments,
     attachmentCount: attachments.length,
     attachmentFileNames: attachments.map((attachment) => String(attachment?.fileName ?? '').trim()).filter(Boolean),

@@ -10,6 +10,7 @@ import {
   buildCachedEmailHeuristics,
 } from '@/server/utils/agent/email/emailHeuristics';
 import {
+  buildExposedUnsubscribeMetadata,
   REFRESH_RETRIEVAL_SCAN_LIMIT,
   computeRetrievalScanLimit,
   normalizeRetrievalLimit,
@@ -91,25 +92,25 @@ function evaluateMessageHeuristics(message, heuristicPlan) {
   const heuristics = {};
 
   if (heuristicPlan.needsClassification) {
-    heuristics.classification = cachedHeuristics.classification ?? null;
+    heuristics.classification = cachedHeuristics?.classification ?? null;
   }
 
   if (heuristicPlan.needsReplyItems) {
-    heuristics.replyItems = Array.isArray(cachedHeuristics.replyItems)
+    heuristics.replyItems = Array.isArray(cachedHeuristics?.replyItems)
       ? cachedHeuristics.replyItems
-      : Array.isArray(cachedHeuristics.replyMatches)
+      : Array.isArray(cachedHeuristics?.replyMatches)
         ? cachedHeuristics.replyMatches
         : [];
   }
 
   if (heuristicPlan.needsActionItems) {
-    heuristics.actionItems = Array.isArray(cachedHeuristics.actionItems) ? cachedHeuristics.actionItems : [];
+    heuristics.actionItems = Array.isArray(cachedHeuristics?.actionItems) ? cachedHeuristics.actionItems : [];
   }
 
   if (heuristicPlan.needsDeadlineItems) {
-    heuristics.deadlineItems = Array.isArray(cachedHeuristics.deadlineItems)
+    heuristics.deadlineItems = Array.isArray(cachedHeuristics?.deadlineItems)
       ? cachedHeuristics.deadlineItems
-      : Array.isArray(cachedHeuristics.deadlines)
+      : Array.isArray(cachedHeuristics?.deadlines)
         ? cachedHeuristics.deadlines
         : [];
   }
@@ -119,12 +120,22 @@ function evaluateMessageHeuristics(message, heuristicPlan) {
 
 function matchesLocalFilters(message, filters, heuristics = null) {
   const flags = Array.isArray(message?.flags) ? message.flags : [];
+  const hasUnsubscribeOption = Boolean(message?.unsubscribe?.detected);
+  const supportsAutomatedUnsubscribe = message?.unsubscribe?.type === 'actionable';
 
   if (filters.unreadOnly && flags.includes('\\Seen')) {
     return false;
   }
 
   if (filters.flaggedOnly && !flags.includes('\\Flagged')) {
+    return false;
+  }
+
+  if (filters.hasUnsubscribeOptionOnly && !hasUnsubscribeOption) {
+    return false;
+  }
+
+  if (filters.hasAutomatedUnsubscribeOptionOnly && !supportsAutomatedUnsubscribe) {
     return false;
   }
 
@@ -178,11 +189,12 @@ function matchesLocalFilters(message, filters, heuristics = null) {
 }
 
 function buildReturnedMessage(message, heuristics, heuristicPlan) {
-  const { bodyText, heuristicCache, ...baseMessage } = message;
+  const { bodyText, heuristicCache, unsubscribeExecution, ...baseMessage } = message;
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
 
   const returnedMessage = {
     ...baseMessage,
+    unsubscribe: buildExposedUnsubscribeMetadata(message?.unsubscribe),
     attachmentCount: attachments.length,
     attachmentFileNames: attachments.map((attachment) => String(attachment?.fileName ?? '').trim()).filter(Boolean),
   };
@@ -255,6 +267,8 @@ export const retrieveEmailsToolDefinition = {
       includeHeuristics: { type: 'boolean', description: 'When true, include heuristic classification, action, and deadline signals on returned messages for list-level triage.' },
       unreadOnly: { type: 'boolean', description: 'When true, only return emails that do not currently have the IMAP \\Seen flag.' },
       flaggedOnly: { type: 'boolean', description: 'When true, only return emails that currently have the visual flagged or starred IMAP \\Flagged state.' },
+      hasUnsubscribeOptionOnly: { type: 'boolean', description: 'When true, only return emails that offer any parsed unsubscribe option, including manual instructions or actionable unsubscribe metadata.' },
+      hasAutomatedUnsubscribeOptionOnly: { type: 'boolean', description: 'When true, only return emails whose unsubscribe metadata indicates an automated unsubscribe option that the agent can execute.' },
       replyExpectedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that a reply is expected.' },
       otherActionRequiredOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically suggests that some non-reply action is required.' },
       deadlineMentionedOnly: { type: 'boolean', description: 'When true, only return emails whose content heuristically mentions a deadline or due time.' },
@@ -272,7 +286,7 @@ export const retrieveEmailsToolDefinition = {
       before: { type: ['string', 'null'], description: 'Optional inclusive upper date bound as an ISO date or datetime string.' },
       limit: { type: 'integer', minimum: 1, maximum: 25, description: 'Maximum number of matching emails to return after filtering. Keep this small because matching is done against a bounded recent IMAP fetch window.' },
     },
-    required: ['provider', 'folder', 'forceRefresh', 'includeHeuristics', 'unreadOnly', 'flaggedOnly', 'replyExpectedOnly', 'otherActionRequiredOnly', 'deadlineMentionedOnly', 'fromContains', 'subjectContains', 'textQuery', 'anyTextQueries', 'since', 'before', 'limit'],
+    required: ['provider', 'folder', 'forceRefresh', 'includeHeuristics', 'unreadOnly', 'flaggedOnly', 'hasUnsubscribeOptionOnly', 'hasAutomatedUnsubscribeOptionOnly', 'replyExpectedOnly', 'otherActionRequiredOnly', 'deadlineMentionedOnly', 'fromContains', 'subjectContains', 'textQuery', 'anyTextQueries', 'since', 'before', 'limit'],
     additionalProperties: false,
   },
 };
@@ -305,6 +319,8 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
         includeHeuristics: Boolean(args.includeHeuristics),
         unreadOnly: Boolean(args.unreadOnly),
         flaggedOnly: Boolean(args.flaggedOnly),
+        hasUnsubscribeOptionOnly: Boolean(args.hasUnsubscribeOptionOnly),
+        hasAutomatedUnsubscribeOptionOnly: Boolean(args.hasAutomatedUnsubscribeOptionOnly),
         replyExpectedOnly: Boolean(args.replyExpectedOnly),
         otherActionRequiredOnly: Boolean(args.otherActionRequiredOnly),
         deadlineMentionedOnly: Boolean(args.deadlineMentionedOnly),

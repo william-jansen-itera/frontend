@@ -40,6 +40,11 @@ import {
   sendEmailToolDefinition,
   SEND_EMAIL_TOOL,
 } from '@/server/utils/agent/email/tools/sendEmailTool';
+import {
+  buildUnsubscribeEmailHandler,
+  unsubscribeEmailToolDefinition,
+  UNSUBSCRIBE_EMAIL_TOOL,
+} from '@/server/utils/agent/email/tools/unsubscribeEmailTool';
 
 export const EMAIL_FAMILY = 'email';
 
@@ -52,6 +57,7 @@ function buildEmailToolDefinitions() {
     flagEmailToolDefinition,
     authorEmailToolDefinition,
     sendEmailToolDefinition,
+    unsubscribeEmailToolDefinition,
   ];
 }
 
@@ -72,7 +78,7 @@ Use tools for any factual claims about messages, message content, flags, deletio
 Never invent emails, message state, deadlines, flags, delivery results, or UIDs.
 
 ## UID contract
-Before show_email, analyze_email, flag_email, or delete_email, look up the UIDs in the latest retrieve_emails tool result in this conversation.
+Before show_email, analyze_email, flag_email, delete_email, or unsubscribe_email, look up the UIDs in the latest retrieve_emails tool result in this conversation.
 Read data.emails[].uid. It is a string, for example "19613". Copy that string unchanged into uids, and copy data.folder into folder.
 Do this even if an earlier answer did not mention the UID. The answer is not the source. The tool result is.
 Do not use the array index, data.resultCount, or meta.resultCount. Do not invent, shorten, or retype a UID.
@@ -90,6 +96,15 @@ When lastCheckedAt is present, mention when the snapshot was last checked. When 
 When answering from retrieve_emails, state the limit used from data.query.limit whenever you summarize the result set or say how many emails were returned.
 Use the returned heuristic classification, action, and deadline fields for list-level triage before analyze_email. Prefer them when they are enough. Enable only the heuristics the question needs.
 When present, use attachmentFileNames to mention attached file names directly from the retrieval result.
+When present, use unsubscribe metadata as a parsed signal based on whether unsubscribe keywords such as unsubscribe, afmeld, or afmelde appear in the email headers or body.
+If data.emails[].unsubscribe.detected is true, summarize unsubscribe.type. It will be either actionable or manual.
+If data.emails[].unsubscribe.detected is false, treat unsubscribe.type as null.
+If data.emails[].unsubscribe.hasLink is true and data.emails[].unsubscribe.type is not manual, you may say the message exposes an unsubscribe link and summarize unsubscribe.link.
+If data.emails[].unsubscribe.type is actionable, that means the agent can execute the unsubscribe.
+If data.emails[].unsubscribe.type is manual, tell the user the email appears to require manual unsubscribe. In that case, unsubscribe.link is the manual link when one was found, so include the entire unsubscribe.link verbatim when present. Summarize unsubscribe.manualInstructionText when present. If the manual metadata is incomplete, inspect the shown email content to explain the unsubscribe instructions rather than claiming the tool can execute it.
+Do not claim an actionable unsubscribe path unless unsubscribe.type is actionable.
+Use hasUnsubscribeOptionOnly when the user asks to list or find emails that offer any unsubscribe path.
+Use hasAutomatedUnsubscribeOptionOnly when the user asks to list or find emails whose unsubscribe path can be automated by the tool.
 Signals that matter: sender, subject wording, topic keywords, recency, unread, flagged, reply expectation, deadline mentions.
 folder defaults to INBOX unless the user names another folder.
 Treat phrases like "get emails from X" as a sender filter by default, usually using fromContains. Do not reinterpret "from X" as the email provider or account unless the user explicitly names the provider, account, mailbox, or says Hover.
@@ -122,7 +137,7 @@ Say that detailed content is unavailable only when analyze_email returned an err
 Use this tool to display one cached email without model analysis.
 Follow the UID contract above before calling this tool.
 Pass one uid string copied from retrieve_emails together with the same folder value.
-Answer from data.email.subject, data.email.from, data.email.receivedAt, data.email.flags, data.email.preview, data.email.bodyText, and data.email.attachmentFileNames.
+Answer from data.email.subject, data.email.from, data.email.receivedAt, data.email.flags, data.email.preview, data.email.bodyText, data.email.attachmentFileNames, and data.email.unsubscribe when relevant.
 When you show the email, include the uid in the answer. Prefer the format: subject — uid <data.email.uid>.
 Use the returned heuristicClassification, replyItems, actionItems, and deadlineItems when they help, but do not describe them as model analysis.
 
@@ -135,6 +150,18 @@ If the user wants the same flag change for multiple emails in the same folder, s
 Use for deletion. Follow the UID contract above before calling this tool. Do not claim success unless the tool confirms it.
 Always pass a uids list, including for one email. With expunge false, this tool moves messages to Trash. Use expunge true only when the user clearly wants permanent deletion.
 If the user wants the same delete action for multiple emails in the same folder, send one delete_email call with all target UIDs, not one call per email.
+
+## unsubscribe_email tool
+Use for actual unsubscribe actions. Follow the UID contract above before calling this tool.
+Use this only when the user clearly wants to unsubscribe, not when they are only asking whether an unsubscribe option exists.
+Call this tool only for emails whose metadata has unsubscribe.type equal to actionable and unsubscribe.hasLink equal to true. Do not call it for manual unsubscribe detections or emails that do not expose a parsed unsubscribe link.
+Pass one uid string copied from retrieve_emails together with the same folder value.
+Set confirm to true only after the user explicitly confirms the unsubscribe action for that email.
+Do not invent unsubscribe URLs or methods. This tool must act only on parsed unsubscribe link metadata returned from retrieve_emails or show_email.
+This tool supports automated HTTP(S) unsubscribe URLs and mailto unsubscribe targets. For mailto targets, it sends the unsubscribe email through the configured SMTP account using the parsed mailto recipient, subject, and body when present.
+If the tool succeeds with actionType equal to http_request, read data.action.responseText before deciding whether the unsubscribe completed. Do not treat HTTP 200, a successful tool call, or finalUrl alone as confirmation.
+If data.action.responseText is missing, ambiguous, or describes a further click, confirmation, or preference step, say that the unsubscribe is not confirmed as completed and include the complete unsubscribe page link verbatim in the answer. Prefer data.action.finalUrl when present; otherwise use data.action.url.
+Only say the unsubscribe completed when data.action.responseText explicitly confirms completion.
 
 ## author_email tool
 Use to prepare, revise, or propose draft content without sending. Use this whenever the user wants help writing but has not clearly asked to deliver the message yet.
@@ -297,6 +324,7 @@ function buildEmailHandlerMap({ includeDebug = false, updatedBy = null, personal
   handlerMap.set(DELETE_EMAIL_TOOL, buildDeleteEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(AUTHOR_EMAIL_TOOL, buildAuthorEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(SEND_EMAIL_TOOL, buildSendEmailHandler({ includeDebug, personalCacheTreeId }));
+  handlerMap.set(UNSUBSCRIBE_EMAIL_TOOL, buildUnsubscribeEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
 
   return handlerMap;
 }

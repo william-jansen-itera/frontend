@@ -1,10 +1,78 @@
-function stripHtml(value) {
+const MAX_HTML_TEXT_EXTRACTION_CHARS = 200000;
+
+function decodeBasicHtmlEntities(value) {
   return String(value ?? '')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&');
+    .split('&nbsp;').join(' ')
+    .split('&NBSP;').join(' ')
+    .split('&amp;').join('&')
+    .split('&AMP;').join('&')
+    .split('&quot;').join('"')
+    .split('&QUOT;').join('"')
+    .split('&#39;').join("'")
+    .split('&apos;').join("'")
+    .split('&APOS;').join("'")
+    .split('&lt;').join('<')
+    .split('&LT;').join('<')
+    .split('&gt;').join('>')
+    .split('&GT;').join('>');
+}
+
+function stripHtml(value) {
+  const html = String(value ?? '').slice(0, MAX_HTML_TEXT_EXTRACTION_CHARS);
+  let result = '';
+  let index = 0;
+  let skippedTagName = null;
+
+  while (index < html.length) {
+    const currentChar = html[index];
+
+    if (currentChar === '<') {
+      const tagEnd = html.indexOf('>', index + 1);
+
+      if (tagEnd === -1) {
+        break;
+      }
+
+      const rawTag = html.slice(index + 1, tagEnd).trim();
+      const normalizedTag = rawTag.replace(/^\//, '').split(/[\s/>]/, 1)[0].toLowerCase();
+      const isClosingTag = rawTag.startsWith('/');
+
+      if (normalizedTag === 'script' || normalizedTag === 'style') {
+        if (isClosingTag && skippedTagName === normalizedTag) {
+          skippedTagName = null;
+        } else if (!isClosingTag) {
+          skippedTagName = normalizedTag;
+        }
+      }
+
+      if (!skippedTagName) {
+        result += ' ';
+      }
+
+      index = tagEnd + 1;
+      continue;
+    }
+
+    if (!skippedTagName) {
+      result += currentChar;
+    }
+
+    index += 1;
+  }
+
+  return decodeBasicHtmlEntities(result);
+}
+
+function stripHtmlSafely(value) {
+  try {
+    return stripHtml(value);
+  } catch (error) {
+    if (!(error instanceof RangeError) && error?.name !== 'RangeError') {
+      throw error;
+    }
+
+    return '';
+  }
 }
 
 export function normalizeWhitespace(value) {
@@ -13,8 +81,13 @@ export function normalizeWhitespace(value) {
 
 export function extractNormalizedMessageText({ subject = '', text = '', html = '' }) {
   const normalizedText = normalizeWhitespace(text);
-  const normalizedHtmlText = normalizeWhitespace(stripHtml(html));
-  const body = normalizedText || normalizedHtmlText;
+
+  if (normalizedText) {
+    return normalizeWhitespace([subject, normalizedText].filter(Boolean).join('\n\n'));
+  }
+
+  const normalizedHtmlText = normalizeWhitespace(stripHtmlSafely(html));
+  const body = normalizedHtmlText;
 
   return normalizeWhitespace([subject, body].filter(Boolean).join('\n\n'));
 }
