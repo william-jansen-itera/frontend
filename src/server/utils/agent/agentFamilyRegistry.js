@@ -1,4 +1,4 @@
-import { invokeTreeSearchAgent } from '@/server/utils/agent/treeGrounding/treeAgentService';
+import { invokeKnowledgeTreesAgent } from '@/server/utils/agent/knowledgeTrees/treeAgentService';
 import { invokeInvestmentAgent } from '@/server/utils/agent/investment/investmentAgentService';
 import { invokeEmailAgent } from '@/server/utils/agent/email/emailAgentService';
 import {
@@ -16,12 +16,12 @@ import {
   unpublishEmailPromptAgent,
 } from '@/server/utils/agent/email/emailAgentCatalog';
 import {
-  getTreeGroundingPromptAgentPublishStatus,
-  listDefinedTreeGroundingTools,
-  publishTreeGroundingPromptAgent,
-  TREE_GROUNDING_FAMILY,
-  unpublishTreeGroundingPromptAgent,
-} from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
+  getKnowledgeTreesPromptAgentPublishStatus,
+  KNOWLEDGE_TREES_FAMILY,
+  listDefinedKnowledgeTreesTools,
+  publishKnowledgeTreesPromptAgent,
+  unpublishKnowledgeTreesPromptAgent,
+} from '@/server/utils/agent/knowledgeTrees/treeAgentCatalog';
 
 function buildFamilyToolDefinition({ name, description }) {
   return {
@@ -101,18 +101,18 @@ const FAMILY_REGISTRY = new Map([
     publishPromptAgent: publishEmailPromptAgent,
     unpublishPromptAgent: unpublishEmailPromptAgent,
   })],
-  [TREE_GROUNDING_FAMILY, buildFamilyRegistration({
-    family: TREE_GROUNDING_FAMILY,
+  [KNOWLEDGE_TREES_FAMILY, buildFamilyRegistration({
+    family: KNOWLEDGE_TREES_FAMILY,
     label: 'Knowledge Trees',
     description: 'A tree-backed prompt tool that returns grounded results from published knowledge trees with detailed descriptions.',
-    orchestratorToolName: 'ask_tree_grounding_family',
+    orchestratorToolName: 'ask_knowledge_trees_family',
     supportsPromptAgentPublishing: true,
     requiresPublishedPromptAgent: true,
-    invoke: invokeTreeSearchAgent,
-    listDefinedTools: listDefinedTreeGroundingTools,
-    getPromptAgentPublishStatus: getTreeGroundingPromptAgentPublishStatus,
-    publishPromptAgent: publishTreeGroundingPromptAgent,
-    unpublishPromptAgent: unpublishTreeGroundingPromptAgent,
+    invoke: invokeKnowledgeTreesAgent,
+    listDefinedTools: listDefinedKnowledgeTreesTools,
+    getPromptAgentPublishStatus: getKnowledgeTreesPromptAgentPublishStatus,
+    publishPromptAgent: publishKnowledgeTreesPromptAgent,
+    unpublishPromptAgent: unpublishKnowledgeTreesPromptAgent,
   })],
 ]);
 
@@ -146,7 +146,7 @@ export function getAgentFamilyRegistration(family) {
   const normalizedFamily = String(family ?? '').trim();
 
   if (!normalizedFamily) {
-    return FAMILY_REGISTRY.get(TREE_GROUNDING_FAMILY) ?? null;
+    return FAMILY_REGISTRY.get(KNOWLEDGE_TREES_FAMILY) ?? null;
   }
 
   return FAMILY_REGISTRY.get(normalizedFamily) ?? null;

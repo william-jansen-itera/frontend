@@ -14,9 +14,9 @@ import {
   buildAgentSearchResult,
   buildDebugSearchResultSnapshot,
   buildTreeToolHandlerResult,
-} from '@/server/utils/agent/treeGrounding/treeToolSearchResults';
+} from '@/server/utils/agent/knowledgeTrees/treeToolSearchResults';
 
-export const TREE_GROUNDING_FAMILY = 'treeGrounding';
+export const KNOWLEDGE_TREES_FAMILY = 'knowledgeTrees';
 
 function normalizePromptAgentName(agent, fallbackAgentName = null) {
   return String(agent?.name ?? agent?.id ?? fallbackAgentName ?? '').trim() || null;
@@ -183,7 +183,7 @@ function buildHandlerMap(includedTrees, { includeDebug = false } = {}) {
 
       if (!normalizedQuery) {
         return buildTreeToolHandlerResult({
-          sourceToolFamily: TREE_GROUNDING_FAMILY,
+          sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
           toolName,
           toolOutput: {
             count: 0,
@@ -209,7 +209,7 @@ function buildHandlerMap(includedTrees, { includeDebug = false } = {}) {
       });
 
       return buildTreeToolHandlerResult({
-        sourceToolFamily: TREE_GROUNDING_FAMILY,
+        sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
         toolName,
         toolOutput: buildAgentSearchResult(rawResult),
         searchResult: includeDebug ? buildDebugSearchResultSnapshot(rawResult) : null,
@@ -286,18 +286,18 @@ function buildTreeToolPreview(availableTrees) {
   }));
 }
 
-export async function listDefinedTreeGroundingTools() {
+export async function listDefinedKnowledgeTreesTools() {
   const publishContext = await buildPublishTreeToolContext();
   return buildTreeToolPreview(publishContext.availableTrees)
     .filter((tool) => Boolean(tool?.includedInToolSet))
     .map((tool) => ({
-    name: String(tool?.name ?? '').trim() || null,
-    description: String(tool?.description ?? '').trim() || null,
-    sourceType: 'tree',
-    sourceLabel: tool?.descriptionSource === 'stored' ? 'Stored description' : 'Published tool',
-    includedInPromptAgent: Boolean(tool?.includedInToolSet),
-    treeId: tool?.treeId ?? null,
-    treeName: tool?.treeName ?? null,
+      name: String(tool?.name ?? '').trim() || null,
+      description: String(tool?.description ?? '').trim() || null,
+      sourceType: 'tree',
+      sourceLabel: tool?.descriptionSource === 'stored' ? 'Stored description' : 'Published tool',
+      includedInPromptAgent: Boolean(tool?.includedInToolSet),
+      treeId: tool?.treeId ?? null,
+      treeName: tool?.treeName ?? null,
     }));
 }
 
@@ -351,7 +351,7 @@ async function publishTreeTools(publishContext) {
   }
 }
 
-export async function getPublishedTreeGroundingPromptAgent() {
+export async function getPublishedKnowledgeTreesPromptAgent() {
   const project = getProjectClient();
   const { agentName } = getRequiredFoundryConfig();
 
@@ -370,11 +370,11 @@ export async function getPublishedTreeGroundingPromptAgent() {
   }
 }
 
-export async function getTreeGroundingPromptAgentPublishStatus() {
+export async function getKnowledgeTreesPromptAgentPublishStatus() {
   const { agentName } = getRequiredFoundryConfig();
 
   try {
-    const agent = await getPublishedTreeGroundingPromptAgent();
+    const agent = await getPublishedKnowledgeTreesPromptAgent();
 
     return {
       promptAgentStatus: 'published',
@@ -396,7 +396,7 @@ export async function getTreeGroundingPromptAgentPublishStatus() {
   }
 }
 
-export async function publishTreeGroundingPromptAgent() {
+export async function publishKnowledgeTreesPromptAgent() {
   const publishResult = await publishStoredTreeDescriptions();
 
   return {
@@ -420,7 +420,7 @@ export async function publishStoredTreeDescriptions() {
   };
 }
 
-export async function unpublishTreeGroundingPromptAgent() {
+export async function unpublishKnowledgeTreesPromptAgent() {
   const { agentName } = getRequiredFoundryConfig();
 
   try {

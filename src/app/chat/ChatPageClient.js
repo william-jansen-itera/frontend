@@ -868,7 +868,7 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugPending = showTurnInspector && Boolean(selectedTurn?.isPending);
   const isDebugEmpty = showTurnInspector && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
-  const shouldShowVisibilityControl = chatFamily === "treeGrounding";
+  const shouldShowVisibilityControl = chatFamily === "knowledgeTrees";
 
   const loadAvailableFamilies = async () => {
     const payload = await fetchAvailableChatFamilies();

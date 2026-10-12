@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { generateTreeDescriptionDraft } from '@/server/utils/tree/treeDescriptionDraft';
-import { publishStoredTreeDescriptions } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
+import { publishStoredTreeDescriptions } from '@/server/utils/agent/knowledgeTrees/treeAgentCatalog';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { getEntraUserByObjectId, searchEntraUsers } from '@/server/utils/swaRoleMapping';
 import {

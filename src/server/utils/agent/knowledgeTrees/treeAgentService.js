@@ -10,12 +10,12 @@ import { normalizeFollowUpSelection } from '@/server/utils/agent/agentTurnClassi
 import {
   buildAllowedToolInstruction,
   buildRuntimeTreeToolContext,
-  getPublishedTreeGroundingPromptAgent,
-} from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
+  getPublishedKnowledgeTreesPromptAgent,
+} from '@/server/utils/agent/knowledgeTrees/treeAgentCatalog';
 import {
-  buildTreeGroundingFamilyResult,
-  buildTreeGroundingResponse,
-} from '@/server/utils/agent/treeGrounding/treeAgentResultBuilder';
+  buildKnowledgeTreesFamilyResult,
+  buildKnowledgeTreesResponse,
+} from '@/server/utils/agent/knowledgeTrees/treeAgentResultBuilder';
 
 const DEFAULT_HISTORY_LIMIT = 8;
 
@@ -46,7 +46,7 @@ function normalizeHistory(history) {
 // runs initial agent invocation
 // starts the tool loop
 // and classifies the turn type (eg. default, no_result_offer_broadening, broader_answer)
-export async function invokeTreeSearchAgent({ message, history = [], principal = null, visibility = 'public', followUpSelection = null, includeDebug = false }) {
+export async function invokeKnowledgeTreesAgent({ message, history = [], principal = null, visibility = 'public', followUpSelection = null, includeDebug = false }) {
   const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
   const normalizedMessage = String(message ?? '').trim();
 
@@ -56,7 +56,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
 
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const agent = await getPublishedTreeGroundingPromptAgent();
+  const agent = await getPublishedKnowledgeTreesPromptAgent();
   const { handlerMap, includedTrees } = await buildRuntimeTreeToolContext({
     principal,
     visibility,
@@ -72,7 +72,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
   });
   const debug = includeDebug
     ? createAgentDebugState({
-      sourceToolFamily: 'treeGrounding',
+      sourceToolFamily: 'knowledgeTrees',
       normalizedMessage,
       normalizedFollowUpSelection,
       initialInput,
@@ -101,7 +101,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
     if (debug) {
       debug.timings.modelCalls.push(...modelCalls);
     }
-    const { familyResult } = await buildTreeGroundingFamilyResult({
+    const { familyResult } = await buildKnowledgeTreesFamilyResult({
       finalResponse: response,
       finalToolInvocations: [...toolInvocations],
       normalizedFollowUpSelection,
@@ -115,7 +115,7 @@ export async function invokeTreeSearchAgent({ message, history = [], principal =
       debug.timings.totalDurationMs = Date.now() - requestStartedAtMs;
     }
 
-    return buildTreeGroundingResponse({ familyResult, agent, principal, debug });
+    return buildKnowledgeTreesResponse({ familyResult, agent, principal, debug });
   } catch (error) {
     if (debug) {
       debug.timings.requestCompletedAt = new Date().toISOString();

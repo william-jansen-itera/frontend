@@ -13,7 +13,7 @@ import {
   buildAgentFamilyResult,
 } from '@/server/utils/agent/agentFamilyResult';
 import { getAgentToolResultData } from '@/server/utils/agent/agentToolResult';
-import { TREE_GROUNDING_FAMILY } from '@/server/utils/agent/treeGrounding/treeAgentCatalog';
+import { KNOWLEDGE_TREES_FAMILY } from '@/server/utils/agent/knowledgeTrees/treeAgentCatalog';
 
 function normalizeWhitespace(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -50,7 +50,7 @@ function dedupeCitations(citations) {
   return Array.from(citationsByKey.values());
 }
 
-export async function buildTreeGroundingFamilyResult({
+export async function buildKnowledgeTreesFamilyResult({
   finalResponse,
   finalToolInvocations,
   normalizedFollowUpSelection,
@@ -104,7 +104,7 @@ export async function buildTreeGroundingFamilyResult({
   }
 
   const familyResult = buildAgentFamilyResult({
-    sourceToolFamily: TREE_GROUNDING_FAMILY,
+    sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
     turnType,
     answer,
     toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
@@ -122,7 +122,7 @@ export async function buildTreeGroundingFamilyResult({
   };
 }
 
-export function buildTreeGroundingResponse({ familyResult, agent, principal, debug }) {
+export function buildKnowledgeTreesResponse({ familyResult, agent, principal, debug }) {
   const responseToolInvocations = Array.isArray(familyResult?.familyPayload?.responseToolInvocations)
     ? familyResult.familyPayload.responseToolInvocations
     : [];
