@@ -50,25 +50,47 @@ function getReferrerHost(referer) {
   }
 }
 
-function getVisitSource(referer) {
-  const normalizedReferer = String(referer ?? '').trim();
+function getParsedUrl(value) {
+  const normalizedValue = String(value ?? '').trim();
 
-  if (!normalizedReferer) {
-    return 'direct';
+  if (!normalizedValue) {
+    return null;
   }
 
   try {
-    const refererUrl = new URL(normalizedReferer);
+    return new URL(normalizedValue);
+  } catch {
+    return null;
+  }
+}
+
+function getVisitSource(pageUrl, documentReferrer) {
+  const parsedPageUrl = getParsedUrl(pageUrl);
+  const parsedDocumentReferrer = getParsedUrl(documentReferrer);
+
+  if (parsedPageUrl) {
     const source = String(
-      refererUrl.searchParams.get('src')
-      ?? refererUrl.searchParams.get('utm_src')
+      parsedPageUrl.searchParams.get('src')
+      ?? parsedPageUrl.searchParams.get('utm_src')
+      ?? parsedPageUrl.searchParams.get('utm_source')
       ?? '',
     ).trim().toLowerCase();
 
-    return source || 'direct';
-  } catch {
-    return 'direct';
+    if (source) {
+      return source;
+    }
   }
+
+  if (parsedDocumentReferrer) {
+    const referrerHost = parsedDocumentReferrer.host.toLowerCase();
+    const pageHost = parsedPageUrl?.host?.toLowerCase() ?? null;
+
+    if (referrerHost && referrerHost !== pageHost) {
+      return referrerHost;
+    }
+  }
+
+  return 'direct';
 }
 
 function normalizeIpAddress(value) {
@@ -145,8 +167,8 @@ export function normalizeTrackedPagePath(pagePath) {
   return ALLOWED_PAGE_PATHS.has(normalizedPagePath) ? normalizedPagePath : null;
 }
 
-export function getPageVisitCounterDimensions(request, pagePath) {
-  const normalizedPagePath = normalizeTrackedPagePath(pagePath);
+export function getPageVisitCounterDimensions(request, payload) {
+  const normalizedPagePath = normalizeTrackedPagePath(payload?.pagePath);
 
   if (!normalizedPagePath) {
     throw new Error('Unsupported page path');
@@ -167,8 +189,8 @@ export function getPageVisitCounterDimensions(request, pagePath) {
     pagePath: normalizedPagePath,
     isAuthenticated: parseClientPrincipal(request) ? 1 : 0,
     clientIp,
-    referrerHost: getReferrerHost(request.headers.get('referer')),
-    source: getVisitSource(request.headers.get('referer')),
+    referrerHost: getReferrerHost(payload?.documentReferrer),
+    source: getVisitSource(payload?.pageUrl, payload?.documentReferrer),
     deviceClass: classifyDeviceClass(request.headers.get('user-agent')),
     browserFamily: classifyBrowserFamily(request.headers.get('user-agent')),
   };

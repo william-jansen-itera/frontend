@@ -17,7 +17,11 @@ export async function POST(request) {
   try {
     const payload = await request.json().catch(() => null);
     const pagePath = String(payload?.pagePath ?? '').trim();
-    const dimensions = getPageVisitCounterDimensions(request, pagePath);
+    const dimensions = getPageVisitCounterDimensions(request, {
+      pagePath,
+      pageUrl: payload?.pageUrl,
+      documentReferrer: payload?.documentReferrer,
+    });
 
     if (!dimensions) {
       return NextResponse.json({
