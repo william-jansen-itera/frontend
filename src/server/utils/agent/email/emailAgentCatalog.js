@@ -6,10 +6,10 @@ import {
   isNotFoundError,
 } from '@/server/utils/foundryAgentClient';
 import {
-  AUTHOR_EMAIL_TOOL,
-  authorEmailToolDefinition,
-  buildAuthorEmailHandler,
-} from '@/server/utils/agent/email/tools/authorEmailTool';
+  DRAFT_EMAIL_TOOL,
+  buildDraftEmailHandler,
+  draftEmailToolDefinition,
+} from '@/server/utils/agent/email/tools/draftEmailTool';
 import {
   buildDeleteEmailHandler,
   deleteEmailToolDefinition,
@@ -55,7 +55,7 @@ function buildEmailToolDefinitions() {
     analyzeEmailToolDefinition,
     deleteEmailToolDefinition,
     flagEmailToolDefinition,
-    authorEmailToolDefinition,
+    draftEmailToolDefinition,
     sendEmailToolDefinition,
     unsubscribeEmailToolDefinition,
   ];
@@ -163,11 +163,30 @@ If the tool succeeds with actionType equal to http_request, read data.action.res
 If data.action.responseText is missing, ambiguous, or describes a further click, confirmation, or preference step, say that the unsubscribe is not confirmed as completed and include the complete unsubscribe page link verbatim in the answer. Prefer data.action.finalUrl when present; otherwise use data.action.url.
 Only say the unsubscribe completed when data.action.responseText explicitly confirms completion.
 
-## author_email tool
-Use to prepare, revise, or propose draft content without sending. Use this whenever the user wants help writing but has not clearly asked to deliver the message yet.
+## draft_email tool
+Use this tool to save a draft to the Drafts mailbox without sending it.
+Do not call this tool while the user is still iterating on wording, asking for edits, or discussing alternatives.
+If the user asks for help composing an email or reply and has not yet chosen between sending now and saving a draft, ask which they want before calling either draft_email or send_email.
+Only call this tool after the user explicitly indicates that the draft is ready to be saved, for example by clearly confirming to save it, create the draft, or put it in Drafts.
+For a new draft, collect to, subject, and body from the user before calling this tool.
+For a reply draft, use the email uid and the same folder value from the latest retrieve_emails result.
+In the normal reply case, only the body content must come from the user.
+For reply drafts, default to writing in the same language as the email being replied to unless the user explicitly asks for a different language.
+The user does not need to repeat the recipient or subject for a normal reply because the tool can derive them from the referenced email.
+The agent must still pass folder and uid from the latest retrieve_emails result so the referenced email can be resolved correctly.
+If the user explicitly provides to or subject while replying, pass those values and let them override the values derived from the referenced email.
+Do not call this tool with a uid unless the uid comes from the latest retrieve_emails result in this conversation.
+If this tool succeeds and data.draftUid is present, you must mention both data.draftFolder and data.draftUid explicitly in the answer.
+Do not omit that information when it is present in the tool output.
+Use that reported draft folder and draft uid later as the saved draft location.
+Do not use this tool to send the email. Use send_email only when the user clearly wants delivery.
 
 ## send_email tool
 Use only when the user clearly wants the email delivered. Do not send when the user is only brainstorming, drafting, asking for edits, or asking what to write.
+For a direct send, collect the final to, subject, and body content first.
+For reply sends, default to writing in the same language as the email being replied to unless the user explicitly asks for a different language.
+To send a previously saved draft from a mailbox folder, pass the draft folder and draft uid. Use a Drafts folder uid only when it comes from retrieve_emails for that folder or from the latest draft_email result.
+When both explicit message fields and a draft uid are present, treat the draft as the base message and let the explicit fields override it.
 `.trim();
 }
 
@@ -322,7 +341,7 @@ function buildEmailHandlerMap({ includeDebug = false, updatedBy = null, personal
   handlerMap.set(ANALYZE_EMAIL_TOOL, buildAnalyzeEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(FLAG_EMAIL_TOOL, buildFlagEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(DELETE_EMAIL_TOOL, buildDeleteEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
-  handlerMap.set(AUTHOR_EMAIL_TOOL, buildAuthorEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
+  handlerMap.set(DRAFT_EMAIL_TOOL, buildDraftEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(SEND_EMAIL_TOOL, buildSendEmailHandler({ includeDebug, personalCacheTreeId }));
   handlerMap.set(UNSUBSCRIBE_EMAIL_TOOL, buildUnsubscribeEmailHandler({ includeDebug, updatedBy, personalCacheTreeId }));
 

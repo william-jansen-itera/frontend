@@ -83,6 +83,21 @@ function buildPrimarySenderFields(addressValue) {
   };
 }
 
+function normalizeSingleAddress(addressValue) {
+  return normalizeAddressValue(addressValue)[0] ?? null;
+}
+
+function normalizeReferenceList(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry ?? '').trim()).filter(Boolean);
+  }
+
+  return String(value ?? '')
+    .split(/\s+/)
+    .map((entry) => String(entry ?? '').trim())
+    .filter(Boolean);
+}
+
 function normalizeMessageFlags(flags) {
   if (!flags) {
     return [];
@@ -117,6 +132,20 @@ function resolveSentMailboxPath(mailboxes = []) {
     ?? null;
 
   return sentMailbox?.path ?? null;
+}
+
+function resolveDraftsMailboxPath(mailboxes = []) {
+  const draftsMailbox = mailboxes.find((mailbox) => String(mailbox?.specialUse ?? '').trim() === '\\Drafts')
+    ?? mailboxes.find((mailbox) => {
+      const path = String(mailbox?.path ?? '').trim().toLowerCase();
+      const name = String(mailbox?.name ?? '').trim().toLowerCase();
+
+      return ['drafts', 'draft', 'concepts'].includes(path)
+        || ['drafts', 'draft', 'concepts'].includes(name);
+    })
+    ?? null;
+
+  return draftsMailbox?.path ?? null;
 }
 
 function buildImapClient(accountConfig) {
@@ -734,7 +763,7 @@ export function buildExposedUnsubscribeMetadata(unsubscribe) {
 async function parseMessageSource(source) {
   const parsedMessage = await simpleParser(source);
   const subject = normalizeWhitespace(parsedMessage.subject ?? '');
-  const text = normalizeWhitespace(parsedMessage.text ?? '');
+  const text = String(parsedMessage.text ?? '').trim();
   const html = typeof parsedMessage.html === 'string' ? parsedMessage.html : '';
   const unsubscribeMetadata = extractUnsubscribeMetadata(parsedMessage);
   const normalizedBodyText = extractNormalizedMessageText({
@@ -747,12 +776,50 @@ async function parseMessageSource(source) {
     subject,
     text,
     html,
+    from: normalizeSingleAddress(parsedMessage.from),
+    replyTo: normalizeSingleAddress(parsedMessage.replyTo),
+    to: normalizeAddressList(parsedMessage.to),
+    cc: normalizeAddressList(parsedMessage.cc),
+    bcc: normalizeAddressList(parsedMessage.bcc),
+    inReplyTo: String(parsedMessage.inReplyTo ?? '').trim() || null,
+    references: normalizeReferenceList(parsedMessage.references),
     normalizedBodyText,
     preview: buildPreview(normalizedBodyText),
     attachments: normalizeParsedAttachments(parsedMessage.attachments),
     unsubscribe: unsubscribeMetadata.unsubscribe,
     unsubscribeExecution: unsubscribeMetadata.execution,
   };
+}
+
+async function findImapMessageUidByMessageId(client, { folder = 'INBOX', messageId, scanLimit = 25 }) {
+  const normalizedMessageId = String(messageId ?? '').trim();
+
+  if (!normalizedMessageId) {
+    return null;
+  }
+
+  const mailbox = await client.mailboxOpen(folder);
+  const totalMessages = Number(mailbox?.exists ?? 0);
+  const effectiveScanLimit = Math.max(1, Math.min(Number.parseInt(String(scanLimit ?? 25), 10) || 25, 50));
+  const startSequence = Math.max(1, totalMessages - effectiveScanLimit + 1);
+  const fetchedMessages = [];
+
+  for await (const message of client.fetch(`${startSequence}:*`, {
+    uid: true,
+    envelope: true,
+  })) {
+    fetchedMessages.push(message);
+  }
+
+  for (const message of fetchedMessages.reverse()) {
+    const currentMessageId = String(message?.envelope?.messageId ?? '').trim();
+
+    if (currentMessageId && currentMessageId === normalizedMessageId) {
+      return String(message.uid ?? '').trim() || null;
+    }
+  }
+
+  return null;
 }
 
 export async function retrieveEmailsFromImap(accountConfig, filters = {}) {
@@ -850,12 +917,18 @@ export async function getImapMessageByUid(accountConfig, { uid, folder = 'INBOX'
         uid: String(message.uid),
         messageId: String(message.envelope?.messageId ?? '').trim() || null,
         folder,
-        ...buildPrimarySenderFields(message.envelope?.from),
-        to: normalizeAddressList(message.envelope?.to),
-        cc: normalizeAddressList(message.envelope?.cc),
+        from: parsedSource.from ?? buildPrimarySenderFields(message.envelope?.from).from,
+        replyTo: parsedSource.replyTo?.address ?? null,
+        to: parsedSource.to.length > 0 ? parsedSource.to : normalizeAddressList(message.envelope?.to),
+        cc: parsedSource.cc.length > 0 ? parsedSource.cc : normalizeAddressList(message.envelope?.cc),
+        bcc: parsedSource.bcc,
         subject: parsedSource.subject || normalizeWhitespace(message.envelope?.subject ?? ''),
         receivedAt: normalizeReceivedAt(message.internalDate ?? message.envelope?.date ?? null),
         flags: normalizeMessageFlags(message.flags),
+        body: parsedSource.text,
+        htmlBody: parsedSource.html || null,
+        inReplyTo: parsedSource.inReplyTo,
+        references: parsedSource.references,
         bodyText: parsedSource.normalizedBodyText,
         preview: parsedSource.preview,
         attachments: parsedSource.attachments,
@@ -1021,6 +1094,55 @@ export async function sendEmailViaSmtp(accountConfig, message) {
     sentMailboxPath: sentMailboxResult.sentMailboxPath,
     sentMailboxError: sentMailboxResult.sentMailboxError,
   };
+}
+
+export async function saveEmailDraft(accountConfig, message) {
+  const normalizedDate = message?.date instanceof Date && !Number.isNaN(message.date.getTime())
+    ? message.date
+    : new Date();
+  const messageId = String(message?.messageId ?? '').trim() || null;
+  const mailOptions = {
+    from: message.from || accountConfig.smtp.user,
+    to: message.to,
+    cc: message.cc,
+    bcc: message.bcc,
+    subject: message.subject,
+    text: message.body,
+    html: message.htmlBody || undefined,
+    replyTo: message.replyTo || undefined,
+    inReplyTo: message.inReplyTo || undefined,
+    references: Array.isArray(message.references) ? message.references : undefined,
+    date: normalizedDate,
+    messageId: messageId || undefined,
+  };
+
+  return withImapClient(accountConfig, async (client) => {
+    const draftsMailboxPath = resolveDraftsMailboxPath(await client.list());
+
+    if (!draftsMailboxPath) {
+      throw new Error('A Drafts mailbox could not be found for this account.');
+    }
+
+    const rawMessage = await new MailComposer(mailOptions).compile().build();
+    const appendResult = await client.append(draftsMailboxPath, rawMessage, ['\\Draft'], normalizedDate);
+
+    if (appendResult === false) {
+      throw new Error('Appending the email draft to the Drafts mailbox did not succeed.');
+    }
+
+    const draftUid = await findImapMessageUidByMessageId(client, {
+      folder: draftsMailboxPath,
+      messageId,
+    });
+
+    return {
+      savedToDrafts: true,
+      draftsMailboxPath,
+      draftUid,
+      draftMailboxError: null,
+      messageId,
+    };
+  });
 }
 
 function decodeMailtoValue(value) {
