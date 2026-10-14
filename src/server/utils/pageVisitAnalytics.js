@@ -50,6 +50,27 @@ function getReferrerHost(referer) {
   }
 }
 
+function getVisitSource(referer) {
+  const normalizedReferer = String(referer ?? '').trim();
+
+  if (!normalizedReferer) {
+    return 'direct';
+  }
+
+  try {
+    const refererUrl = new URL(normalizedReferer);
+    const source = String(
+      refererUrl.searchParams.get('src')
+      ?? refererUrl.searchParams.get('utm_src')
+      ?? '',
+    ).trim().toLowerCase();
+
+    return source || 'direct';
+  } catch {
+    return 'direct';
+  }
+}
+
 function normalizeIpAddress(value) {
   const normalizedValue = String(value ?? '').trim().toLowerCase();
 
@@ -147,6 +168,7 @@ export function getPageVisitCounterDimensions(request, pagePath) {
     isAuthenticated: parseClientPrincipal(request) ? 1 : 0,
     clientIp,
     referrerHost: getReferrerHost(request.headers.get('referer')),
+    source: getVisitSource(request.headers.get('referer')),
     deviceClass: classifyDeviceClass(request.headers.get('user-agent')),
     browserFamily: classifyBrowserFamily(request.headers.get('user-agent')),
   };
@@ -194,6 +216,7 @@ export async function getPageVisitAnalyticsSummary() {
   const events = await listPageVisitEvents(appIdentifier);
   const byPageDeviceBrowser = new Map();
   const byPage = new Map();
+  const byPageSource = new Map();
 
   for (const eventEntry of events) {
     if (!eventEntry) {
@@ -208,8 +231,10 @@ export async function getPageVisitAnalyticsSummary() {
 
     const deviceClass = String(eventEntry.deviceClass ?? '').trim() || 'unknown';
     const browserFamily = String(eventEntry.browserFamily ?? '').trim() || 'unknown';
+    const source = String(eventEntry.source ?? '').trim() || 'direct';
     const detailedKey = `${pagePath}\u0000${deviceClass}\u0000${browserFamily}`;
     const pageOnlyKey = pagePath;
+    const pageSourceKey = `${pagePath}\u0000${source}`;
 
     byPageDeviceBrowser.set(detailedKey, {
       pagePath,
@@ -222,11 +247,18 @@ export async function getPageVisitAnalyticsSummary() {
       pagePath,
       visitCount: Number(byPage.get(pageOnlyKey)?.visitCount ?? 0) + 1,
     });
+
+    byPageSource.set(pageSourceKey, {
+      pagePath,
+      source,
+      visitCount: Number(byPageSource.get(pageSourceKey)?.visitCount ?? 0) + 1,
+    });
   }
 
   return {
     byPageDeviceBrowser: sortGroupedRows(Array.from(byPageDeviceBrowser.values()), ['pagePath', 'deviceClass', 'browserFamily']),
     byPage: sortGroupedRows(Array.from(byPage.values()), ['pagePath']),
+    byPageSource: sortGroupedRows(Array.from(byPageSource.values()), ['pagePath', 'source']),
     generatedAt: new Date().toISOString(),
   };
 }

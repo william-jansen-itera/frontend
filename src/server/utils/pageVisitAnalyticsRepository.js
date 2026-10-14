@@ -19,6 +19,7 @@ function buildPageVisitMetadata(eventPayload) {
     eventtype: 'pagevisit',
     pagepath: sanitizeBlobMetadataValue(eventPayload.pagePath),
     clientip: sanitizeBlobMetadataValue(eventPayload.clientIp),
+    source: sanitizeBlobMetadataValue(eventPayload.source),
     deviceclass: sanitizeBlobMetadataValue(eventPayload.deviceClass),
     browserfamily: sanitizeBlobMetadataValue(eventPayload.browserFamily),
   };

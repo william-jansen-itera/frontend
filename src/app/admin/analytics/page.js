@@ -5,7 +5,7 @@ import styles from "../page.module.css";
 import { formatTimestamp, formatVisitCount, getErrorMessage } from "../adminShared";
 
 export default function AdminAnalyticsPage() {
-  const [analyticsSummary, setAnalyticsSummary] = useState({ byPageDeviceBrowser: [], byPage: [], generatedAt: null });
+  const [analyticsSummary, setAnalyticsSummary] = useState({ byPageDeviceBrowser: [], byPage: [], byPageSource: [], generatedAt: null });
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -25,11 +25,12 @@ export default function AdminAnalyticsPage() {
       setAnalyticsSummary({
         byPageDeviceBrowser: Array.isArray(data?.byPageDeviceBrowser) ? data.byPageDeviceBrowser : [],
         byPage: Array.isArray(data?.byPage) ? data.byPage : [],
+        byPageSource: Array.isArray(data?.byPageSource) ? data.byPageSource : [],
         generatedAt: data?.generatedAt || null,
       });
       setErrorMessage("");
     } catch (error) {
-      setAnalyticsSummary({ byPageDeviceBrowser: [], byPage: [], generatedAt: null });
+      setAnalyticsSummary({ byPageDeviceBrowser: [], byPage: [], byPageSource: [], generatedAt: null });
       setErrorMessage(getErrorMessage(error, "Analytics could not be loaded"));
     } finally {
       setIsLoading(false);
@@ -122,6 +123,34 @@ export default function AdminAnalyticsPage() {
                       ) : analyticsSummary.byPage.map((row) => (
                         <tr key={row.pagePath}>
                           <td>{row.pagePath}</td>
+                          <td>{formatVisitCount(row.visitCount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className={styles.analyticsSection}>
+                <h2 className={styles.analyticsHeading}>By page and source</h2>
+                <div className={styles.indexingTableWrapper}>
+                  <table className={styles.indexingTable}>
+                    <thead>
+                      <tr>
+                        <th scope="col" className={styles.indexingColumnHeader}>page path</th>
+                        <th scope="col" className={styles.indexingColumnHeader}>source</th>
+                        <th scope="col" className={styles.indexingColumnHeader}>visits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analyticsSummary.byPageSource.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className={styles.analyticsEmptyCell}>No source-tagged visit events recorded yet.</td>
+                        </tr>
+                      ) : analyticsSummary.byPageSource.map((row) => (
+                        <tr key={`${row.pagePath}:${row.source}`}>
+                          <td>{row.pagePath}</td>
+                          <td>{row.source}</td>
                           <td>{formatVisitCount(row.visitCount)}</td>
                         </tr>
                       ))}
