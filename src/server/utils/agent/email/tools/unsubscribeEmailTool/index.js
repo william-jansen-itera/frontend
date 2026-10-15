@@ -14,7 +14,7 @@ export const UNSUBSCRIBE_EMAIL_TOOL = 'unsubscribe_email';
 export const unsubscribeEmailToolDefinition = {
   type: 'function',
   name: UNSUBSCRIBE_EMAIL_TOOL,
-  description: 'Unsubscribe from one email only when retrieve_emails or show_email returned unsubscribe metadata with unsubscribe.type equal to actionable and unsubscribe.hasLink equal to true. Requires explicit confirmation and supports automated HTTP(S) or mailto unsubscribe methods. For HTTP(S) results, the returned page text must be reviewed before concluding the unsubscribe actually completed.',
+  description: 'Unsubscribe from one email only when retrieve_emails or one of the emails returned by show_email exposed unsubscribe metadata with unsubscribe.type equal to actionable and unsubscribe.hasLink equal to true. Requires explicit confirmation and supports automated HTTP(S) or mailto unsubscribe methods. For HTTP(S) results, the returned page text must be reviewed before concluding the unsubscribe actually completed.',
   strict: true,
   parameters: {
     type: 'object',

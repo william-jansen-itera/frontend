@@ -12,7 +12,7 @@ export const SHOW_EMAIL_TOOL = 'show_email';
 export const showEmailToolDefinition = {
   type: 'function',
   name: SHOW_EMAIL_TOOL,
-  description: 'Display one cached email without model analysis by returning the stored message fields and body text for a UID copied from retrieve_emails.',
+  description: 'Display one or more cached emails without model analysis by returning the stored message fields and body text for UIDs copied from retrieve_emails. Pass every target in one uids array. The response always returns data.emails, including for a single email.',
   strict: true,
   parameters: {
     type: 'object',
@@ -20,17 +20,33 @@ export const showEmailToolDefinition = {
       provider: { type: 'string' },
       folder: {
         type: 'string',
-        description: 'Same folder value used in the retrieve_emails call that returned this UID.',
+        description: 'Same folder value used in the retrieve_emails call that returned these UIDs.',
       },
-      uid: {
-        type: 'string',
-        description: 'String copied unchanged from data.emails[].uid in the latest retrieve_emails result. Do not use the array index, data.resultCount, meta.resultCount, or any value not present in data.emails[].uid.',
+      uids: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 1,
+        description: 'Strings copied unchanged from data.emails[].uid in the latest retrieve_emails result. Do not use the array index, data.resultCount, meta.resultCount, or any value not present in data.emails[].uid.',
       },
     },
-    required: ['provider', 'folder', 'uid'],
+    required: ['provider', 'folder', 'uids'],
     additionalProperties: false,
   },
 };
+
+function normalizeShowTargetUids(args) {
+  const uidValues = [];
+
+  for (const uid of Array.isArray(args?.uids) ? args.uids : []) {
+    const normalizedUid = String(uid ?? '').trim();
+
+    if (normalizedUid) {
+      uidValues.push(normalizedUid);
+    }
+  }
+
+  return Array.from(new Set(uidValues));
+}
 
 function buildShownEmail(message) {
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
@@ -103,61 +119,67 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
       }
 
       const normalizedFolder = String(args.folder ?? 'INBOX').trim() || 'INBOX';
-      const normalizedUid = String(args.uid ?? '').trim();
+      const normalizedUids = normalizeShowTargetUids(args);
 
-      if (!normalizedUid) {
-        throw new Error('A cached email uid is required to show email.');
+      if (normalizedUids.length === 0) {
+        throw new Error('At least one cached email uid is required to show email.');
       }
 
-      emitStep('tool show_email checking cached message', {
-        uid: normalizedUid,
-      });
-      let message = await loadCachedEmailMessage({
+      const snapshot = await loadLatestEmailRetrievalSnapshot({
         treeId: resolvedTreeId,
         provider: args.provider,
         folder: normalizedFolder,
-        uid: normalizedUid,
       });
+      const snapshotMessages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
+      const shownMessages = [];
 
-      if (!message) {
-        emitStep('tool show_email checking retrieval snapshot', {
+      for (const normalizedUid of normalizedUids) {
+        emitStep('tool show_email checking cached message', {
           uid: normalizedUid,
-          folder: normalizedFolder,
         });
-        const snapshot = await loadLatestEmailRetrievalSnapshot({
+        let message = await loadCachedEmailMessage({
           treeId: resolvedTreeId,
           provider: args.provider,
           folder: normalizedFolder,
+          uid: normalizedUid,
         });
-        const snapshotMessages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
 
-        message = snapshotMessages.find((entry) => String(entry?.uid ?? '').trim() === normalizedUid) ?? null;
-
-        if (message) {
-          emitStep('tool show_email found message in retrieval snapshot', {
+        if (!message) {
+          emitStep('tool show_email checking retrieval snapshot', {
             uid: normalizedUid,
             folder: normalizedFolder,
-            snapshotCreatedAt: snapshot?.createdAt ?? null,
           });
-          await storeCachedEmailMessage({
-            treeId: resolvedTreeId,
-            provider: args.provider,
-            folder: normalizedFolder,
-            uid: message.uid,
-            message,
-            updatedBy: resolvedUpdatedBy,
-          });
-        } else if (snapshotMessages.length > 0) {
+
+          message = snapshotMessages.find((entry) => String(entry?.uid ?? '').trim() === normalizedUid) ?? null;
+
+          if (message) {
+            emitStep('tool show_email found message in retrieval snapshot', {
+              uid: normalizedUid,
+              folder: normalizedFolder,
+              snapshotCreatedAt: snapshot?.createdAt ?? null,
+            });
+            await storeCachedEmailMessage({
+              treeId: resolvedTreeId,
+              provider: args.provider,
+              folder: normalizedFolder,
+              uid: message.uid,
+              message,
+              updatedBy: resolvedUpdatedBy,
+            });
+          } else if (snapshotMessages.length > 0) {
+            throw new Error(
+              `Wrong message uid was provided: ${normalizedUid}. This uid does not exist in the latest retrieve_emails result for folder ${normalizedFolder} in this conversation. Look up data.emails[].uid in that latest retrieve_emails result and retry with one of those exact uid strings. Do not invent or transform the uid.`,
+            );
+          }
+        }
+
+        if (!message) {
           throw new Error(
-            `Wrong message uid was provided: ${normalizedUid}. This uid does not exist in the latest retrieve_emails result for folder ${normalizedFolder} in this conversation. Look up data.emails[].uid in that latest retrieve_emails result and retry with one of those exact uid strings. Do not invent or transform the uid.`,
+            `Email uid ${normalizedUid} is not available in the current cache for folder ${normalizedFolder}. Run retrieve_emails for that folder, then look up data.emails[].uid in the latest retrieve_emails result in this conversation and retry with one of those exact uid strings. Do not invent or transform the uid.`,
           );
         }
-      }
 
-      if (!message) {
-        throw new Error(
-          `Email uid ${normalizedUid} is not available in the current cache for folder ${normalizedFolder}. Run retrieve_emails for that folder, then look up data.emails[].uid in the latest retrieve_emails result in this conversation and retry with one of those exact uid strings. Do not invent or transform the uid.`,
-        );
+        shownMessages.push(buildShownEmail(message));
       }
 
       return buildEmailToolResult({
@@ -166,11 +188,11 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
         data: {
           provider: args.provider,
           folder: normalizedFolder,
-          email: buildShownEmail(message),
+          emails: shownMessages,
         },
         includeDebug,
         debug: includeDebug ? {
-          uid: normalizedUid,
+          uids: normalizedUids,
           folder: normalizedFolder,
         } : null,
       });
@@ -178,7 +200,7 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
       throw attachDebugToError(error, includeDebug ? {
         provider: args?.provider ?? null,
         folder: args?.folder ?? null,
-        uid: args?.uid ?? null,
+        uids: Array.isArray(args?.uids) ? args.uids : null,
       } : null);
     }
   };
