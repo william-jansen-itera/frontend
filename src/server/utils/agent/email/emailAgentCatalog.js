@@ -166,6 +166,7 @@ Only say the unsubscribe completed when data.action.responseText explicitly conf
 ## draft_email tool
 Use this tool to save a draft to the Drafts mailbox without sending it.
 Do not call this tool before the user has finished iterating on wording, asking for edits, or discussing alternatives.
+Never call this tool as a staging step immediately before send_email. If the user wants the message delivered now, use send_email directly.
 Only call this tool after the user explicitly indicates that the draft is ready to be saved, for example by clearly confirming to save it, create the draft, or put it in Drafts.
 Set confirm to true only after the user explicitly confirms saving the draft.
 If the user has not yet chosen between sending now and saving a draft, ask which they want before calling either draft_email or send_email.
@@ -184,6 +185,9 @@ Do not use this tool to send the email. Use send_email only when the user clearl
 
 ## send_email tool
 Use only when the user clearly wants the email delivered. Do not send when the user is only brainstorming, drafting, asking for edits, or asking what to write.
+If the user says to send the current composed email or reply now, call send_email directly and do not call draft_email first.
+For reply sends, use the retrieved source email folder and uid together with the final body content directly when needed. Do not save a draft first unless the user explicitly asked to save a draft.
+Use a draft folder and draft uid only when the user explicitly wants to send a previously saved draft or the conversation is already working from a saved draft.
 For a direct send, collect the final to, subject, and body content first.
 For reply sends, default to writing in the same language as the email being replied to unless the user explicitly asks for a different language.
 To send a previously saved draft from a mailbox folder, pass the draft folder and draft uid. Use a Drafts folder uid only when it comes from retrieve_emails for that folder or from the latest draft_email result.

@@ -14,7 +14,7 @@ export const DRAFT_EMAIL_TOOL = 'draft_email';
 export const draftEmailToolDefinition = {
   type: 'function',
   name: DRAFT_EMAIL_TOOL,
-  description: 'Save one email draft to the configured Drafts mailbox without sending it. Supports new drafts and reply drafts based on a retrieved email uid. Requires explicit confirmation before the draft is saved.',
+  description: 'Save one email draft to the configured Drafts mailbox without sending it. Supports new drafts and reply drafts based on a retrieved email uid. Requires explicit confirmation before the draft is saved. Never use this tool as an intermediate step before send_email when the user wants the email delivered now.',
   strict: true,
   parameters: {
     type: 'object',

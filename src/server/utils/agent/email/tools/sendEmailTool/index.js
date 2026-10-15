@@ -14,7 +14,7 @@ function normalizeRecipientList(value) {
 export const sendEmailToolDefinition = {
   type: 'function',
   name: SEND_EMAIL_TOOL,
-  description: 'Send one email using the configured SMTP account settings, either from explicit message fields or from a saved draft identified by folder and uid.',
+  description: 'Send one email using the configured SMTP account settings, either from explicit message fields or from a previously saved draft identified by folder and uid. When the user wants delivery now, use this tool directly instead of creating a draft first.',
   strict: true,
   parameters: {
     type: 'object',
