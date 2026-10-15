@@ -7,6 +7,10 @@ import {
   extractNormalizedMessageText,
   normalizeWhitespace,
 } from '@/server/utils/agent/email/emailHeuristics';
+import {
+  MANUAL_UNSUBSCRIBE_KEYWORDS,
+  UNSUBSCRIBE_BODY_LINK_LABELS,
+} from '@/server/utils/agent/email/tools/unsubscribeEmailTool/unsubscribeDetectionConfig';
 
 const DEFAULT_SCAN_MULTIPLIER = 5;
 const MIN_SCAN_LIMIT = 25;
@@ -267,9 +271,6 @@ function normalizeParsedAttachments(attachments) {
 function normalizeHeaderToken(value) {
   return String(value ?? '').trim();
 }
-
-const UNSUBSCRIBE_BODY_LINK_LABELS = new Set(['unsubscribe', 'afmeld', 'afmelde']);
-const MANUAL_UNSUBSCRIBE_KEYWORDS = ['unsubscribe', 'afmeld', 'afmelde', 'afmelden', 'uitschrijven'];
 
 function containsManualUnsubscribeKeyword(value) {
   const normalizedValue = String(value ?? '').toLowerCase();

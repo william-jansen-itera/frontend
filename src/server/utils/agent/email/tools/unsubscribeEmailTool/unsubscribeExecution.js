@@ -1,12 +1,14 @@
 import { normalizeWhitespace } from '@/server/utils/agent/email/emailHeuristics';
 import { sendEmailViaSmtp } from '@/server/utils/agent/email/emailTransport';
+import {
+  MANUAL_UNSUBSCRIBE_KEYWORDS,
+  UNSUBSCRIBE_BODY_LINK_LABELS,
+} from '@/server/utils/agent/email/tools/unsubscribeEmailTool/unsubscribeDetectionConfig';
 
 const MAX_UNSUBSCRIBE_RESPONSE_TEXT_CHARS = 2000;
 const MAX_FORM_MATCHES = 5;
 const MAX_BUTTON_MATCHES = 10;
 const MAX_INPUT_MATCHES = 50;
-const UNSUBSCRIBE_BODY_LINK_LABELS = new Set(['unsubscribe', 'afmeld', 'afmelde']);
-const MANUAL_UNSUBSCRIBE_KEYWORDS = ['unsubscribe', 'afmeld', 'afmelde', 'afmelden', 'uitschrijven'];
 
 function normalizeHeaderToken(value) {
   return String(value ?? '').trim();
