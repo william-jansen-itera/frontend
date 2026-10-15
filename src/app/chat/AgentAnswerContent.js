@@ -104,13 +104,30 @@ function normalizeTableCells(cells, targetLength) {
   return normalizedCells.slice(0, targetLength);
 }
 
+function splitTrailingUrlPunctuation(rawUrl) {
+  const normalizedUrl = String(rawUrl ?? "");
+  const match = normalizedUrl.match(/^(.*?)([.,!?;:]+)?$/);
+
+  if (!match) {
+    return {
+      href: normalizedUrl,
+      trailingText: "",
+    };
+  }
+
+  return {
+    href: match[1] ?? normalizedUrl,
+    trailingText: match[2] ?? "",
+  };
+}
+
 function buildInlineBlocks(answer) {
   const normalizedAnswer = String(answer ?? "");
-  const attachmentPattern = /(!)?\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+  const inlineLinkPattern = /(!)?\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/g;
   const blocks = [];
   let inlineSegments = [];
   let cursor = 0;
-  let match = attachmentPattern.exec(normalizedAnswer);
+  let match = inlineLinkPattern.exec(normalizedAnswer);
 
   const pushInlineText = (content) => {
     if (!content) {
@@ -136,11 +153,27 @@ function buildInlineBlocks(answer) {
   };
 
   while (match) {
-    const [fullMatch, isImageToken, label, attachmentUrl] = match;
-    const contentUrl = getInternalAttachmentContentUrl(attachmentUrl);
+    const [fullMatch, isImageToken, label, attachmentUrl, rawUrl] = match;
     const textBefore = normalizedAnswer.slice(cursor, match.index);
 
     pushInlineText(textBefore);
+
+    if (rawUrl) {
+      const { href, trailingText } = splitTrailingUrlPunctuation(rawUrl);
+
+      inlineSegments.push({
+        type: "externalLink",
+        href,
+        label: href,
+      });
+
+      pushInlineText(trailingText);
+      cursor = match.index + fullMatch.length;
+      match = inlineLinkPattern.exec(normalizedAnswer);
+      continue;
+    }
+
+    const contentUrl = getInternalAttachmentContentUrl(attachmentUrl);
 
     if (contentUrl && isImageToken && isImageUrlCandidate(attachmentUrl)) {
       flushInlineSegments();
@@ -152,7 +185,7 @@ function buildInlineBlocks(answer) {
         fileName: getAttachmentFileNameFromUrl(attachmentUrl),
       });
       cursor = match.index + fullMatch.length;
-      match = attachmentPattern.exec(normalizedAnswer);
+      match = inlineLinkPattern.exec(normalizedAnswer);
       continue;
     }
 
@@ -163,13 +196,18 @@ function buildInlineBlocks(answer) {
         label: getAttachmentLinkLabel(label, attachmentUrl),
       });
       cursor = match.index + fullMatch.length;
-      match = attachmentPattern.exec(normalizedAnswer);
+      match = inlineLinkPattern.exec(normalizedAnswer);
       continue;
     }
 
-    pushInlineText(fullMatch);
+    inlineSegments.push({
+      type: "externalLink",
+      href: attachmentUrl,
+      label: getAttachmentLinkLabel(label, attachmentUrl),
+    });
+
     cursor = match.index + fullMatch.length;
-    match = attachmentPattern.exec(normalizedAnswer);
+    match = inlineLinkPattern.exec(normalizedAnswer);
   }
 
   const trailingText = normalizedAnswer.slice(cursor);
@@ -236,7 +274,7 @@ function buildAgentAnswerBlocks(answer) {
 
 function renderInlineSegments(segments, keyPrefix, blockIndex) {
   return segments.map((segment, segmentIndex) => {
-    if (segment.type === "attachmentLink") {
+    if (segment.type === "attachmentLink" || segment.type === "externalLink") {
       return (
         <a
           key={`${keyPrefix}-link-${blockIndex}-${segmentIndex}`}
