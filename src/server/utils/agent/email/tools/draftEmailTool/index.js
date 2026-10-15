@@ -14,7 +14,7 @@ export const DRAFT_EMAIL_TOOL = 'draft_email';
 export const draftEmailToolDefinition = {
   type: 'function',
   name: DRAFT_EMAIL_TOOL,
-  description: 'Save one email draft to the configured Drafts mailbox without sending it. Supports new drafts and reply drafts based on a retrieved email uid.',
+  description: 'Save one email draft to the configured Drafts mailbox without sending it. Supports new drafts and reply drafts based on a retrieved email uid. Requires explicit confirmation before the draft is saved.',
   strict: true,
   parameters: {
     type: 'object',
@@ -28,8 +28,12 @@ export const draftEmailToolDefinition = {
       subject: { type: ['string', 'null'] },
       body: { type: 'string' },
       htmlBody: { type: ['string', 'null'] },
+      confirm: {
+        type: 'boolean',
+        description: 'Must be true only after the user explicitly confirms saving the draft.',
+      },
     },
-    required: ['provider', 'folder', 'uid', 'to', 'cc', 'bcc', 'subject', 'body', 'htmlBody'],
+    required: ['provider', 'folder', 'uid', 'to', 'cc', 'bcc', 'subject', 'body', 'htmlBody', 'confirm'],
     additionalProperties: false,
   },
 };
@@ -115,6 +119,10 @@ export function buildDraftEmailHandler({ includeDebug = false, updatedBy = null,
       const normalizedBody = String(args.body ?? '').trim();
       const normalizedHtmlBody = typeof args.htmlBody === 'string' ? args.htmlBody : null;
 
+      if (args.confirm !== true) {
+        throw new Error('Draft save confirmation is required. Retry with confirm set to true only after the user explicitly confirms saving the draft.');
+      }
+
       if (!normalizedBody) {
         throw new Error('Email draft body content is required.');
       }
@@ -187,6 +195,7 @@ export function buildDraftEmailHandler({ includeDebug = false, updatedBy = null,
         subject: resolvedSubject,
         body: normalizedBody,
         htmlBody: normalizedHtmlBody,
+        confirm: args.confirm === true,
         inReplyTo: resolvedInReplyTo,
         references: resolvedReferences,
         replySourceSubject: replyMessage?.subject ?? null,
