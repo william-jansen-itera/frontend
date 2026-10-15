@@ -12,7 +12,6 @@ import {
   UNSUBSCRIBE_BODY_LINK_LABELS,
 } from '@/server/utils/agent/email/tools/unsubscribeEmailTool/unsubscribeDetectionConfig';
 
-const DEFAULT_SCAN_MULTIPLIER = 5;
 const MIN_SCAN_LIMIT = 25;
 const MAX_SCAN_LIMIT = 100;
 const MAX_UNSUBSCRIBE_HTML_ANALYSIS_CHARS = 50000;
@@ -21,12 +20,6 @@ export const REFRESH_RETRIEVAL_SCAN_LIMIT = MAX_SCAN_LIMIT;
 
 export function normalizeRetrievalLimit(value, fallback = 10) {
   return Math.max(1, Math.min(Number.parseInt(String(value ?? fallback), 10) || fallback, 25));
-}
-
-export function computeRetrievalScanLimit(limit, fallback = 10) {
-  const normalizedLimit = normalizeRetrievalLimit(limit, fallback);
-
-  return Math.max(MIN_SCAN_LIMIT, Math.min(normalizedLimit * DEFAULT_SCAN_MULTIPLIER, MAX_SCAN_LIMIT));
 }
 
 function normalizeScanLimitOverride(value) {
@@ -826,7 +819,7 @@ async function findImapMessageUidByMessageId(client, { folder = 'INBOX', message
 export async function retrieveEmailsFromImap(accountConfig, filters = {}) {
   const folder = String(filters.folder ?? 'INBOX').trim() || 'INBOX';
   const limit = normalizeRetrievalLimit(filters.limit);
-  const scanLimit = normalizeScanLimitOverride(filters.scanLimit) ?? computeRetrievalScanLimit(limit);
+  const scanLimit = normalizeScanLimitOverride(filters.scanLimit) ?? REFRESH_RETRIEVAL_SCAN_LIMIT;
   const returnAllScanned = filters.returnAllScanned === true;
 
   return withImapClient(accountConfig, async (client) => {

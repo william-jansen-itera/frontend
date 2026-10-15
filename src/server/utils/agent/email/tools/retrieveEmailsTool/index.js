@@ -12,7 +12,6 @@ import {
 import {
   buildExposedUnsubscribeMetadata,
   REFRESH_RETRIEVAL_SCAN_LIMIT,
-  computeRetrievalScanLimit,
   normalizeRetrievalLimit,
   retrieveEmailsFromImap,
 } from '@/server/utils/agent/email/emailTransport';
