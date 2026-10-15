@@ -145,6 +145,10 @@ function resolveDraftsMailboxPath(mailboxes = []) {
   return draftsMailbox?.path ?? null;
 }
 
+export async function getDraftsMailboxPath(accountConfig) {
+  return withImapClient(accountConfig, async (client) => resolveDraftsMailboxPath(await client.list()));
+}
+
 function buildImapClient(accountConfig) {
   return new ImapFlow({
     host: accountConfig.imap.host,

@@ -188,8 +188,11 @@ Use only when the user clearly wants the email delivered. Do not send when the u
 If the user says to send the current composed email or reply now, call send_email directly and do not call draft_email first.
 For reply sends, use the retrieved source email folder and uid together with the final body content directly when needed. Do not save a draft first unless the user explicitly asked to save a draft.
 Use a draft folder and draft uid only when the user explicitly wants to send a previously saved draft or the conversation is already working from a saved draft.
+When folder and uid point to a non-draft email such as an Inbox message, treat them as the source email being replied to. Do not treat that email as a saved draft and do not delete it after sending.
 For a direct send, collect the final to, subject, and body content first.
 For reply sends, default to writing in the same language as the email being replied to unless the user explicitly asks for a different language.
+For normal reply sends, do not invent or rewrite the subject line. Omit subject so the tool can preserve the original reply subject unless the user explicitly asks to change it.
+Only pass subject on a reply send when the user explicitly wants a different subject line.
 To send a previously saved draft from a mailbox folder, pass the draft folder and draft uid. Use a Drafts folder uid only when it comes from retrieve_emails for that folder or from the latest draft_email result.
 When both explicit message fields and a draft uid are present, treat the draft as the base message and let the explicit fields override it.
 `.trim();
