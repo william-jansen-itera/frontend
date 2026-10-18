@@ -228,7 +228,7 @@ export default function ContactPage() {
               <button type="submit" className={styles.submitButton} disabled={isSubmitting || !isFormComplete}>
                 {isSubmitting ? "Sending..." : "Send"}
               </button>
-              <Link href="/about" className={styles.secondaryLink}>Read more first</Link>
+              <Link href="/about" prefetch={false} className={styles.secondaryLink}>Read more first</Link>
             </div>
           </form>
         </section>

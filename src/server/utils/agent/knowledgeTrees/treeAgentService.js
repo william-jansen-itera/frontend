@@ -116,6 +116,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
       normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
+      principal,
       visibilityScope,
       debug,
       agent,

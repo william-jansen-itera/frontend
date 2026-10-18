@@ -237,7 +237,7 @@ function SearchPageContent() {
 
     let isCancelled = false;
 
-    fetch(`/api/notes?visibility=${encodeURIComponent(visibilityParam)}`)
+    fetch(`/api/trees?visibility=${encodeURIComponent(visibilityParam)}`)
       .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
       .then(({ ok, data }) => {
         if (isCancelled) {

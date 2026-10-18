@@ -588,6 +588,23 @@ function ExecutionTimingSummary({ timings, toolCalls }) {
 function getTurnToolBadgeState(turn) {
   const toolInvocations = Array.isArray(turn?.toolInvocations) ? turn.toolInvocations : [];
   const priorToolInvocations = Array.isArray(turn?.priorToolInvocations) ? turn.priorToolInvocations : [];
+  const addTargetByToolName = new Map();
+  [...priorToolInvocations, ...toolInvocations].forEach((invocation) => {
+    const toolName = String(invocation?.toolName ?? "").trim();
+
+    if (!toolName || addTargetByToolName.has(toolName)) {
+      return;
+    }
+
+    const treeId = String(invocation?.treeId ?? parseToolTreeId(toolName)).trim();
+    addTargetByToolName.set(toolName, {
+      toolName,
+      treeId,
+      canAddToTree: invocation?.canAddToTree === true,
+      label: `Add to: ${toolName}`,
+      disabledReason: "Read-only: only the owner or assigned editors can add notes to this tree.",
+    });
+  });
   const invokedTools = Array.from(new Set(
     toolInvocations
       .map((invocation) => String(invocation?.toolName ?? "").trim())
@@ -612,10 +629,7 @@ function getTurnToolBadgeState(turn) {
 
     return {
       toolLabels: invokedTools.map((toolName) => `TOOL: ${toolName}`),
-      addTargets: shouldHighlightAddTarget ? invokedTools.map((toolName) => ({
-        toolName,
-        label: `Add to: ${toolName}`,
-      })) : [],
+      addTargets: shouldHighlightAddTarget ? invokedTools.map((toolName) => addTargetByToolName.get(toolName)).filter(Boolean) : [],
       statusLabel: hasToolResults ? null : "NO TOOL RESULT",
     };
   }
@@ -623,10 +637,7 @@ function getTurnToolBadgeState(turn) {
   if (isBroaderAnswerTurn && priorTools.length > 0) {
     return {
       toolLabels: [],
-      addTargets: priorTools.map((toolName) => ({
-        toolName,
-        label: `Add to: ${toolName}`,
-      })),
+      addTargets: priorTools.map((toolName) => addTargetByToolName.get(toolName)).filter(Boolean),
       statusLabel: "NO TOOL USED",
     };
   }
@@ -878,7 +889,6 @@ export default function ChatPageClient({ includeDebug }) {
   const [availableChatFamilies, setAvailableChatFamilies] = useState([]);
   const [chatFamily, setChatFamily] = useState(null);
   const [addActionState, setAddActionState] = useState(null);
-  const [writableTreeIds, setWritableTreeIds] = useState([]);
   const chatFeedRef = useRef(null);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
@@ -1012,48 +1022,6 @@ export default function ChatPageClient({ includeDebug }) {
 
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [availableChatFamilies, chatFamily, defaultChatFamily, pathname, requestedFamilyParam, router, searchParams]);
-
-  useEffect(() => {
-    if (!isVisibilityReady) {
-      return;
-    }
-
-    let isCancelled = false;
-
-    fetch("/api/trees?visibility=both", { cache: "no-store" })
-      .then((response) => response.json().then((payload) => ({ ok: response.ok, payload })))
-      .then(({ ok, payload }) => {
-        if (isCancelled) {
-          return;
-        }
-
-        if (!ok) {
-          throw new Error(payload?.error || "Tree permissions could not be loaded");
-        }
-
-        const nextWritableTreeIds = Array.isArray(payload)
-          ? payload
-            .filter((tree) => Boolean(tree?.currentUserCanWrite))
-            .map((tree) => String(tree.id))
-          : [];
-
-        setWritableTreeIds(nextWritableTreeIds);
-      })
-      .catch((error) => {
-        if (isCancelled) {
-          return;
-        }
-
-        console.error("Tree permission load failed:", error);
-        setWritableTreeIds([]);
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [isVisibilityReady]);
-
-  const writableTreeIdSet = new Set(writableTreeIds);
 
   async function submitTurn({ question, message, followUpSelection = null }) {
     const turnId = createTurnId();
@@ -1224,7 +1192,7 @@ export default function ChatPageClient({ includeDebug }) {
     });
   }
 
-  async function handleAddToToolClick(event, turn, toolName) {
+  async function handleAddToToolClick(event, turn, target) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -1232,17 +1200,16 @@ export default function ChatPageClient({ includeDebug }) {
       return;
     }
 
-    const normalizedToolName = String(toolName ?? "").trim();
-    const targetTreeId = parseToolTreeId(normalizedToolName);
+    const normalizedToolName = String(target?.toolName ?? "").trim();
     const originalQuestion = String(turn?.originalQuestion ?? turn?.question ?? "").trim();
     const broaderAnswer = String(turn?.answer ?? "").trim();
 
-    if (!targetTreeId || !writableTreeIdSet.has(targetTreeId)) {
+    if (!target?.canAddToTree) {
       setAddActionState({
         status: "error",
         turnId: turn?.id ?? null,
         toolName: normalizedToolName,
-        message: "Read-only: only the owner or assigned editors can add notes to this tree.",
+        message: target?.disabledReason || "Read-only: only the owner or assigned editors can add notes to this tree.",
       });
       return;
     }
@@ -1312,16 +1279,6 @@ export default function ChatPageClient({ includeDebug }) {
     }
 
     const preview = addActionState.preview;
-
-    if (!writableTreeIdSet.has(String(preview?.treeId ?? ""))) {
-      setAddActionState({
-        status: "error",
-        turnId: turn.id,
-        toolName: addActionState.toolName,
-        message: "Read-only: only the owner or assigned editors can add notes to this tree.",
-      });
-      return;
-    }
 
     setAddActionState({
       ...addActionState,
@@ -1530,17 +1487,16 @@ export default function ChatPageClient({ includeDebug }) {
                         <div className={styles.messageHeaderRow}>
                           <p className={styles.messageLabel}>Agent</p>
                           {toolBadgeState.addTargets.map((target) => {
-                            const targetTreeId = parseToolTreeId(target.toolName);
-                            const canAddToTool = Boolean(targetTreeId) && writableTreeIdSet.has(targetTreeId);
+                            const canAddToTool = target.canAddToTree === true;
 
                             return (
                               <button
                                 key={`${turn.id}-${target.toolName}`}
                                 type="button"
                                 className={`appCompactActionButton appCompactActionButtonNeutral ${styles.addToToolChipButton}`}
-                                onClick={(event) => handleAddToToolClick(event, turn, target.toolName)}
+                                onClick={(event) => handleAddToToolClick(event, turn, target)}
                                 disabled={addActionState?.status === "pending" || !canAddToTool}
-                                title={canAddToTool ? target.label : "Read-only: only the owner or assigned editors can add notes to this tree."}
+                                title={canAddToTool ? target.label : target.disabledReason}
                               >
                                 {target.label}
                               </button>

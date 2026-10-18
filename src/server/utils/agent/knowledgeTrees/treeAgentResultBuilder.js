@@ -14,6 +14,7 @@ import {
 } from '@/server/utils/agent/agentFamilyResult';
 import { getAgentToolResultData } from '@/server/utils/agent/agentToolResult';
 import { KNOWLEDGE_TREES_FAMILY } from '@/server/utils/agent/knowledgeTrees/treeAgentCatalog';
+import { getTreeList } from '@/server/utils/tree/treeCatalog';
 
 function normalizeWhitespace(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -50,12 +51,58 @@ function dedupeCitations(citations) {
   return Array.from(citationsByKey.values());
 }
 
+function parseToolTreeId(toolName) {
+  const match = String(toolName ?? '').trim().match(/_(\d+)$/);
+  return match ? match[1] : '';
+}
+
+async function enrichToolInvocationsWithTreeAccess(toolInvocations, principal) {
+  if (!Array.isArray(toolInvocations) || toolInvocations.length === 0) {
+    return [];
+  }
+
+  const treeIds = Array.from(new Set(
+    toolInvocations
+      .map((invocation) => parseToolTreeId(invocation?.toolName))
+      .filter(Boolean),
+  ));
+
+  if (treeIds.length === 0) {
+    return toolInvocations.map((invocation) => ({
+      ...invocation,
+      treeId: null,
+      canAddToTree: false,
+    }));
+  }
+
+  const writableTreeIds = new Set(
+    (await getTreeList({
+      principal,
+      visibility: 'both',
+      enforceAccess: true,
+    }))
+      .filter((tree) => Boolean(tree?.currentUserCanWrite))
+      .map((tree) => String(tree.id)),
+  );
+
+  return toolInvocations.map((invocation) => {
+    const treeId = parseToolTreeId(invocation?.toolName);
+
+    return {
+      ...invocation,
+      treeId: treeId || null,
+      canAddToTree: Boolean(treeId) && writableTreeIds.has(treeId),
+    };
+  });
+}
+
 export async function buildKnowledgeTreesFamilyResult({
   finalResponse,
   finalToolInvocations,
   normalizedFollowUpSelection,
   openAIClient,
   normalizedMessage,
+  principal = null,
   visibilityScope = null,
   debug,
   agent,
@@ -81,6 +128,8 @@ export async function buildKnowledgeTreesFamilyResult({
     groundedResponseReviewSteps,
     turnType,
   } = turnClassification;
+  const enrichedResponseToolInvocations = await enrichToolInvocationsWithTreeAccess(responseToolInvocations, principal);
+  const enrichedPriorToolInvocations = await enrichToolInvocationsWithTreeAccess(priorToolInvocations, principal);
 
   const citations = await captureTimingEntry(
     debug?.timings?.phases?.citationAssembly ?? null,
@@ -109,13 +158,13 @@ export async function buildKnowledgeTreesFamilyResult({
     sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
     turnType,
     answer,
-    toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
+    toolsUsed: Array.from(new Set(enrichedResponseToolInvocations.map((invocation) => invocation.toolName))),
     citations,
     followUpOptions,
     familyPayload: {
       visibilityScope,
-      responseToolInvocations,
-      priorToolInvocations,
+      responseToolInvocations: enrichedResponseToolInvocations,
+      priorToolInvocations: enrichedPriorToolInvocations,
     },
     ...(debug ? { debug: buildFamilyDebugPayload(debug) } : {}),
   });

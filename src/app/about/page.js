@@ -105,10 +105,10 @@ export default function About() {
           <p className={styles.cardEyebrow}>Working surfaces</p>
         </div>
         <div className={styles.ctaLinks}>
-          <Link href="/notes" className={styles.ctaLink}>Open Notes</Link>
-          <Link href="/search" className={styles.ctaLinkSecondary}>Open Search</Link>
+          <Link href="/notes" prefetch={false} className={styles.ctaLink}>Open Notes</Link>
+          <Link href="/search" prefetch={false} className={styles.ctaLinkSecondary}>Open Search</Link>
           <Link href="/chat" prefetch={false} className={styles.ctaLinkSecondary}>Open Agent</Link>
-          <Link href="/contact" className={styles.ctaLinkSecondary}>Contact</Link>
+          <Link href="/contact" prefetch={false} className={styles.ctaLinkSecondary}>Contact</Link>
         </div>
       </section>
     </main>

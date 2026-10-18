@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useAuth } from "./useAuth";
+import { AuthProvider, useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import { ADMIN_SECTIONS } from "./admin/adminShared";
 import {
@@ -325,7 +325,7 @@ function LayoutContentWithVisibility({ children, user, signIn, signOut }) {
   );
 }
 
-export default function RootLayout({ children }) {
+function RootLayoutShell({ children }) {
   const { user, signIn, signOut } = useAuth();
   const pathname = usePathname();
 
@@ -357,5 +357,13 @@ export default function RootLayout({ children }) {
         </Suspense>
       </body>
     </html>
+  );
+}
+
+export default function RootLayout({ children }) {
+  return (
+    <AuthProvider>
+      <RootLayoutShell>{children}</RootLayoutShell>
+    </AuthProvider>
   );
 }

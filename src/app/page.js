@@ -87,7 +87,7 @@ export default function Home() {
             <p className={styles.statusLabel}>How it works</p>
             <p className={styles.statusValue}>
               Grow trees with Notes. Inspect them with Search. Talk to them with Agent — it speaks from a tree or existing applications relevant to the context, and shows how the answer is grounded.{' '}
-              <Link href="/about" className={styles.inlineLink}>Read more</Link>
+              <Link href="/about" prefetch={false} className={styles.inlineLink}>Read more</Link>
             </p>
           </div>
           {isSignedIn ? (
@@ -106,14 +106,14 @@ export default function Home() {
           <p className={styles.cardEyebrow}>Notes</p>
           <h2 className={styles.cardTitle}>Grow the tree</h2>
           <p className={styles.cardDescription}>Create or generate trees, branches, and leaves — notes and attachments live on the leaves. The structure and the material together power search and Agent. A tree can also grow roots into existing applications. Agent orchestrates them and uses their output as context, and to create new branches and leaves.</p>
-          <Link href="/notes" className={styles.cardLink}>Open Notes</Link>
+          <Link href="/notes" prefetch={false} className={styles.cardLink}>Open Notes</Link>
         </article>
 
         <article className={styles.routeCard}>
           <p className={styles.cardEyebrow}>Search</p>
           <h2 className={styles.cardTitle}>Inspect the material</h2>
           <p className={styles.cardDescription}>Look through notes and attachments, see the highlights, and jump to the branch and leaf they came from. Search information and results are detailed enough for a forensic read.</p>
-          <Link href="/search" className={styles.cardLink}>Open Search</Link>
+          <Link href="/search" prefetch={false} className={styles.cardLink}>Open Search</Link>
         </article>
 
         <article className={styles.routeCard}>

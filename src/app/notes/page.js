@@ -390,7 +390,7 @@ function NotesPage() {
 
     let isCancelled = false;
 
-    fetch(`/api/notes?visibility=${encodeURIComponent(visibilityParam)}`)
+    fetch(`/api/trees?visibility=${encodeURIComponent(visibilityParam)}`)
       .then((res) => res.json())
       .then((trees) => {
         if (isCancelled) {

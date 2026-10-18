@@ -1,12 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   createLocalDevelopmentPrincipal,
   isLocalDevelopmentHost,
   normalizeClientPrincipal,
 } from "@/shared/clientPrincipal";
 
-export function useAuth() {
+const AuthContext = createContext(null);
+
+function useResolvedAuthState() {
   const [user, setUser] = useState(null);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
 
@@ -57,5 +59,30 @@ export function useAuth() {
     window.location.href = "/.auth/logout";
   }
 
-  return { user, signIn, signOut, isAuthResolved };
+  return useMemo(() => ({
+    user,
+    signIn,
+    signOut,
+    isAuthResolved,
+  }), [user, isAuthResolved]);
+}
+
+export function AuthProvider({ children }) {
+  const auth = useResolvedAuthState();
+
+  return (
+    <AuthContext.Provider value={auth}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const auth = useContext(AuthContext);
+
+  if (!auth) {
+    throw new Error("useAuth must be used within an AuthProvider.");
+  }
+
+  return auth;
 }
