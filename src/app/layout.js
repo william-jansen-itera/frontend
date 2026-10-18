@@ -211,6 +211,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
                       <Link
                         key={childLink.href}
                         href={buildNavHref(childLink.href)}
+                        prefetch={false}
                         className={`appNavSubmenuLink ${isChildActive ? "appNavSubmenuLinkActive" : ""}`.trim()}
                         onClick={() => {
                           setOpenNavGroupHref(null);
@@ -232,7 +233,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
             <Link
               key={link.href}
               href={buildNavHref(link.href)}
-              prefetch={link.href === "/chat" ? false : undefined}
+              prefetch={false}
               className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
               onClick={mobile ? () => setMobileMenuPathname(null) : undefined}
             >
