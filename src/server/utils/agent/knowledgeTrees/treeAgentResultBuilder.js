@@ -56,6 +56,7 @@ export async function buildKnowledgeTreesFamilyResult({
   normalizedFollowUpSelection,
   openAIClient,
   normalizedMessage,
+  visibilityScope = null,
   debug,
   agent,
 }) {
@@ -94,6 +95,7 @@ export async function buildKnowledgeTreesFamilyResult({
       citations: serializeDebugValue(citations),
       permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
       groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
+      visibilityScope: serializeDebugValue(visibilityScope),
       turnType,
     };
     debug.agentOutput = buildAgentOutputDebug({
@@ -111,6 +113,7 @@ export async function buildKnowledgeTreesFamilyResult({
     citations,
     followUpOptions,
     familyPayload: {
+      visibilityScope,
       responseToolInvocations,
       priorToolInvocations,
     },

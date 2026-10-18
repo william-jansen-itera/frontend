@@ -619,6 +619,42 @@ function getTurnToolBadgeState(turn) {
   };
 }
 
+function formatVisibilityScopeLabel(visibilityScope) {
+  const visibility = String(visibilityScope?.visibility ?? "").trim().toLowerCase();
+
+  if (visibility === "private") {
+    return "Private trees only";
+  }
+
+  if (visibility === "public") {
+    return "Public trees only";
+  }
+
+  return "Public and private trees";
+}
+
+function buildVisibilityScopeSummary(visibilityScope) {
+  if (!visibilityScope || typeof visibilityScope !== "object") {
+    return null;
+  }
+
+  const publicTreeCount = Number.isFinite(Number(visibilityScope.publicTreeCount))
+    ? Number(visibilityScope.publicTreeCount)
+    : 0;
+  const privateTreeCount = Number.isFinite(Number(visibilityScope.privateTreeCount))
+    ? Number(visibilityScope.privateTreeCount)
+    : 0;
+  const warnsAboutRestrictedScope = visibilityScope.warnsAboutRestrictedScope === true;
+
+  return {
+    label: formatVisibilityScopeLabel(visibilityScope),
+    counts: `${publicTreeCount} public · ${privateTreeCount} private`,
+    warning: warnsAboutRestrictedScope
+      ? "The agent was instructed to warn that grounded answers are limited to this visibility scope."
+      : "The agent had access to both public and private grounded tree scope for this turn.",
+  };
+}
+
 function TurnDebugPanel({ turn }) {
   if (!turn) {
     return (
@@ -663,6 +699,8 @@ function TurnDebugPanel({ turn }) {
   const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
   const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
   const turnType = String(turn?.turnType ?? "default").trim() || "default";
+  const visibilityScope = turn?.debug?.family?.visibilityScope;
+  const visibilityScopeSummary = buildVisibilityScopeSummary(visibilityScope);
   const debugUserQuery = {
     turnType,
     ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
@@ -686,6 +724,14 @@ function TurnDebugPanel({ turn }) {
           <p className="appSectionEyebrow">2. Turn Classification</p>
           <h2 className={styles.sectionTitle}>Shared grounded-vs-broader decision</h2>
         </div>
+        {visibilityScopeSummary ? (
+          <div className={styles.debugSummaryCard}>
+            <p className={styles.debugSummaryLabel}>Search scope</p>
+            <p className={styles.debugSummaryValue}>{visibilityScopeSummary.label}</p>
+            <p className={styles.debugMetaText}>{visibilityScopeSummary.counts}</p>
+            <p className={styles.debugMetaText}>{visibilityScopeSummary.warning}</p>
+          </div>
+        ) : null}
         <pre className={styles.jsonBlock}>{formatJson(turnClassification)}</pre>
       </section>
 

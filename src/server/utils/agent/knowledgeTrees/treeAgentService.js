@@ -10,6 +10,8 @@ import { normalizeFollowUpSelection } from '@/server/utils/agent/agentTurnClassi
 import {
   buildAllowedToolInstruction,
   buildRuntimeTreeToolContext,
+  buildVisibilityScopeContext,
+  buildVisibilityScopeInstruction,
   getPublishedKnowledgeTreesPromptAgent,
 } from '@/server/utils/agent/knowledgeTrees/treeAgentCatalog';
 import {
@@ -63,8 +65,15 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     enforceAccess: true,
     includeDebug,
   });
+  const visibilityScope = buildVisibilityScopeContext({
+    visibility,
+    includedTrees,
+  });
   const normalizedHistory = normalizeHistory(history);
-  const allowedToolInstruction = buildAllowedToolInstruction(includedTrees);
+  const allowedToolInstruction = [
+    buildVisibilityScopeInstruction(visibilityScope),
+    buildAllowedToolInstruction(includedTrees),
+  ].filter(Boolean).join('\n\n');
   const initialInput = buildInitialAgentInput({
     allowedToolInstruction,
     normalizedHistory,
@@ -107,6 +116,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
       normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
+      visibilityScope,
       debug,
       agent,
     });

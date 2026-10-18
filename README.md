@@ -405,12 +405,76 @@ Chat history is for the agent. It contains the user and assistant messages that 
 
 `priorToolInvocations` are for the server-side broader-answer workflow and related UI affordances. They do not represent general conversation history, and they are not replayed to the model as structured history. Instead, they preserve the immediately preceding grounded-search context when the user chooses the broader-answer option.
 
+This means the application is effectively running a turn-orchestration layer in parallel with the agent conversation. The model still receives normal conversational history plus the current turn input, but the application separately classifies completed turns, stores follow-up state, preserves selected tool context, assembles citations, and exposes UI-only affordances that the model does not directly own.
+
 The conversation history now keeps all user and assistant turns, including `no_result_offer` and `broader_answer` turns, so the agent can see the full nuance of the exchange. Follow-up submissions are sent to the model with the user's message verbatim rather than being rewritten by the server. In practice:
 
 - chat history preserves the full conversational record for the agent, including no-result and broader-answer turns
 - the current user message is sent to the model as written
 - `priorToolInvocations` preserve prior search context for server-side follow-up handling and UI actions
 - UI actions such as `Add to: [tool]` on broader-answer turns can still know which earlier tool context the answer came from even though those tool references are not part of structured model history
+
+The `Add to: [tool]` action is specifically a continuity affordance for broader-answer turns. It does not mean the current turn executed that tool again. Instead, it means the current turn is still logically attached to an earlier grounded tool context.
+
+More concretely:
+
+- the original grounded turn may have called one or more tools and returned tool results
+- the user can then choose a broader-answer follow-up path that intentionally stops using grounded tool output as the sole answer source
+- when that broader-answer turn is created, the server preserves a minimal record of the earlier grounded tools in `priorToolInvocations`
+- that preserved record contains the earlier tool name and result count, but it is not replayed to the model as structured tool history
+- the UI reads that preserved record and renders `Add to: [tool]` so the user can still route follow-up actions back toward the original grounded tool context
+
+This matters because broader-answer turns can legitimately have `toolInvocations: []` for the current turn while still needing a visible link back to the last grounded search. Without `priorToolInvocations`, the broader-answer response would lose the practical connection to the tool that originally produced the search context.
+
+In other words, `Add to: [tool]` should be read as "continue from the grounded context that originally came from this tool," not as "this tool was just invoked in the current turn."
+
+### Where turn state lives
+
+The turn-orchestration state is currently split between browser memory and per-request server derivation.
+
+- The client is the main holder of chat turn state. `src/app/chat/ChatPageClient.js` keeps the in-memory `turns` array with fields such as `turnType`, `followUpOptions`, `toolInvocations`, `priorToolInvocations`, `citations`, `debug`, and pending/error status.
+- On each new submission, the client rebuilds plain chat history from those turns and sends that history back to `src/app/api/chat/route.js` together with the current message.
+- For broader-answer continuity, the client may also send a compact `followUpSelection` object containing the source turn id, source question, and a minimal list of earlier tool names and result counts.
+- The server does not load prior turn state from a database or session store. Instead, it derives the current turn classification and related follow-up metadata again from the current request, the submitted history, the optional `followUpSelection`, and the model/tool results returned during that request.
+- Family result builders then shape that derived state into the response fields returned to the client, such as `turnType`, `followUpOptions`, `priorToolInvocations`, citations, family payloads, and debug data.
+
+In practical terms, this means the turn engine is not backed by durable server-side conversation storage today. It is client-owned, replayed on each request, and reinterpreted by the server for the current turn.
+
+The main exception is UI preference persistence such as the selected visibility filter, which is stored separately in browser `localStorage`. That preference storage is not the same thing as persisted chat-turn state.
+
+### How information reaches the agent
+
+The model does not have direct access to arbitrary server-side or UI state. In the current architecture, information reaches the agent only through a small number of explicit channels:
+
+- published static instructions and published tool definitions when a family runs in `agent_reference` mode
+- inline instructions and inline tool definitions when a family runs in `direct_model` mode
+- runtime system messages added by the application for the current request
+- replayed chat history from prior user and assistant turns
+- the current user message
+- tool outputs sent back during the tool loop
+
+This means server-side orchestration state is not automatically visible to the model just because the application knows it. Data such as `turnType`, `followUpOptions`, `priorToolInvocations`, citations, family payload fields, and UI affordances are application-owned state unless the server explicitly translates them into one of the channels above.
+
+In practice, this is why dynamic request facts such as knowledge-tree visibility scope must be turned into a runtime system message if the model itself needs to act on them during the turn.
+
+### How visibility is used in chat
+
+Visibility in the chat UI is primarily a request-scoping input for the `knowledgeTrees` family.
+
+- The selected visibility value is a UI preference stored in browser `localStorage` and reflected in the chat page URL.
+- On each knowledge-tree chat request, the client sends the current visibility value to `src/app/api/chat/route.js`.
+- The knowledge-tree service uses that value when loading the runtime tree set, so the available search tools are already filtered to the selected scope before the model starts the turn.
+- In practice this means `public`, `private`, and `both` do not just change post-processing labels. They change which trees are available to the grounded tool set for that request.
+
+The same visibility input is also turned into runtime agent context.
+
+- The service computes a `visibilityScope` object for the current request.
+- That scope is used to build a runtime system message that tells the model whether the current grounded tool scope is `public`, `private`, or `both`.
+- That same scope is also returned in knowledge-tree `familyPayload` and debug output so the inspector can show what scope applied during the turn.
+
+This visibility scope is dynamic runtime context, not part of the published static Foundry agent instructions. It depends on the current user, the current request visibility, and the set of trees available after access filtering.
+
+When visibility is restricted to only `public` or only `private`, the model is instructed to keep that limitation in mind and to remind the user about it when the model decides not to call a tool and that limitation matters to the answer. The application no longer force-appends that reminder after the fact; it is now model-driven behavior based on the runtime scope instruction.
 
 ## Getting Started
 

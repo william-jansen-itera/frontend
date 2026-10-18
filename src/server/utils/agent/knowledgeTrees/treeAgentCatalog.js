@@ -143,6 +143,50 @@ export function buildAllowedToolInstruction(includedTrees) {
   ].join('\n');
 }
 
+export function buildVisibilityScopeContext({ visibility = 'both', includedTrees = [] } = {}) {
+  const normalizedVisibility = String(visibility ?? 'both').trim().toLowerCase();
+  const privateCount = includedTrees.filter((tree) => tree?.isPrivate === true).length;
+  const publicCount = includedTrees.filter((tree) => tree?.isPrivate === false).length;
+
+  return {
+    visibility: normalizedVisibility === 'private' || normalizedVisibility === 'public' ? normalizedVisibility : 'both',
+    publicTreeCount: publicCount,
+    privateTreeCount: privateCount,
+    warnsAboutRestrictedScope: normalizedVisibility === 'private' || normalizedVisibility === 'public',
+  };
+}
+
+export function buildVisibilityScopeInstruction(options = {}) {
+  const scopeContext = buildVisibilityScopeContext(options);
+  const {
+    visibility,
+    publicTreeCount,
+    privateTreeCount,
+  } = scopeContext;
+
+  if (visibility === 'private') {
+    return [
+      'Current grounded tree scope for this request: private trees only.',
+      `The available tool set in this run includes ${privateTreeCount} private tree${privateTreeCount === 1 ? '' : 's'} and no public trees.`,
+      'If you decide not to call a tool, remind the user that this scope is limited to private trees only when that limitation matters to your answer.',
+    ].join('\n');
+  }
+
+  if (visibility === 'public') {
+    return [
+      'Current grounded tree scope for this request: public trees only.',
+      `The available tool set in this run includes ${publicTreeCount} public tree${publicTreeCount === 1 ? '' : 's'} and no private trees.`,
+      'If you decide not to call a tool, remind the user that this scope is limited to public trees only when that limitation matters to your answer.',
+    ].join('\n');
+  }
+
+  return [
+    'Current grounded tree scope for this request includes both public and private trees that are available to this user.',
+    `The available tool set in this run includes ${publicTreeCount} public tree${publicTreeCount === 1 ? '' : 's'} and ${privateTreeCount} private tree${privateTreeCount === 1 ? '' : 's'}.`,
+    'Do not warn about a visibility restriction unless the user asks about scope or the available results clearly come from only one visibility within that broader set.',
+  ].join('\n');
+}
+
 function buildToolDefinition(tree) {
   return {
     type: 'function',
