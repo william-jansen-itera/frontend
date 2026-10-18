@@ -52,7 +52,7 @@ export default function AdminIndexingPage() {
   };
 
   return (
-    <section className={styles.sectionStack}>
+    <>
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className="appHeroCopy">
           <p className="appEyebrow">Indexing</p>
@@ -65,46 +65,48 @@ export default function AdminIndexingPage() {
         {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
       </section>
 
-      <article className={`appTopLevelPanel ${styles.panel}`}>
-        <div className={styles.panelBody}>
-          <div className={styles.indexingTableWrapper}>
-            <table className={styles.indexingTable}>
-              <thead>
-                <tr>
-                  <th scope="col" className={styles.indexingCornerCell}>scope</th>
-                  {INDEXING_COLUMNS.map((column) => (
-                    <th key={column.key} scope="col" className={styles.indexingColumnHeader}>{column.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {INDEXING_ROWS.map((row) => (
-                  <tr key={row.key}>
-                    <th scope="row" className={styles.indexingRowHeader}>{row.label}</th>
-                    {INDEXING_COLUMNS.map((column) => {
-                      const pendingKey = `indexing:${column.key}:${row.key}`;
-
-                      return (
-                        <td key={`${row.key}:${column.key}`} className={styles.indexingActionCell}>
-                          <button
-                            type="button"
-                            onClick={() => handleIndexingAction(row.key, column.key)}
-                            disabled={Boolean(pendingItems[pendingKey])}
-                            className="appCompactActionButton appCompactActionButtonNeutral"
-                            aria-label={`Start ${column.label} indexing for ${row.label}`}
-                          >
-                            {pendingItems[pendingKey] ? "Starting..." : "Start"}
-                          </button>
-                        </td>
-                      );
-                    })}
+      <section className={styles.sectionStack}>
+        <article className={`appTopLevelPanel ${styles.panel}`}>
+          <div className={styles.panelBody}>
+            <div className={styles.indexingTableWrapper}>
+              <table className={styles.indexingTable}>
+                <thead>
+                  <tr>
+                    <th scope="col" className={styles.indexingCornerCell}>scope</th>
+                    {INDEXING_COLUMNS.map((column) => (
+                      <th key={column.key} scope="col" className={styles.indexingColumnHeader}>{column.label}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {INDEXING_ROWS.map((row) => (
+                    <tr key={row.key}>
+                      <th scope="row" className={styles.indexingRowHeader}>{row.label}</th>
+                      {INDEXING_COLUMNS.map((column) => {
+                        const pendingKey = `indexing:${column.key}:${row.key}`;
+
+                        return (
+                          <td key={`${row.key}:${column.key}`} className={styles.indexingActionCell}>
+                            <button
+                              type="button"
+                              onClick={() => handleIndexingAction(row.key, column.key)}
+                              disabled={Boolean(pendingItems[pendingKey])}
+                              className="appCompactActionButton appCompactActionButtonNeutral"
+                              aria-label={`Start ${column.label} indexing for ${row.label}`}
+                            >
+                              {pendingItems[pendingKey] ? "Starting..." : "Start"}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      </article>
-    </section>
+        </article>
+      </section>
+    </>
   );
 }
