@@ -10,15 +10,35 @@ const DEFAULT_STATUS = {
   message: '',
 };
 
+function tryParseJson(text) {
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 async function callHelloNextApi(name) {
   try {
     const response = await fetch(`/api/hello?name=${encodeURIComponent(name)}`);
-    const data = await response.json();
+    const responseText = await response.text();
+    const data = tryParseJson(responseText);
 
     if (!response.ok) {
       return {
         level: 'error',
         message: String(data?.message || 'Application status check failed.'),
+      };
+    }
+
+    if (!data) {
+      return {
+        level: 'error',
+        message: 'Application status check returned an unexpected response.',
       };
     }
 
@@ -42,7 +62,6 @@ export default function Home() {
 
   useEffect(() => {
     if (!isAuthResolved || !isSignedIn) {
-      setApplicationStatus(DEFAULT_STATUS);
       return;
     }
 
@@ -101,7 +120,7 @@ export default function Home() {
           <p className={styles.cardEyebrow}>Agent</p>
           <h2 className={styles.cardTitle}>Talk to the tree</h2>
           <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its material or its applications — with the evidence attached.</p>
-          <Link href="/chat" className={styles.cardLink}>Open Agent</Link>
+          <Link href="/chat" prefetch={false} className={styles.cardLink}>Open Agent</Link>
         </article>
       </section>
     </main>

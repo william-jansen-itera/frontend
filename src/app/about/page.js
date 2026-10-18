@@ -107,7 +107,7 @@ export default function About() {
         <div className={styles.ctaLinks}>
           <Link href="/notes" className={styles.ctaLink}>Open Notes</Link>
           <Link href="/search" className={styles.ctaLinkSecondary}>Open Search</Link>
-          <Link href="/chat" className={styles.ctaLinkSecondary}>Open Agent</Link>
+          <Link href="/chat" prefetch={false} className={styles.ctaLinkSecondary}>Open Agent</Link>
           <Link href="/contact" className={styles.ctaLinkSecondary}>Contact</Link>
         </div>
       </section>

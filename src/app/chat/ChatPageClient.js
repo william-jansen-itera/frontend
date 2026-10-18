@@ -972,7 +972,13 @@ export default function ChatPageClient({ includeDebug }) {
 
     const nextSearchParams = new URLSearchParams(searchParams.toString());
     setVisibilitySearchParam(nextSearchParams, visibility, ALL_VISIBILITY_VALUES);
+    const currentQueryString = searchParams.toString();
     const nextQueryString = nextSearchParams.toString();
+
+    if (nextQueryString === currentQueryString) {
+      return;
+    }
+
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, visibility]);
 

@@ -232,6 +232,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
             <Link
               key={link.href}
               href={buildNavHref(link.href)}
+              prefetch={link.href === "/chat" ? false : undefined}
               className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
               onClick={mobile ? () => setMobileMenuPathname(null) : undefined}
             >
