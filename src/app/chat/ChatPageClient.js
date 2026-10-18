@@ -23,6 +23,8 @@ import {
 
 const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
 const TURN_TYPE_BROADER_ANSWER = "broader_answer";
+const DEFAULT_CHAT_FAMILY = "knowledgeTrees";
+const DEFAULT_CHAT_VISIBILITY = "both";
 let fallbackTurnSequence = 0;
 let fallbackRequestSequence = 0;
 
@@ -141,9 +143,8 @@ function buildImplicitBroaderFollowUpSelection(turn, message) {
   }
 
   return {
-    sourceTurnId: turn.id,
-    optionId: TURN_TYPE_BROADER_ANSWER,
-    sourceQuestion: String(turn.originalQuestion ?? turn.question ?? "").trim(),
+    sourceQuestion: String(turn.question ?? "").trim(),
+    selectedToolNames: sourceToolInvocations.map((invocation) => invocation.toolName).filter(Boolean),
     sourceToolInvocations,
   };
 }
@@ -165,6 +166,24 @@ function buildHistoryFromTurns(turns) {
 
     return messages;
   });
+}
+
+function resolvePreferredDefaultChatFamily(availableFamilies, fallbackFamily = null) {
+  const availableFamilyNames = Array.isArray(availableFamilies)
+    ? availableFamilies.map((family) => String(family?.family ?? "").trim()).filter(Boolean)
+    : [];
+
+  if (availableFamilyNames.includes(DEFAULT_CHAT_FAMILY)) {
+    return DEFAULT_CHAT_FAMILY;
+  }
+
+  const normalizedFallbackFamily = String(fallbackFamily ?? "").trim();
+
+  if (normalizedFallbackFamily && availableFamilyNames.includes(normalizedFallbackFamily)) {
+    return normalizedFallbackFamily;
+  }
+
+  return availableFamilyNames[0] ?? null;
 }
 
 function formatTimestamp(value) {
@@ -619,42 +638,6 @@ function getTurnToolBadgeState(turn) {
   };
 }
 
-function formatVisibilityScopeLabel(visibilityScope) {
-  const visibility = String(visibilityScope?.visibility ?? "").trim().toLowerCase();
-
-  if (visibility === "private") {
-    return "Private trees only";
-  }
-
-  if (visibility === "public") {
-    return "Public trees only";
-  }
-
-  return "Public and private trees";
-}
-
-function buildVisibilityScopeSummary(visibilityScope) {
-  if (!visibilityScope || typeof visibilityScope !== "object") {
-    return null;
-  }
-
-  const publicTreeCount = Number.isFinite(Number(visibilityScope.publicTreeCount))
-    ? Number(visibilityScope.publicTreeCount)
-    : 0;
-  const privateTreeCount = Number.isFinite(Number(visibilityScope.privateTreeCount))
-    ? Number(visibilityScope.privateTreeCount)
-    : 0;
-  const warnsAboutRestrictedScope = visibilityScope.warnsAboutRestrictedScope === true;
-
-  return {
-    label: formatVisibilityScopeLabel(visibilityScope),
-    counts: `${publicTreeCount} public · ${privateTreeCount} private`,
-    warning: warnsAboutRestrictedScope
-      ? "The agent was instructed to warn that grounded answers are limited to this visibility scope."
-      : "The agent had access to both public and private grounded tree scope for this turn.",
-  };
-}
-
 function TurnDebugPanel({ turn }) {
   if (!turn) {
     return (
@@ -699,8 +682,13 @@ function TurnDebugPanel({ turn }) {
   const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
   const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
   const turnType = String(turn?.turnType ?? "default").trim() || "default";
-  const visibilityScope = turn?.debug?.family?.visibilityScope;
-  const visibilityScopeSummary = buildVisibilityScopeSummary(visibilityScope);
+  const visibilityScope = turn?.familyPayload?.visibilityScope ?? turn?.debug?.family?.visibilityScope ?? null;
+  const turnClassificationDebug = visibilityScope && typeof visibilityScope === "object"
+    ? {
+      ...(turnClassification && typeof turnClassification === "object" ? turnClassification : {}),
+      visibilityScope,
+    }
+    : turnClassification;
   const debugUserQuery = {
     turnType,
     ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
@@ -724,15 +712,7 @@ function TurnDebugPanel({ turn }) {
           <p className="appSectionEyebrow">2. Turn Classification</p>
           <h2 className={styles.sectionTitle}>Shared grounded-vs-broader decision</h2>
         </div>
-        {visibilityScopeSummary ? (
-          <div className={styles.debugSummaryCard}>
-            <p className={styles.debugSummaryLabel}>Search scope</p>
-            <p className={styles.debugSummaryValue}>{visibilityScopeSummary.label}</p>
-            <p className={styles.debugMetaText}>{visibilityScopeSummary.counts}</p>
-            <p className={styles.debugMetaText}>{visibilityScopeSummary.warning}</p>
-          </div>
-        ) : null}
-        <pre className={styles.jsonBlock}>{formatJson(turnClassification)}</pre>
+        <pre className={styles.jsonBlock}>{formatJson(turnClassificationDebug)}</pre>
       </section>
 
       <section className={styles.debugSection}>
@@ -887,6 +867,7 @@ export default function ChatPageClient({ includeDebug }) {
   } = usePersistedVisibility({
     requestedVisibility: requestedVisibilityParam,
     allowedValues: ALL_VISIBILITY_VALUES,
+    defaultValue: DEFAULT_CHAT_VISIBILITY,
   });
   const [prompt, setPrompt] = useState("");
   const [turns, setTurns] = useState([]);
@@ -899,7 +880,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [addActionState, setAddActionState] = useState(null);
   const [writableTreeIds, setWritableTreeIds] = useState([]);
   const chatFeedRef = useRef(null);
-  const defaultChatFamily = availableChatFamilies[0]?.family ?? null;
+  const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
@@ -919,7 +900,7 @@ export default function ChatPageClient({ includeDebug }) {
   const loadAvailableFamilies = async () => {
     const payload = await fetchAvailableChatFamilies();
     const nextFamilies = Array.isArray(payload?.families) ? payload.families : [];
-    const nextDefaultFamily = String(payload?.defaultFamily ?? nextFamilies[0]?.family ?? "").trim() || null;
+    const nextDefaultFamily = resolvePreferredDefaultChatFamily(nextFamilies, payload?.defaultFamily);
 
     setAvailableChatFamilies(nextFamilies);
     setChatFamily((currentFamily) => normalizeChatFamilySelection(
@@ -956,7 +937,7 @@ export default function ChatPageClient({ includeDebug }) {
         }
 
         const nextFamilies = Array.isArray(payload?.families) ? payload.families : [];
-        const nextDefaultFamily = String(payload?.defaultFamily ?? nextFamilies[0]?.family ?? "").trim() || null;
+        const nextDefaultFamily = resolvePreferredDefaultChatFamily(nextFamilies, payload?.defaultFamily);
 
         setAvailableChatFamilies(nextFamilies);
         setChatFamily((currentFamily) => normalizeChatFamilySelection(
@@ -982,10 +963,6 @@ export default function ChatPageClient({ includeDebug }) {
 
   useEffect(() => {
     if (!isVisibilityReady) {
-      return;
-    }
-
-    if (!requestedVisibilityParam && visibility === "public") {
       return;
     }
 
@@ -1090,6 +1067,7 @@ export default function ChatPageClient({ includeDebug }) {
         answer: "",
         debug: null,
         error: null,
+        familyPayload: null,
         citations: [],
         toolsUsed: [],
         toolInvocations: [],
@@ -1133,6 +1111,7 @@ export default function ChatPageClient({ includeDebug }) {
             ...turn,
             answer: String(payload?.answer ?? "").trim(),
             debug: payload?.debug ?? null,
+            familyPayload: payload?.familyPayload ?? null,
             citations: Array.isArray(payload?.citations) ? payload.citations : [],
             toolsUsed: Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [],
             toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
@@ -1156,6 +1135,7 @@ export default function ChatPageClient({ includeDebug }) {
             answer: "",
             debug: null,
             error: messageText,
+            familyPayload: null,
             toolInvocations: [],
             priorToolInvocations: [],
             turnType: "default",
