@@ -100,9 +100,9 @@ In short, normal delete and undelete are reversible, index cleanup for attachmen
 Use this checklist when validating attachment soft delete, restore, indexing, and purge behavior.
 
 ### Preconditions
-3. Confirm Blob Storage soft delete is enabled on the storage account.
-4. Confirm blob versioning is disabled on the storage account.
-5. Confirm `AZURE_SEARCH_ADMIN_KEY` is configured in the app environment used for purge testing.
+1. Confirm Blob Storage soft delete is enabled on the storage account.
+2. Confirm blob versioning is disabled on the storage account.
+3. Confirm `AZURE_SEARCH_ADMIN_KEY` is configured in the app environment used for purge testing.
 
 ### Attachment Delete
 
@@ -290,7 +290,7 @@ Scheduled retention purge now runs directly inside the companion Azure Function 
 - Each purge step removes Azure AI Search documents before hard-deleting SQL rows. Blob deletion still follows the storage account's own soft-delete retention behavior.
 - Purge telemetry now distinguishes between `softDeletedBlobCount` for blobs whose storage delete happened in the current purge run and `alreadySoftDeletedBlobCount` for blobs that were already non-active in storage when the SQL cleanup ran.
 
-If you need to verify those manual purge requests in Application Insights, use the KQL queries documented in [functions/README.md](c:/Users/william.jansen/Documents/projects/knowledge%20application/code2/functions/README.md).
+If you need to verify those manual purge requests in Application Insights, use the KQL queries documented in [functions/README.md](../functions/README.md).
 
 ## Agent Behavior
 
@@ -354,24 +354,21 @@ The `supportsCitations` tool-result metadata flag should be treated as per-tool 
 
 ### Answer state reporting and validation
 
-Answer state is now agent-reported but application-validated for the families that opt into it.
-
-When a family opts in, the agent reports the state of each completed turn by calling the built-in `report_answer_state` tool as its last tool call before the final user-facing answer. That tool reports structured fields such as:
+Answer state is agent-reported but application-validated for the families that opt into it. The agent classifies each completed turn in its final structured JSON response, alongside the user-facing `answer`. The state fields are:
 
 - `knowledgeMode`
 - `isPermissionToBroadenRequest`
 - `isPersistenceOffer`
+- `explanation` (an internal rationale)
 
-The application still owns validation and enforcement for families that include the tool.
+The application does not infer answer mode from tool results or prose. For `knowledgeTrees`, it provides a structured final-response format and validates the returned JSON and allowed state combinations before accepting the turn. If validation fails, the shared execution loop asks the agent to correct its final response; the result builder reads the accepted state from that response.
 
-- During tool execution, the `report_answer_state` handler validates the reported payload and throws if the state is invalid for the current family.
-- After the model appears to have finished, the shared execution loop reviews the accumulated tool invocations for the turn and verifies that a valid `report_answer_state` call exists and that it was the last tool call.
-- If the tool was never called, was called too early, or reported an invalid state, the application sends a corrective instruction back into the model loop instead of accepting the answer.
+Validation checks the response shape and state combinations, not whether every factual claim in the answer is grounded in evidence.
 
 Family policy differs by family.
 
-- `knowledgeTrees` opts into answer-state reporting. It uses explicit broadening consent, and completed broad answers must offer persistence.
-- `email` and `investment` do not use `report_answer_state`.
+- `knowledgeTrees` uses final-response answer-state reporting. It requires explicit broadening consent, and completed broad answers must offer persistence.
+- `email` and `investment` do not require this answer-state contract.
 
 Allowed answer states by family:
 
@@ -380,22 +377,22 @@ Allowed answer states by family:
 	`knowledgeMode="grounded", isPermissionToBroadenRequest=true, isPersistenceOffer=false` for a permission-to-broaden request.
 	`knowledgeMode="broad", isPermissionToBroadenRequest=false, isPersistenceOffer=true` for a completed broad answer.
 
-`email` and `investment` currently have no answer-state contract. Their responses are still shaped into the shared top-level response schema, but they do not report `knowledgeMode`, `isPermissionToBroadenRequest`, or `isPersistenceOffer` through `report_answer_state`.
+`email` and `investment` currently have no required answer-state contract. Their responses are still shaped into the shared top-level response schema.
 
-Disallowed combinations for families that use `report_answer_state`:
+Disallowed combinations for `knowledgeTrees`:
 
 - `isPermissionToBroadenRequest=true` is only valid for `knowledgeTrees`, and only while `knowledgeMode="grounded"`.
 - `isPersistenceOffer=true` is only valid while `knowledgeMode="broad"`.
 - In `knowledgeTrees`, every completed broad answer must use `isPersistenceOffer=true`.
 This answer-state contract is separate from tool-specific action confirmation and persistence in personal cache.
 
-- `report_answer_state` only describes how the agent is answering and what answer-mode policy applies to the completed turn.
+- The final answer-state fields describe how the agent is answering and what answer-mode policy applies to the completed turn.
 - Business tools can still require explicit user confirmation for side effects such as sending an email, deleting an email, unsubscribing, saving a draft, or creating a tree note.
-- Those side-effect confirmations are enforced by the individual tool contracts and tool instructions, not by the shared answer-state tool.
+- Those side-effect confirmations are enforced by the individual tool contracts and tool instructions, not by the answer-state fields.
 
 For example, the email family may retrieve and cache email data during normal grounded work without asking for a separate answer-mode consent turn, while actions such as send, delete, unsubscribe, or draft-save still rely on their own explicit confirmation requirements.
 
-This means the application no longer infers turn lanes or answer mode from prose heuristics, but it still enforces the answer-state contract.
+This means the application no longer infers turn lanes or answer mode from prose heuristics, but it still validates the answer-state contract.
 
 In short:
 
@@ -406,20 +403,20 @@ In short:
 
 The chat architecture currently supports two execution modes for agent families.
 
-`agent_reference` uses a hosted Foundry agent by name. In this mode, the application sends the turn to a persisted agent definition that already exists in Azure AI Foundry. That hosted agent owns its published instructions and published tool definitions, while the application still runs the local tool loop and sends function outputs back through the Responses API. The current `knowledgeTrees`, `email`, and `investment` families all use this mode.
+`agent_reference` uses a published Foundry prompt agent by name. In this mode, the application sends the turn to a persisted prompt-agent definition in Microsoft Foundry. That prompt agent supplies its published instructions and tool definitions, while the application still runs the local tool loop and sends function outputs back through the Responses API. The current `knowledgeTrees`, `email`, and `investment` families all use this mode.
 
 Within the `knowledgeTrees` family, dynamic tool generation still stays centralized in `src/server/utils/agent/knowledgeTrees/treeAgentCatalog.js`, while lower-level search-result shaping and debug payload construction now live in `src/server/utils/agent/knowledgeTrees/treeToolSearchResults.js`.
 
-`direct_model` calls the model deployment directly and sends instructions plus tool definitions inline on each request. In this mode, the application itself is the source of truth for the family's instructions and tool schema for that turn. The model can still emit function calls, and the server executes those through the same local handler map and tool loop used by hosted-agent mode. The shared executor still supports this mode, but no current chat family is using it.
+`direct_model` calls the model deployment directly and sends instructions plus tool definitions inline on each request. In this mode, the application itself is the source of truth for the family's instructions and tool schema for that turn. The model can still emit function calls, and the server executes those through the same local handler map and tool loop used by prompt-agent mode. The shared executor still supports this mode, but no current chat family is using it.
 
 In short:
 
-- use `agent_reference` when the family should exist as a published, named Foundry agent with stable hosted configuration
+- use `agent_reference` when the family should exist as a published, named Foundry prompt agent
 - use `direct_model` when the family is local, dynamic, or still evolving in application code
 
 After that initial configuration difference, both modes follow the same local execution loop in application code:
 
-1. send the request to the model or hosted agent
+1. send the request to the model or prompt agent
 2. receive model output
 3. detect function calls in the response
 4. run the matching local handlers on the server
@@ -442,10 +439,10 @@ Investment family example:
 8. `src/server/utils/agent/agentDebug.js` creates the shared debug state that tracks timing, tool calls, and other execution details.
 9. `src/server/utils/agent/agentFamilyExecution.js` runs the shared model/tool loop by sending input to the model, detecting function calls, executing handlers, and sending tool outputs back.
 10. `src/server/utils/agent/investment/investmentAgentCatalog.js` is consulted again during the tool loop because its registered tool handlers are looked up from the `handlerMap`, and those handlers now live under `src/server/utils/agent/investment/tools/`.
-11. `src/server/utils/agent/agentAnswerState.js` defines the shared `report_answer_state` tool contract and validates reported state both at tool-call time and during final-response review.
-12. `src/server/utils/agent/agentFamilyExecution.js` also runs the final response validator before accepting an answer, so a response is not considered complete unless the answer-state contract has been satisfied.
+11. For families such as `knowledgeTrees` that require answer state, `src/server/utils/agent/agentAnswerState.js` defines the structured final-answer format, parses the agent's final JSON, and validates its reported state. The investment family does not require this contract.
+12. `src/server/utils/agent/agentFamilyExecution.js` runs a final response validator and requests a retry only when the family supplies one; investment does not.
 13. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` converts the final model response and tool history into the normalized investment-family result, derives the latest recommendation, and then wraps everything in the top-level response schema.
-14. `src/server/utils/agent/agentTurnStateReader.js` reads the accepted reported answer state from the final tool history, filters the internal answer-state tool out of user-facing tool invocation summaries, and extracts the normalized answer-state fields returned to the client.
+14. `src/server/utils/agent/agentTurnStateReader.js` reads the final answer and summarizes actual tool invocations for the client. For families that require answer state, it also reads the accepted state from the final response.
 15. `src/server/utils/agent/agentFamilyResult.js` builds the shared result envelope that all agent families return in a consistent shape.
 16. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` also builds the investment agent descriptor used in the top-level response, so the catalog remains focused on registry and runtime setup.
 
@@ -455,14 +452,13 @@ Chat history is for the agent. It contains the user and assistant messages that 
 
 Tool history is for the application. During a turn, the shared executor accumulates tool invocations and tool outputs in memory. That tool history is used for several server-side responsibilities after or during the tool loop, including:
 
-- validating `report_answer_state`
 - deriving citations
-- extracting normalized answer-state fields for the final response
+- summarizing tool usage and result counts
 - building debug output
 
 The raw tool history is not automatically replayed to the model as structured prior-turn tool state on the next request. The model primarily sees replayed chat history plus whatever runtime instructions and tool outputs are explicitly sent during the current turn.
 
-The raw `report_answer_state` tool result is also an internal part of that per-turn tool history. It is read by the server when shaping the final response, but it is not exposed as a normal user-facing tool invocation in the final chat payload.
+Answer-state fields are read from the final structured response, not from a special tool invocation.
 
 ### Where turn state lives
 
@@ -471,7 +467,7 @@ Turn state is split between browser memory and per-request server execution.
 - The client is the main holder of chat-turn UI state. `src/app/chat/ChatPageClient.js` keeps the in-memory `turns` array with fields such as `question`, `answer`, `knowledgeMode`, `isPermissionToBroadenRequest`, `isPersistenceOffer`, `toolInvocations`, `citations`, `familyPayload`, `debug`, and pending/error status.
 - On each new submission, the client rebuilds plain chat history from those turns and sends that history back to `src/app/api/chat/route.js` together with the current message.
 - The server does not load prior turn state from a database or session store. It derives the current turn's normalized state from the current request and from the model/tool results produced during that request.
-- During execution, the server keeps the current turn's tool results in memory, including the raw `report_answer_state` tool result.
+- During execution, the server keeps the current turn's tool results in memory, separately from the agent's final structured answer state.
 - Family result builders then shape that per-turn derived state into the response fields returned to the client, such as `answer`, `knowledgeMode`, `isPermissionToBroadenRequest`, `isPersistenceOffer`, citations, family payloads, and debug data.
 
 The application does not keep a separate durable server-side conversation-mode store. There is no independent persisted lane or mode record that carries forward across turns on the server.
@@ -530,7 +526,7 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+You can start editing the page by modifying `src/app/page.js`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
@@ -543,8 +539,3 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more detail.
