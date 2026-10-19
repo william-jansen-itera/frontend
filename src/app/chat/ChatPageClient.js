@@ -143,7 +143,9 @@ function buildImplicitBroaderFollowUpSelection(turn, message) {
   }
 
   return {
-    sourceQuestion: String(turn.question ?? "").trim(),
+    optionId: TURN_TYPE_BROADER_ANSWER,
+    sourceTurnId: String(turn.id ?? "").trim(),
+    sourceQuestion: String(turn.originalQuestion ?? turn.question ?? "").trim(),
     selectedToolNames: sourceToolInvocations.map((invocation) => invocation.toolName).filter(Boolean),
     sourceToolInvocations,
   };
