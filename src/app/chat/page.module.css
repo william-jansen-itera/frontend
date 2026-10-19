@@ -963,6 +963,7 @@
 
 .toolChip,
 .addToToolChip,
+.modeChip,
 .noToolChip,
 .toolErrorBadge {
   padding: 0.28rem 0.65rem;
@@ -980,6 +981,11 @@
 }
 
 .addToToolChip {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.modeChip {
   background: #dcfce7;
   color: #166534;
 }

@@ -1117,7 +1117,7 @@ export default function ChatPageClient({ includeDebug }) {
                             <span key={`${turn.id}-${label}`} className={styles.toolChip}>{label}</span>
                           ))}
                           {toolBadgeState.statusLabel ? (
-                            <span className={styles.noToolChip}>{toolBadgeState.statusLabel}</span>
+                            <span className={toolBadgeState.statusLabel === "GROUNDED MODE" ? styles.modeChip : styles.noToolChip}>{toolBadgeState.statusLabel}</span>
                           ) : null}
                         </div>
                       ) : null}
