@@ -7,7 +7,6 @@ import {
   createAgentDebugState,
 } from '@/server/utils/agent/agentDebug';
 import { runAgentFamilyExecution } from '@/server/utils/agent/agentFamilyExecution';
-import { normalizeFollowUpSelection } from '@/server/utils/agent/agentTurnClassifier';
 import {
   buildEmailRuntimeContext,
   EMAIL_FAMILY,
@@ -48,11 +47,9 @@ export async function invokeEmailAgent({
   message,
   history = [],
   principal = null,
-  followUpSelection = null,
   includeDebug = false,
   requestId = null,
 }) {
-  const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
   const normalizedMessage = String(message ?? '').trim();
 
   if (!normalizedMessage) {
@@ -67,13 +64,8 @@ export async function invokeEmailAgent({
     debug = createAgentDebugState({
       sourceToolFamily: EMAIL_FAMILY,
       normalizedMessage,
-      normalizedFollowUpSelection,
       initialInput: null,
       phaseNames: ['citationAssembly', 'responseShaping'],
-      extraTimings: {
-        broaderAnswerDetection: null,
-        broaderAnswerReview: null,
-      },
       logContext: {
         requestId,
         family: EMAIL_FAMILY,
@@ -145,7 +137,6 @@ export async function invokeEmailAgent({
     const { familyResult } = await buildEmailFamilyResult({
       finalResponse: response,
       finalToolInvocations: [...toolInvocations],
-      normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
       debug,

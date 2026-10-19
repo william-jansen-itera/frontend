@@ -7,8 +7,8 @@ import {
   setCuratedToolMessages,
 } from '@/server/utils/agent/agentDebug';
 import {
-  classifyAgentTurn,
-} from '@/server/utils/agent/agentTurnClassifier';
+  readAgentTurnState,
+} from '@/server/utils/agent/agentTurnStateReader';
 import { buildAgentFamilyResult } from '@/server/utils/agent/agentFamilyResult';
 import { getAgentToolResultData } from '@/server/utils/agent/agentToolResult';
 import { getRequiredFoundryConfig } from '@/server/utils/foundryAgentClient';
@@ -176,33 +176,27 @@ function appendPortfolioFileLink(answer, finalToolInvocations) {
 export async function buildInvestmentFamilyResult({
   finalResponse,
   finalToolInvocations,
-  normalizedFollowUpSelection,
-  openAIClient,
-  normalizedMessage,
   debug,
 }) {
   appendDebugStep(debug, 'response shaping started');
   const turnClassification = await captureTimingEntry(
     debug?.timings?.phases?.responseShaping ?? null,
-    async () => classifyAgentTurn({
+    async () => readAgentTurnState({
       finalResponse,
       finalToolInvocations,
-      normalizedFollowUpSelection,
-      openAIClient,
-      normalizedMessage,
-      permissionToBroadenDetectionEnabled: false,
+      requireReportedAnswerState: false,
       debug,
     }),
   );
   appendDebugStep(debug, 'response shaping completed', {
-    turnType: turnClassification?.turnType ?? null,
+    knowledgeMode: turnClassification?.knowledgeMode ?? null,
   });
   const {
     answer,
-    followUpOptions,
-    priorToolInvocations,
+    knowledgeMode,
+    isPersistenceOffer,
+    isPermissionToBroadenRequest,
     responseToolInvocations,
-    turnType,
   } = turnClassification;
   const recommendation = getLatestRecommendation(finalToolInvocations);
   const answerWithFileLink = appendPortfolioFileLink(answer, finalToolInvocations);
@@ -219,7 +213,9 @@ export async function buildInvestmentFamilyResult({
     debug.family = {
       citations: serializeDebugValue(citations),
       recommendation: serializeDebugValue(recommendation),
-      turnType,
+      knowledgeMode,
+      isPersistenceOffer,
+      isPermissionToBroadenRequest,
     };
     debug.agentOutput = buildAgentOutputDebug({
       agent: buildInvestmentAgentDescriptor(),
@@ -230,14 +226,14 @@ export async function buildInvestmentFamilyResult({
 
   const familyResult = buildAgentFamilyResult({
     sourceToolFamily: INVESTMENT_FAMILY,
-    turnType,
     answer: answerWithFileLink,
     toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
     citations,
-    followUpOptions,
     familyPayload: {
+      knowledgeMode,
+      isPersistenceOffer,
+      isPermissionToBroadenRequest,
       responseToolInvocations,
-      priorToolInvocations,
       recommendation,
     },
     ...(debug ? { debug: buildFamilyDebugPayload(debug) } : {}),
@@ -252,9 +248,6 @@ export function buildInvestmentResponse({ familyResult, principal, debug }) {
   const responseToolInvocations = Array.isArray(familyResult?.familyPayload?.responseToolInvocations)
     ? familyResult.familyPayload.responseToolInvocations
     : [];
-  const priorToolInvocations = Array.isArray(familyResult?.familyPayload?.priorToolInvocations)
-    ? familyResult.familyPayload.priorToolInvocations
-    : [];
 
   return {
     schemaVersion: familyResult.schemaVersion,
@@ -263,9 +256,9 @@ export function buildInvestmentResponse({ familyResult, principal, debug }) {
     agent: buildInvestmentAgentDescriptor(),
     toolsUsed: familyResult.toolsUsed,
     toolInvocations: responseToolInvocations,
-    priorToolInvocations,
-    turnType: familyResult.turnType,
-    followUpOptions: Array.isArray(familyResult.followUpOptions) ? familyResult.followUpOptions : [],
+    knowledgeMode: familyResult?.familyPayload?.knowledgeMode ?? null,
+    isPersistenceOffer: familyResult?.familyPayload?.isPersistenceOffer ?? false,
+    isPermissionToBroadenRequest: familyResult?.familyPayload?.isPermissionToBroadenRequest ?? false,
     citations: Array.isArray(familyResult.citations) ? familyResult.citations : [],
     familyPayload: familyResult.familyPayload ?? null,
     principal: principal

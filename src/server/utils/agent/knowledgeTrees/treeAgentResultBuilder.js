@@ -6,19 +6,14 @@ import {
   setCuratedToolMessages,
 } from '@/server/utils/agent/agentDebug';
 import {
-  classifyAgentTurn,
-  FOLLOW_UP_OPTION_BROADER_ANSWER,
-} from '@/server/utils/agent/agentTurnClassifier';
+  readAgentTurnState,
+} from '@/server/utils/agent/agentTurnStateReader';
 import {
   buildAgentFamilyResult,
 } from '@/server/utils/agent/agentFamilyResult';
 import { getAgentToolResultData } from '@/server/utils/agent/agentToolResult';
 import { KNOWLEDGE_TREES_FAMILY } from '@/server/utils/agent/knowledgeTrees/treeAgentCatalog';
 import { getTreeList } from '@/server/utils/tree/treeCatalog';
-
-function normalizeWhitespace(value) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim();
-}
 
 function buildCitationEntries(result, toolName) {
   const normalizedResult = getAgentToolResultData(result);
@@ -99,9 +94,6 @@ async function enrichToolInvocationsWithTreeAccess(toolInvocations, principal) {
 export async function buildKnowledgeTreesFamilyResult({
   finalResponse,
   finalToolInvocations,
-  normalizedFollowUpSelection,
-  openAIClient,
-  normalizedMessage,
   principal = null,
   visibilityScope = null,
   debug,
@@ -109,27 +101,25 @@ export async function buildKnowledgeTreesFamilyResult({
 }) {
   const turnClassification = await captureTimingEntry(
     debug?.timings?.phases?.responseShaping ?? null,
-    async () => classifyAgentTurn({
+    async () => readAgentTurnState({
       finalResponse,
       finalToolInvocations,
-      normalizedFollowUpSelection,
-      openAIClient,
-      normalizedMessage,
-      permissionToBroadenDetectionEnabled: true,
+      answerStateOptions: {
+        allowBroadMode: true,
+        allowPersistence: true,
+        requirePersistenceOfferForBroad: true,
+      },
       debug,
     }),
   );
   const {
     answer,
-    followUpOptions,
-    permissionToBroadenDetection,
-    priorToolInvocations,
+    knowledgeMode,
+    isPersistenceOffer,
+    isPermissionToBroadenRequest,
     responseToolInvocations,
-    groundedResponseReviewSteps,
-    turnType,
   } = turnClassification;
   const enrichedResponseToolInvocations = await enrichToolInvocationsWithTreeAccess(responseToolInvocations, principal);
-  const enrichedPriorToolInvocations = await enrichToolInvocationsWithTreeAccess(priorToolInvocations, principal);
 
   const citations = await captureTimingEntry(
     debug?.timings?.phases?.citationAssembly ?? null,
@@ -142,10 +132,10 @@ export async function buildKnowledgeTreesFamilyResult({
     setCuratedToolMessages(debug);
     debug.family = {
       citations: serializeDebugValue(citations),
-      permissionToBroadenDetection: serializeDebugValue(permissionToBroadenDetection),
-      groundedResponseReview: serializeDebugValue(groundedResponseReviewSteps),
+      knowledgeMode,
+      isPersistenceOffer,
+      isPermissionToBroadenRequest,
       visibilityScope: serializeDebugValue(visibilityScope),
-      turnType,
     };
     debug.agentOutput = buildAgentOutputDebug({
       agent,
@@ -156,15 +146,15 @@ export async function buildKnowledgeTreesFamilyResult({
 
   const familyResult = buildAgentFamilyResult({
     sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
-    turnType,
     answer,
     toolsUsed: Array.from(new Set(enrichedResponseToolInvocations.map((invocation) => invocation.toolName))),
     citations,
-    followUpOptions,
     familyPayload: {
+      knowledgeMode,
+      isPersistenceOffer,
+      isPermissionToBroadenRequest,
       visibilityScope,
       responseToolInvocations: enrichedResponseToolInvocations,
-      priorToolInvocations: enrichedPriorToolInvocations,
     },
     ...(debug ? { debug: buildFamilyDebugPayload(debug) } : {}),
   });
@@ -178,9 +168,6 @@ export function buildKnowledgeTreesResponse({ familyResult, agent, principal, de
   const responseToolInvocations = Array.isArray(familyResult?.familyPayload?.responseToolInvocations)
     ? familyResult.familyPayload.responseToolInvocations
     : [];
-  const priorToolInvocations = Array.isArray(familyResult?.familyPayload?.priorToolInvocations)
-    ? familyResult.familyPayload.priorToolInvocations
-    : [];
 
   return {
     schemaVersion: familyResult.schemaVersion,
@@ -193,9 +180,9 @@ export function buildKnowledgeTreesResponse({ familyResult, agent, principal, de
     },
     toolsUsed: familyResult.toolsUsed,
     toolInvocations: responseToolInvocations,
-    priorToolInvocations,
-    turnType: familyResult.turnType,
-    followUpOptions: Array.isArray(familyResult.followUpOptions) ? familyResult.followUpOptions : [],
+    knowledgeMode: familyResult?.familyPayload?.knowledgeMode ?? null,
+    isPersistenceOffer: familyResult?.familyPayload?.isPersistenceOffer ?? false,
+    isPermissionToBroadenRequest: familyResult?.familyPayload?.isPermissionToBroadenRequest ?? false,
     citations: Array.isArray(familyResult.citations) ? familyResult.citations : [],
     familyPayload: familyResult.familyPayload ?? null,
     principal: principal

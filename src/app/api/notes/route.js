@@ -11,14 +11,12 @@ import {
   UpdateTreeNodeOpenStates,
 } from '@/server/utils/tree/treeRecordRepository';
 import {
-  createLeafNodeFromChat,
   createTreeNodeAttachment,
   deleteAttachmentMetadataRecord,
   deleteTreeNode,
   generateChildrenForNode,
   generateNotesForNode,
   normalizeUpdatedByMetadata,
-  previewLeafFromChat,
   revealTreeNodeSecret,
   transitionAttachmentReviewStatus,
   transitionTreeNodeReviewStatus,
@@ -50,13 +48,6 @@ async function assertWritableTreeForRequest(request, treeId) {
     requireWriteAccess: true,
   });
 }
-
-
-function parseToolTreeId(toolName) {
-  const match = String(toolName ?? '').trim().match(/_(\d+)$/);
-  return match ? match[1] : '';
-}
-
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -142,46 +133,6 @@ export async function POST(request) {
       plannedLeafParentBreadcrumb,
       generatedLeafTitle,
     } = await request.json();
-
-    if (action === 'create-leaf-from-chat') {
-      const resolvedTreeId = treeId ? String(treeId) : parseToolTreeId(toolName);
-
-      if (!resolvedTreeId) {
-        return NextResponse.json({ error: 'A valid tree context is required for the chat add action.' }, { status: 400 });
-      }
-
-      await assertWritableTreeForRequest(request, resolvedTreeId);
-
-      return NextResponse.json(await createLeafNodeFromChat({
-        treeInstanceId: parseInt(resolvedTreeId, 10),
-        principal,
-        toolName,
-        originalQuestion,
-        broaderAnswer,
-        placementMode,
-        selectedAnchorNodeId,
-        selectedAnchorBreadcrumb,
-        generatedPathTitles,
-        plannedLeafParentBreadcrumb,
-        generatedLeafTitle,
-      }));
-    }
-
-    if (action === 'preview-leaf-from-chat') {
-      const resolvedTreeId = treeId ? String(treeId) : parseToolTreeId(toolName);
-
-      if (!resolvedTreeId) {
-        return NextResponse.json({ error: 'A valid tree context is required for the chat add action.' }, { status: 400 });
-      }
-
-      await assertReadableTreeForRequest(request, resolvedTreeId);
-
-      return NextResponse.json(await previewLeafFromChat({
-        treeInstanceId: parseInt(resolvedTreeId, 10),
-        originalQuestion,
-        broaderAnswer,
-      }));
-    }
 
     if (!treeId) {
       return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });

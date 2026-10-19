@@ -45,7 +45,6 @@ import {
   unsubscribeEmailToolDefinition,
   UNSUBSCRIBE_EMAIL_TOOL,
 } from '@/server/utils/agent/email/tools/unsubscribeEmailTool';
-
 export const EMAIL_FAMILY = 'email';
 
 function buildEmailToolDefinitions() {

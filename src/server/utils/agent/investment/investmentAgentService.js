@@ -7,7 +7,6 @@ import {
   createAgentDebugState,
 } from '@/server/utils/agent/agentDebug';
 import { runAgentFamilyExecution } from '@/server/utils/agent/agentFamilyExecution';
-import { normalizeFollowUpSelection } from '@/server/utils/agent/agentTurnClassifier';
 import {
   getPublishedInvestmentPromptAgent,
   INVESTMENT_FAMILY,
@@ -48,11 +47,9 @@ export async function invokeInvestmentAgent({
   message,
   history = [],
   principal = null,
-  followUpSelection = null,
   includeDebug = false,
   requestId = null,
 }) {
-  const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
   const normalizedMessage = String(message ?? '').trim();
 
   if (!normalizedMessage) {
@@ -67,13 +64,8 @@ export async function invokeInvestmentAgent({
     debug = createAgentDebugState({
       sourceToolFamily: INVESTMENT_FAMILY,
       normalizedMessage,
-      normalizedFollowUpSelection,
       initialInput: null,
       phaseNames: ['citationAssembly', 'responseShaping'],
-      extraTimings: {
-        broaderAnswerDetection: null,
-        broaderAnswerReview: null,
-      },
       logContext: {
         requestId,
         family: INVESTMENT_FAMILY,
@@ -145,7 +137,6 @@ export async function invokeInvestmentAgent({
     const { familyResult } = await buildInvestmentFamilyResult({
       finalResponse: response,
       finalToolInvocations: [...toolInvocations],
-      normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
       debug,

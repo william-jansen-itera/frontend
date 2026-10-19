@@ -21,8 +21,8 @@ import {
   usePersistedVisibility,
 } from "../usePersistedVisibility";
 
-const TURN_TYPE_NO_RESULT_OFFER = "no_result_offer_broadening";
-const TURN_TYPE_BROADER_ANSWER = "broader_answer";
+const KNOWLEDGE_MODE_GROUNDED = "grounded";
+const KNOWLEDGE_MODE_BROAD = "broad";
 const DEFAULT_CHAT_FAMILY = "knowledgeTrees";
 const DEFAULT_CHAT_VISIBILITY = "both";
 let fallbackTurnSequence = 0;
@@ -76,79 +76,6 @@ function renderHighlightedText(text, keyPrefix) {
 
     return nodes;
   });
-}
-
-function buildFollowUpSubmissionMessage(optionId, fallbackLabel) {
-  if (optionId === TURN_TYPE_BROADER_ANSWER) {
-    return "Use broader knowledge";
-  }
-
-  return fallbackLabel;
-}
-
-function parseToolTreeId(toolName) {
-  const match = String(toolName ?? "").trim().match(/_(\d+)$/);
-  return match ? match[1] : "";
-}
-
-function getLatestBroaderAnswerClarificationTurn(turns) {
-  const latestTurn = turns.at(-1) ?? null;
-
-  if (!latestTurn || latestTurn.isPending || latestTurn.error) {
-    return null;
-  }
-
-  if (latestTurn.turnType !== TURN_TYPE_BROADER_ANSWER) {
-    return null;
-  }
-
-  const priorToolInvocations = Array.isArray(latestTurn.priorToolInvocations) ? latestTurn.priorToolInvocations : [];
-  const toolInvocations = Array.isArray(latestTurn.toolInvocations) ? latestTurn.toolInvocations : [];
-
-  if (toolInvocations.length > 0) {
-    return null;
-  }
-
-  if (priorToolInvocations.length === 0) {
-    return null;
-  }
-
-  return latestTurn;
-}
-
-function buildImplicitBroaderFollowUpSelection(turn, message) {
-  if (!turn) {
-    return null;
-  }
-
-  const normalizedMessage = String(message ?? "").trim();
-
-  if (!normalizedMessage) {
-    return null;
-  }
-
-  const sourceToolInvocations = (
-    Array.isArray(turn.priorToolInvocations) && turn.priorToolInvocations.length > 0
-      ? turn.priorToolInvocations
-      : Array.isArray(turn.toolInvocations)
-        ? turn.toolInvocations
-        : []
-  ).map((invocation) => ({
-    toolName: invocation?.toolName,
-    resultCount: invocation?.resultCount,
-  }));
-
-  if (sourceToolInvocations.length === 0) {
-    return null;
-  }
-
-  return {
-    optionId: TURN_TYPE_BROADER_ANSWER,
-    sourceTurnId: String(turn.id ?? "").trim(),
-    sourceQuestion: String(turn.originalQuestion ?? turn.question ?? "").trim(),
-    selectedToolNames: sourceToolInvocations.map((invocation) => invocation.toolName).filter(Boolean),
-    sourceToolInvocations,
-  };
 }
 
 function buildHistoryFromTurns(turns) {
@@ -589,24 +516,7 @@ function ExecutionTimingSummary({ timings, toolCalls }) {
 
 function getTurnToolBadgeState(turn) {
   const toolInvocations = Array.isArray(turn?.toolInvocations) ? turn.toolInvocations : [];
-  const priorToolInvocations = Array.isArray(turn?.priorToolInvocations) ? turn.priorToolInvocations : [];
-  const addTargetByToolName = new Map();
-  [...priorToolInvocations, ...toolInvocations].forEach((invocation) => {
-    const toolName = String(invocation?.toolName ?? "").trim();
-
-    if (!toolName || addTargetByToolName.has(toolName)) {
-      return;
-    }
-
-    const treeId = String(invocation?.treeId ?? parseToolTreeId(toolName)).trim();
-    addTargetByToolName.set(toolName, {
-      toolName,
-      treeId,
-      canAddToTree: invocation?.canAddToTree === true,
-      label: `Add to: ${toolName}`,
-      disabledReason: "Read-only: only the owner or assigned editors can add notes to this tree.",
-    });
-  });
+  const knowledgeMode = String(turn?.knowledgeMode ?? KNOWLEDGE_MODE_GROUNDED).trim() || KNOWLEDGE_MODE_GROUNDED;
   const invokedTools = Array.from(new Set(
     toolInvocations
       .map((invocation) => String(invocation?.toolName ?? "").trim())
@@ -618,36 +528,23 @@ function getTurnToolBadgeState(turn) {
       .map((invocation) => String(invocation?.toolName ?? "").trim())
       .filter(Boolean),
   ));
-  const isBroaderAnswerTurn = turn?.turnType === TURN_TYPE_BROADER_ANSWER;
-  const priorTools = Array.from(new Set(
-    priorToolInvocations
-      .map((invocation) => String(invocation?.toolName ?? "").trim())
-      .filter(Boolean),
-  ));
-
   if (invokedTools.length > 0) {
     const hasToolResults = toolsWithResults.length > 0;
-    const shouldHighlightAddTarget = isBroaderAnswerTurn && !hasToolResults;
+    const statusLabel = hasToolResults
+      ? (knowledgeMode === KNOWLEDGE_MODE_BROAD ? "BROAD MODE" : "GROUNDED MODE")
+      : "NO TOOL RESULT";
 
     return {
       toolLabels: invokedTools.map((toolName) => `TOOL: ${toolName}`),
-      addTargets: shouldHighlightAddTarget ? invokedTools.map((toolName) => addTargetByToolName.get(toolName)).filter(Boolean) : [],
-      statusLabel: hasToolResults ? null : "NO TOOL RESULT",
-    };
-  }
-
-  if (isBroaderAnswerTurn && priorTools.length > 0) {
-    return {
-      toolLabels: [],
-      addTargets: priorTools.map((toolName) => addTargetByToolName.get(toolName)).filter(Boolean),
-      statusLabel: "NO TOOL USED",
+      addTargets: [],
+      statusLabel,
     };
   }
 
   return {
     toolLabels: [],
     addTargets: [],
-    statusLabel: "NO TOOL USED",
+    statusLabel: knowledgeMode === KNOWLEDGE_MODE_BROAD ? "BROAD MODE" : "NO TOOL USED",
   };
 }
 
@@ -692,9 +589,7 @@ function TurnDebugPanel({ turn }) {
   const toolCalls = Array.isArray(turn.debug.toolCalls) ? turn.debug.toolCalls : [];
   const timings = turn?.debug?.timings;
   const turnClassification = turn?.debug?.turnClassification;
-  const permissionToBroadenDetection = turn?.debug?.agentOutput?.permissionToBroadenDetection;
-  const permissionToBroadenSource = String(permissionToBroadenDetection?.source ?? "").trim();
-  const turnType = String(turn?.turnType ?? "default").trim() || "default";
+  const knowledgeMode = String(turn?.knowledgeMode ?? turn?.familyPayload?.knowledgeMode ?? KNOWLEDGE_MODE_GROUNDED).trim() || KNOWLEDGE_MODE_GROUNDED;
   const visibilityScope = turn?.familyPayload?.visibilityScope ?? turn?.debug?.family?.visibilityScope ?? null;
   const turnClassificationDebug = visibilityScope && typeof visibilityScope === "object"
     ? {
@@ -703,11 +598,8 @@ function TurnDebugPanel({ turn }) {
     }
     : turnClassification;
   const debugUserQuery = {
-    turnType,
+    knowledgeMode,
     ...(turn.debug.userQuery && typeof turn.debug.userQuery === "object" ? turn.debug.userQuery : {}),
-    ...(turnType === TURN_TYPE_NO_RESULT_OFFER && permissionToBroadenSource
-      ? { source: permissionToBroadenSource }
-      : {}),
   };
 
   return (
@@ -831,38 +723,10 @@ function TurnDebugPanel({ turn }) {
           <p className="appSectionEyebrow">6. Agent Output</p>
           <h2 className={styles.sectionTitle}>Model response and answer</h2>
         </div>
-        {permissionToBroadenSource ? (
-          <details className={styles.debugDetail} open>
-            <summary>Permission to broaden detection</summary>
-            <pre className={styles.jsonBlock}>{formatJson(permissionToBroadenDetection)}</pre>
-          </details>
-        ) : null}
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.agentOutput)}</pre>
       </section>
     </div>
   );
-}
-
-function getLatestNoResultOfferTurn(turns, dismissedTurnId) {
-  const latestTurn = turns.at(-1) ?? null;
-
-  if (!latestTurn || latestTurn.id === dismissedTurnId) {
-    return null;
-  }
-
-  if (latestTurn.isPending || latestTurn.error) {
-    return null;
-  }
-
-  if (latestTurn.turnType !== TURN_TYPE_NO_RESULT_OFFER) {
-    return null;
-  }
-
-  if (!Array.isArray(latestTurn.followUpOptions) || latestTurn.followUpOptions.length === 0) {
-    return null;
-  }
-
-  return latestTurn;
 }
 
 export default function ChatPageClient({ includeDebug }) {
@@ -885,12 +749,10 @@ export default function ChatPageClient({ includeDebug }) {
   const [prompt, setPrompt] = useState("");
   const [turns, setTurns] = useState([]);
   const [selectedTurnId, setSelectedTurnId] = useState(null);
-  const [dismissedFollowUpTurnId, setDismissedFollowUpTurnId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [requestError, setRequestError] = useState(null);
   const [availableChatFamilies, setAvailableChatFamilies] = useState([]);
   const [chatFamily, setChatFamily] = useState(null);
-  const [addActionState, setAddActionState] = useState(null);
   const chatFeedRef = useRef(null);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
@@ -898,9 +760,6 @@ export default function ChatPageClient({ includeDebug }) {
   const displayedTurns = [...turns].reverse();
   const hasObservedDebugData = turns.some((turn) => turn?.debug !== null && turn?.debug !== undefined);
   const showTurnInspector = includeDebug || hasObservedDebugData;
-  const activeNoResultOfferTurn = getLatestNoResultOfferTurn(turns, dismissedFollowUpTurnId);
-  const activeBroaderAnswerClarificationTurn = getLatestBroaderAnswerClarificationTurn(turns);
-  const isPromptInOptionMode = Boolean(activeNoResultOfferTurn);
   const isSingleTurnLayout = turns.length === 1;
   const isInitialTransientState = turns.length === 1 && (Boolean(turns[0]?.isPending) || Boolean(turns[0]?.error));
   const isHistoryEmpty = turns.length === 0;
@@ -1025,7 +884,7 @@ export default function ChatPageClient({ includeDebug }) {
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [availableChatFamilies, chatFamily, defaultChatFamily, pathname, requestedFamilyParam, router, searchParams]);
 
-  async function submitTurn({ question, message, followUpSelection = null }) {
+  async function submitTurn({ question, message }) {
     const turnId = createTurnId();
     const history = buildHistoryFromTurns(turns);
     const requestId = createRequestId();
@@ -1039,7 +898,7 @@ export default function ChatPageClient({ includeDebug }) {
       {
         id: turnId,
         question,
-        originalQuestion: followUpSelection?.sourceQuestion ?? question,
+        originalQuestion: question,
         answer: "",
         debug: null,
         error: null,
@@ -1047,9 +906,9 @@ export default function ChatPageClient({ includeDebug }) {
         citations: [],
         toolsUsed: [],
         toolInvocations: [],
-        priorToolInvocations: [],
-        turnType: "default",
-        followUpOptions: [],
+        knowledgeMode: KNOWLEDGE_MODE_GROUNDED,
+        isPersistenceOffer: false,
+        isPermissionToBroadenRequest: false,
         createdAt: Date.now(),
         isPending: true,
       },
@@ -1067,7 +926,6 @@ export default function ChatPageClient({ includeDebug }) {
           history,
           family: chatFamily,
           visibility,
-          followUpSelection,
         }),
       });
 
@@ -1079,8 +937,6 @@ export default function ChatPageClient({ includeDebug }) {
           debug: null,
         };
       }
-
-      setDismissedFollowUpTurnId(null);
       setTurns((currentTurns) => currentTurns.map((turn) => (
         turn.id === turnId
           ? {
@@ -1091,9 +947,9 @@ export default function ChatPageClient({ includeDebug }) {
             citations: Array.isArray(payload?.citations) ? payload.citations : [],
             toolsUsed: Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [],
             toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
-            priorToolInvocations: Array.isArray(payload?.priorToolInvocations) ? payload.priorToolInvocations : [],
-            turnType: String(payload?.turnType ?? "default").trim() || "default",
-            followUpOptions: Array.isArray(payload?.followUpOptions) ? payload.followUpOptions : [],
+            knowledgeMode: String(payload?.knowledgeMode ?? payload?.familyPayload?.knowledgeMode ?? KNOWLEDGE_MODE_GROUNDED).trim() || KNOWLEDGE_MODE_GROUNDED,
+            isPersistenceOffer: payload?.isPersistenceOffer === true,
+            isPermissionToBroadenRequest: payload?.isPermissionToBroadenRequest === true,
             originalQuestion: turn.originalQuestion,
             error: null,
             isPending: false,
@@ -1113,9 +969,9 @@ export default function ChatPageClient({ includeDebug }) {
             error: messageText,
             familyPayload: null,
             toolInvocations: [],
-            priorToolInvocations: [],
-            turnType: "default",
-            followUpOptions: [],
+            knowledgeMode: KNOWLEDGE_MODE_GROUNDED,
+            isPersistenceOffer: false,
+            isPermissionToBroadenRequest: false,
             isPending: false,
           }
           : turn
@@ -1137,12 +993,8 @@ export default function ChatPageClient({ includeDebug }) {
     event.preventDefault();
 
     const message = prompt.trim();
-    const implicitFollowUpSelection = buildImplicitBroaderFollowUpSelection(
-      activeBroaderAnswerClarificationTurn,
-      message,
-    );
 
-    if (!message || isSubmitting || isPromptInOptionMode || !isVisibilityReady || !chatFamily) {
+    if (!message || isSubmitting || !isVisibilityReady || !chatFamily) {
       return;
     }
 
@@ -1150,7 +1002,6 @@ export default function ChatPageClient({ includeDebug }) {
     await submitTurn({
       question: message,
       message,
-      followUpSelection: implicitFollowUpSelection,
     });
   }
 
@@ -1161,192 +1012,6 @@ export default function ChatPageClient({ includeDebug }) {
 
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
-  }
-
-  async function handleFollowUpOptionClick(option) {
-    if (!activeNoResultOfferTurn || isSubmitting) {
-      return;
-    }
-
-    const optionId = String(option?.optionId ?? "").trim();
-    const label = String(option?.label ?? "").trim();
-    const sourceQuestion = String(activeNoResultOfferTurn.question ?? "").trim();
-    const submissionMessage = buildFollowUpSubmissionMessage(optionId, label);
-
-    if (!optionId || !label) {
-      return;
-    }
-
-    await submitTurn({
-      question: submissionMessage,
-      message: submissionMessage,
-      followUpSelection: {
-        sourceTurnId: activeNoResultOfferTurn.id,
-        optionId,
-        sourceQuestion,
-        sourceToolInvocations: Array.isArray(activeNoResultOfferTurn.toolInvocations)
-          ? activeNoResultOfferTurn.toolInvocations.map((invocation) => ({
-            toolName: invocation?.toolName,
-            resultCount: invocation?.resultCount,
-          }))
-          : [],
-      },
-    });
-  }
-
-  async function handleAddToToolClick(event, turn, target) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (isSubmitting || addActionState?.status === "pending") {
-      return;
-    }
-
-    const normalizedToolName = String(target?.toolName ?? "").trim();
-    const originalQuestion = String(turn?.originalQuestion ?? turn?.question ?? "").trim();
-    const broaderAnswer = String(turn?.answer ?? "").trim();
-
-    if (!target?.canAddToTree) {
-      setAddActionState({
-        status: "error",
-        turnId: turn?.id ?? null,
-        toolName: normalizedToolName,
-        message: target?.disabledReason || "Read-only: only the owner or assigned editors can add notes to this tree.",
-      });
-      return;
-    }
-
-    if (!normalizedToolName || !originalQuestion || !broaderAnswer) {
-      setAddActionState({
-        status: "error",
-        turnId: turn?.id ?? null,
-        toolName: normalizedToolName,
-        message: "This answer does not have enough context to create a new leaf note.",
-      });
-      return;
-    }
-
-    setAddActionState({
-      status: "pending",
-      turnId: turn.id,
-      toolName: normalizedToolName,
-      message: "Finding the best place in the tree...",
-    });
-
-    try {
-      const response = await fetch("/api/notes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "preview-leaf-from-chat",
-          toolName: normalizedToolName,
-          originalQuestion,
-          broaderAnswer,
-        }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || "Unable to add this answer to the tree.");
-      }
-
-      setAddActionState({
-        status: "confirm",
-        turnId: turn.id,
-        toolName: normalizedToolName,
-        message: payload.generatedPathTitles?.length
-          ? `Create "${payload.generatedLeafTitle}" under ${payload.plannedLeafParentBreadcrumb}?`
-          : `Create a new leaf note under ${payload.plannedLeafParentBreadcrumb}?`,
-        preview: payload,
-      });
-    } catch (error) {
-      setAddActionState({
-        status: "error",
-        turnId: turn.id,
-        toolName: normalizedToolName,
-        message: error instanceof Error ? error.message : "Unable to add this answer to the tree.",
-      });
-    }
-  }
-
-  async function handleConfirmAddToTool(event, turn) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (addActionState?.status !== "confirm" || addActionState.turnId !== turn.id) {
-      return;
-    }
-
-    const preview = addActionState.preview;
-
-    setAddActionState({
-      ...addActionState,
-      status: "pending",
-      message: preview.generatedPathTitles?.length ? "Creating new path and leaf note..." : "Creating new leaf note...",
-    });
-
-    try {
-      const response = await fetch("/api/notes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "create-leaf-from-chat",
-          treeId: preview.treeId,
-          toolName: addActionState.toolName,
-          originalQuestion: preview.originalQuestion,
-          broaderAnswer: preview.broaderAnswer,
-          placementMode: preview.placementMode,
-          selectedAnchorNodeId: preview.selectedAnchorNodeId,
-          selectedAnchorBreadcrumb: preview.selectedAnchorBreadcrumb,
-          generatedPathTitles: preview.generatedPathTitles,
-          plannedLeafParentBreadcrumb: preview.plannedLeafParentBreadcrumb,
-          generatedLeafTitle: preview.generatedLeafTitle,
-        }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || "Unable to add this answer to the tree.");
-      }
-
-      const indexerMessage = payload.indexerRun?.status === "requested"
-        ? " Search index refresh requested."
-        : payload.indexerRun?.status === "already-running"
-          ? " Search index refresh is already running."
-          : payload.indexerRun?.status === "skipped"
-            ? ` Note created, but search index refresh was skipped: ${payload.indexerRun.reason}`
-            : payload.indexerRun?.status === "failed"
-              ? ` Note created, but search index refresh failed: ${payload.indexerRun.message}`
-              : "";
-
-      setAddActionState({
-        status: "success",
-        turnId: turn.id,
-        toolName: addActionState.toolName,
-        message: payload.createdIntermediateNodes?.length
-          ? `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb} with ${payload.createdIntermediateNodes.length} new path node${payload.createdIntermediateNodes.length === 1 ? "" : "s"}.${indexerMessage}`
-          : `Created \"${payload.generatedLeafTitle}\" under ${payload.plannedLeafParentBreadcrumb}.${indexerMessage}`,
-      });
-
-      const notesSearchParams = new URLSearchParams();
-      notesSearchParams.set("treeId", String(payload.treeId));
-      notesSearchParams.set("nodeId", String(payload.createdNodeId));
-      const notesHref = buildVisibilityHref("/notes", notesSearchParams.toString(), visibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
-      window.open(notesHref, "_blank", "noopener,noreferrer");
-    } catch (error) {
-      setAddActionState({
-        status: "error",
-        turnId: turn.id,
-        toolName: addActionState.toolName,
-        message: error instanceof Error ? error.message : "Unable to add this answer to the tree.",
-      });
-    }
   }
 
   return (
@@ -1384,54 +1049,26 @@ export default function ChatPageClient({ includeDebug }) {
                   </select>
                 </label>
               ) : null}
-              {isPromptInOptionMode ? null : (
-                <button
-                  type="submit"
-                  form="chat-prompt-form"
-                  className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
-                  disabled={isSubmitting || !prompt.trim() || !isVisibilityReady || !chatFamily}
-                >
-                  {isSubmitting ? "Thinking..." : "Send"}
-                </button>
-              )}
+              <button
+                type="submit"
+                form="chat-prompt-form"
+                className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
+                disabled={isSubmitting || !prompt.trim() || !isVisibilityReady || !chatFamily}
+              >
+                {isSubmitting ? "Thinking..." : "Send"}
+              </button>
             </div>
             <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
               <label className={styles.composerField}>
-                {isPromptInOptionMode ? (
-                  <div className={styles.followUpComposerCard}>
-                    <div className={styles.followUpActionRow}>
-                      {activeNoResultOfferTurn.followUpOptions.map((option) => (
-                        <button
-                          key={`${activeNoResultOfferTurn.id}-${option.optionId}`}
-                          type="button"
-                          className={styles.followUpPrimaryButton}
-                          onClick={() => handleFollowUpOptionClick(option)}
-                          disabled={isSubmitting}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        className={styles.followUpSecondaryButton}
-                        onClick={() => setDismissedFollowUpTurnId(activeNoResultOfferTurn.id)}
-                        disabled={isSubmitting}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <textarea
-                    value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    onKeyDown={handlePromptKeyDown}
-                    placeholder={buildChatPlaceholder(availableChatFamilies)}
-                    className={styles.textArea}
-                    rows={4}
-                    disabled={availableChatFamilies.length === 0}
-                  />
-                )}
+                <textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  onKeyDown={handlePromptKeyDown}
+                  placeholder={buildChatPlaceholder(availableChatFamilies)}
+                  className={styles.textArea}
+                  rows={4}
+                  disabled={availableChatFamilies.length === 0}
+                />
               </label>
             </form>
             </section>
@@ -1488,22 +1125,6 @@ export default function ChatPageClient({ includeDebug }) {
                       <div className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""} ${turn.isPending ? styles.messageBubbleAgentThinking : ""}`}>
                         <div className={styles.messageHeaderRow}>
                           <p className={styles.messageLabel}>Agent</p>
-                          {toolBadgeState.addTargets.map((target) => {
-                            const canAddToTool = target.canAddToTree === true;
-
-                            return (
-                              <button
-                                key={`${turn.id}-${target.toolName}`}
-                                type="button"
-                                className={`appCompactActionButton appCompactActionButtonNeutral ${styles.addToToolChipButton}`}
-                                onClick={(event) => handleAddToToolClick(event, turn, target)}
-                                disabled={addActionState?.status === "pending" || !canAddToTool}
-                                title={canAddToTool ? target.label : target.disabledReason}
-                              >
-                                {target.label}
-                              </button>
-                            );
-                          })}
                         </div>
                         <div className={styles.messageContent}>
                           {turn.isPending ? (
@@ -1522,35 +1143,6 @@ export default function ChatPageClient({ includeDebug }) {
                             />
                           )}
                         </div>
-                        {addActionState?.turnId === turn.id ? (
-                          <div className={styles.addActionPanel}>
-                            <p className={addActionState.status === "error" ? styles.addActionError : styles.addActionStatus}>
-                              {addActionState.message}
-                            </p>
-                            {addActionState.status === "confirm" ? (
-                              <div className={styles.addActionControls}>
-                                <button
-                                  type="button"
-                                  className={styles.addActionConfirmButton}
-                                  onClick={(event) => handleConfirmAddToTool(event, turn)}
-                                >
-                                  Confirm
-                                </button>
-                                <button
-                                  type="button"
-                                  className={styles.addActionCancelButton}
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    setAddActionState(null);
-                                  }}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : null}
                       </div>
 
                       <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>

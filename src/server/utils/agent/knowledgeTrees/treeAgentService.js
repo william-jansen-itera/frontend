@@ -1,12 +1,14 @@
 import { getProjectClient } from '@/server/utils/foundryAgentClient';
+import {
+  buildStructuredAnswerStateFinalResponseValidator,
+  buildStructuredAnswerStateResponseFormat,
+} from '@/server/utils/agent/agentAnswerState';
 import { buildInitialAgentInput } from '@/server/utils/agent/agentConversationInput';
 import {
   attachDebugToError,
   createAgentDebugState,
-  createDebugTimingEntry,
 } from '@/server/utils/agent/agentDebug';
 import { runAgentFamilyExecution } from '@/server/utils/agent/agentFamilyExecution';
-import { normalizeFollowUpSelection } from '@/server/utils/agent/agentTurnClassifier';
 import {
   buildAllowedToolInstruction,
   buildRuntimeTreeToolContext,
@@ -47,9 +49,8 @@ function normalizeHistory(history) {
 
 // runs initial agent invocation
 // starts the tool loop
-// and classifies the turn type (eg. default, no_result_offer_broadening, broader_answer)
-export async function invokeKnowledgeTreesAgent({ message, history = [], principal = null, visibility = 'public', followUpSelection = null, includeDebug = false }) {
-  const normalizedFollowUpSelection = normalizeFollowUpSelection(followUpSelection);
+// and classifies the grounded-vs-broad response mode
+export async function invokeKnowledgeTreesAgent({ message, history = [], principal = null, visibility = 'public', includeDebug = false }) {
   const normalizedMessage = String(message ?? '').trim();
 
   if (!normalizedMessage) {
@@ -71,9 +72,9 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
   });
   const normalizedHistory = normalizeHistory(history);
   const allowedToolInstruction = [
-    buildVisibilityScopeInstruction(visibilityScope),
+    buildVisibilityScopeInstruction({ visibility, includedTrees }),
     buildAllowedToolInstruction(includedTrees),
-  ].filter(Boolean).join('\n\n');
+  ].join('\n\n');
   const initialInput = buildInitialAgentInput({
     allowedToolInstruction,
     normalizedHistory,
@@ -83,13 +84,8 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     ? createAgentDebugState({
       sourceToolFamily: 'knowledgeTrees',
       normalizedMessage,
-      normalizedFollowUpSelection,
       initialInput,
       phaseNames: ['citationAssembly', 'responseShaping'],
-      extraTimings: {
-        broaderAnswerDetection: createDebugTimingEntry(),
-        broaderAnswerReview: createDebugTimingEntry({ executed: false }),
-      },
       loggingEnabled: includeDebug,
     })
     : null;
@@ -101,9 +97,19 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
       responseConfig: {
         type: 'agent_reference',
         agentName: agent.name,
+        text: buildStructuredAnswerStateResponseFormat({
+          allowBroadMode: true,
+          allowPersistence: true,
+          requirePersistenceOfferForBroad: true,
+        }),
       },
       initialInput,
       handlerMap,
+      finalResponseValidator: buildStructuredAnswerStateFinalResponseValidator({
+        allowBroadMode: true,
+        allowPersistence: true,
+        requirePersistenceOfferForBroad: true,
+      }),
       debug,
       includeDebug,
     });
@@ -113,7 +119,6 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     const { familyResult } = await buildKnowledgeTreesFamilyResult({
       finalResponse: response,
       finalToolInvocations: [...toolInvocations],
-      normalizedFollowUpSelection,
       openAIClient,
       normalizedMessage,
       principal,

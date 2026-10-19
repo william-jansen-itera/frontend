@@ -4,7 +4,7 @@ import {
   captureTimingEntry,
   setCuratedToolMessages,
 } from '@/server/utils/agent/agentDebug';
-import { classifyAgentTurn } from '@/server/utils/agent/agentTurnClassifier';
+import { readAgentTurnState } from '@/server/utils/agent/agentTurnStateReader';
 import { buildAgentFamilyResult } from '@/server/utils/agent/agentFamilyResult';
 import { getRequiredFoundryFamilyConfig } from '@/server/utils/foundryAgentClient';
 import { EMAIL_FAMILY } from '@/server/utils/agent/email/emailAgentCatalog';
@@ -22,29 +22,23 @@ function buildEmailAgentDescriptor() {
 export async function buildEmailFamilyResult({
   finalResponse,
   finalToolInvocations,
-  normalizedFollowUpSelection,
-  openAIClient,
-  normalizedMessage,
   debug,
 }) {
   const turnClassification = await captureTimingEntry(
     debug?.timings?.phases?.responseShaping ?? null,
-    async () => classifyAgentTurn({
+    async () => readAgentTurnState({
       finalResponse,
       finalToolInvocations,
-      normalizedFollowUpSelection,
-      openAIClient,
-      normalizedMessage,
-      permissionToBroadenDetectionEnabled: false,
+      requireReportedAnswerState: false,
       debug,
     }),
   );
   const {
     answer,
-    followUpOptions,
-    priorToolInvocations,
+    knowledgeMode,
+    isPersistenceOffer,
+    isPermissionToBroadenRequest,
     responseToolInvocations,
-    turnType,
   } = turnClassification;
 
   if (debug) {
@@ -58,14 +52,14 @@ export async function buildEmailFamilyResult({
 
   const familyResult = buildAgentFamilyResult({
     sourceToolFamily: EMAIL_FAMILY,
-    turnType,
     answer,
     toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
     citations: [],
-    followUpOptions,
     familyPayload: {
+      knowledgeMode,
+      isPersistenceOffer,
+      isPermissionToBroadenRequest,
       responseToolInvocations,
-      priorToolInvocations,
     },
     ...(debug ? { debug: buildFamilyDebugPayload(debug) } : {}),
   });
@@ -79,9 +73,6 @@ export function buildEmailResponse({ familyResult, principal, debug }) {
   const responseToolInvocations = Array.isArray(familyResult?.familyPayload?.responseToolInvocations)
     ? familyResult.familyPayload.responseToolInvocations
     : [];
-  const priorToolInvocations = Array.isArray(familyResult?.familyPayload?.priorToolInvocations)
-    ? familyResult.familyPayload.priorToolInvocations
-    : [];
 
   return {
     schemaVersion: familyResult.schemaVersion,
@@ -90,9 +81,9 @@ export function buildEmailResponse({ familyResult, principal, debug }) {
     agent: buildEmailAgentDescriptor(),
     toolsUsed: familyResult.toolsUsed,
     toolInvocations: responseToolInvocations,
-    priorToolInvocations,
-    turnType: familyResult.turnType,
-    followUpOptions: Array.isArray(familyResult.followUpOptions) ? familyResult.followUpOptions : [],
+    knowledgeMode: familyResult?.familyPayload?.knowledgeMode ?? null,
+    isPersistenceOffer: familyResult?.familyPayload?.isPersistenceOffer ?? false,
+    isPermissionToBroadenRequest: familyResult?.familyPayload?.isPermissionToBroadenRequest ?? false,
     citations: Array.isArray(familyResult.citations) ? familyResult.citations : [],
     familyPayload: familyResult.familyPayload ?? null,
     principal: principal

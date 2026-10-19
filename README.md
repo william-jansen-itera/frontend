@@ -352,15 +352,65 @@ In practice this means:
 
 The `supportsCitations` tool-result metadata flag should be treated as per-tool capability metadata, mainly for debug and UI inspection. It is not the primary source of truth for building citations. The source of truth remains the result-builder logic that knows how to translate particular tool outputs into citation entries.
 
+### Answer state reporting and validation
+
+Answer state is now agent-reported but application-validated for the families that opt into it.
+
+When a family opts in, the agent reports the state of each completed turn by calling the built-in `report_answer_state` tool as its last tool call before the final user-facing answer. That tool reports structured fields such as:
+
+- `knowledgeMode`
+- `isPermissionToBroadenRequest`
+- `isPersistenceOffer`
+
+The application still owns validation and enforcement for families that include the tool.
+
+- During tool execution, the `report_answer_state` handler validates the reported payload and throws if the state is invalid for the current family.
+- After the model appears to have finished, the shared execution loop reviews the accumulated tool invocations for the turn and verifies that a valid `report_answer_state` call exists and that it was the last tool call.
+- If the tool was never called, was called too early, or reported an invalid state, the application sends a corrective instruction back into the model loop instead of accepting the answer.
+
+Family policy differs by family.
+
+- `knowledgeTrees` opts into answer-state reporting. It uses explicit broadening consent, and completed broad answers must offer persistence.
+- `email` and `investment` do not use `report_answer_state`.
+
+Allowed answer states by family:
+
+- `knowledgeTrees`
+	`knowledgeMode="grounded", isPermissionToBroadenRequest=false, isPersistenceOffer=false` for an ordinary grounded answer.
+	`knowledgeMode="grounded", isPermissionToBroadenRequest=true, isPersistenceOffer=false` for a permission-to-broaden request.
+	`knowledgeMode="broad", isPermissionToBroadenRequest=false, isPersistenceOffer=true` for a completed broad answer.
+
+`email` and `investment` currently have no answer-state contract. Their responses are still shaped into the shared top-level response schema, but they do not report `knowledgeMode`, `isPermissionToBroadenRequest`, or `isPersistenceOffer` through `report_answer_state`.
+
+Disallowed combinations for families that use `report_answer_state`:
+
+- `isPermissionToBroadenRequest=true` is only valid for `knowledgeTrees`, and only while `knowledgeMode="grounded"`.
+- `isPersistenceOffer=true` is only valid while `knowledgeMode="broad"`.
+- In `knowledgeTrees`, every completed broad answer must use `isPersistenceOffer=true`.
+This answer-state contract is separate from tool-specific action confirmation and persistence in personal cache.
+
+- `report_answer_state` only describes how the agent is answering and what answer-mode policy applies to the completed turn.
+- Business tools can still require explicit user confirmation for side effects such as sending an email, deleting an email, unsubscribing, saving a draft, or creating a tree note.
+- Those side-effect confirmations are enforced by the individual tool contracts and tool instructions, not by the shared answer-state tool.
+
+For example, the email family may retrieve and cache email data during normal grounded work without asking for a separate answer-mode consent turn, while actions such as send, delete, unsubscribe, or draft-save still rely on their own explicit confirmation requirements.
+
+This means the application no longer infers turn lanes or answer mode from prose heuristics, but it still enforces the answer-state contract.
+
+In short:
+
+- the agent owns state declaration
+- the application owns state validation and policy enforcement
+
 ### Agent execution modes
 
 The chat architecture currently supports two execution modes for agent families.
 
-`agent_reference` uses a hosted Foundry agent by name. In this mode, the application sends the turn to a persisted agent definition that already exists in Azure AI Foundry. That hosted agent owns its published instructions and published tool definitions, while the application still runs the local tool loop and sends function outputs back through the Responses API. The current `knowledgeTrees` family uses this mode.
+`agent_reference` uses a hosted Foundry agent by name. In this mode, the application sends the turn to a persisted agent definition that already exists in Azure AI Foundry. That hosted agent owns its published instructions and published tool definitions, while the application still runs the local tool loop and sends function outputs back through the Responses API. The current `knowledgeTrees`, `email`, and `investment` families all use this mode.
 
 Within the `knowledgeTrees` family, dynamic tool generation still stays centralized in `src/server/utils/agent/knowledgeTrees/treeAgentCatalog.js`, while lower-level search-result shaping and debug payload construction now live in `src/server/utils/agent/knowledgeTrees/treeToolSearchResults.js`.
 
-`direct_model` calls the model deployment directly and sends instructions plus tool definitions inline on each request. In this mode, the application itself is the source of truth for the family's instructions and tool schema for that turn. The model can still emit function calls, and the server executes those through the same local handler map and tool loop used by hosted-agent mode. The current `investment` family uses this mode.
+`direct_model` calls the model deployment directly and sends instructions plus tool definitions inline on each request. In this mode, the application itself is the source of truth for the family's instructions and tool schema for that turn. The model can still emit function calls, and the server executes those through the same local handler map and tool loop used by hosted-agent mode. The shared executor still supports this mode, but no current chat family is using it.
 
 In short:
 
@@ -392,53 +442,41 @@ Investment family example:
 8. `src/server/utils/agent/agentDebug.js` creates the shared debug state that tracks timing, tool calls, and other execution details.
 9. `src/server/utils/agent/agentFamilyExecution.js` runs the shared model/tool loop by sending input to the model, detecting function calls, executing handlers, and sending tool outputs back.
 10. `src/server/utils/agent/investment/investmentAgentCatalog.js` is consulted again during the tool loop because its registered tool handlers are looked up from the `handlerMap`, and those handlers now live under `src/server/utils/agent/investment/tools/`.
-11. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` converts the final model response and tool history into the normalized investment-family result, derives the latest recommendation, and then wraps everything in the top-level response schema.
-12. `src/server/utils/agent/agentTurnClassifier.js` classifies the final turn and extracts the normalized answer, tool usage, and follow-up options.
-13. `src/server/utils/agent/agentFamilyResult.js` builds the shared result envelope that all agent families return in a consistent shape.
-14. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` also builds the investment agent descriptor used in the top-level response, so the catalog remains focused on registry and runtime setup.
+11. `src/server/utils/agent/agentAnswerState.js` defines the shared `report_answer_state` tool contract and validates reported state both at tool-call time and during final-response review.
+12. `src/server/utils/agent/agentFamilyExecution.js` also runs the final response validator before accepting an answer, so a response is not considered complete unless the answer-state contract has been satisfied.
+13. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` converts the final model response and tool history into the normalized investment-family result, derives the latest recommendation, and then wraps everything in the top-level response schema.
+14. `src/server/utils/agent/agentTurnStateReader.js` reads the accepted reported answer state from the final tool history, filters the internal answer-state tool out of user-facing tool invocation summaries, and extracts the normalized answer-state fields returned to the client.
+15. `src/server/utils/agent/agentFamilyResult.js` builds the shared result envelope that all agent families return in a consistent shape.
+16. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` also builds the investment agent descriptor used in the top-level response, so the catalog remains focused on registry and runtime setup.
 
-### Chat History vs. `priorToolInvocations`
+### Chat history and tool history
 
-The application uses two different continuity mechanisms for follow-up behavior, and they serve different purposes.
+Chat history is for the agent. It contains the user and assistant messages that are replayed as conversational context on later turns.
 
-Chat history is for the agent. It contains the user and assistant messages that should be replayed as conversational context on later turns. This is the material that gets sent back to the model as prior dialogue.
+Tool history is for the application. During a turn, the shared executor accumulates tool invocations and tool outputs in memory. That tool history is used for several server-side responsibilities after or during the tool loop, including:
 
-`priorToolInvocations` are for the server-side broader-answer workflow and related UI affordances. They do not represent general conversation history, and they are not replayed to the model as structured history. Instead, they preserve the immediately preceding grounded-search context when the user chooses the broader-answer option.
+- validating `report_answer_state`
+- deriving citations
+- extracting normalized answer-state fields for the final response
+- building debug output
 
-This means the application is effectively running a turn-orchestration layer in parallel with the agent conversation. The model still receives normal conversational history plus the current turn input, but the application separately classifies completed turns, stores follow-up state, preserves selected tool context, assembles citations, and exposes UI-only affordances that the model does not directly own.
+The raw tool history is not automatically replayed to the model as structured prior-turn tool state on the next request. The model primarily sees replayed chat history plus whatever runtime instructions and tool outputs are explicitly sent during the current turn.
 
-The conversation history now keeps all user and assistant turns, including `no_result_offer` and `broader_answer` turns, so the agent can see the full nuance of the exchange. Follow-up submissions are sent to the model with the user's message verbatim rather than being rewritten by the server. In practice:
-
-- chat history preserves the full conversational record for the agent, including no-result and broader-answer turns
-- the current user message is sent to the model as written
-- `priorToolInvocations` preserve prior search context for server-side follow-up handling and UI actions
-- UI actions such as `Add to: [tool]` on broader-answer turns can still know which earlier tool context the answer came from even though those tool references are not part of structured model history
-
-The `Add to: [tool]` action is specifically a continuity affordance for broader-answer turns. It does not mean the current turn executed that tool again. Instead, it means the current turn is still logically attached to an earlier grounded tool context.
-
-More concretely:
-
-- the original grounded turn may have called one or more tools and returned tool results
-- the user can then choose a broader-answer follow-up path that intentionally stops using grounded tool output as the sole answer source
-- when that broader-answer turn is created, the server preserves a minimal record of the earlier grounded tools in `priorToolInvocations`
-- that preserved record contains the earlier tool name and result count, but it is not replayed to the model as structured tool history
-- the UI reads that preserved record and renders `Add to: [tool]` so the user can still route follow-up actions back toward the original grounded tool context
-
-This matters because broader-answer turns can legitimately have `toolInvocations: []` for the current turn while still needing a visible link back to the last grounded search. Without `priorToolInvocations`, the broader-answer response would lose the practical connection to the tool that originally produced the search context.
-
-In other words, `Add to: [tool]` should be read as "continue from the grounded context that originally came from this tool," not as "this tool was just invoked in the current turn."
+The raw `report_answer_state` tool result is also an internal part of that per-turn tool history. It is read by the server when shaping the final response, but it is not exposed as a normal user-facing tool invocation in the final chat payload.
 
 ### Where turn state lives
 
-The turn-orchestration state is currently split between browser memory and per-request server derivation.
+Turn state is split between browser memory and per-request server execution.
 
-- The client is the main holder of chat turn state. `src/app/chat/ChatPageClient.js` keeps the in-memory `turns` array with fields such as `turnType`, `followUpOptions`, `toolInvocations`, `priorToolInvocations`, `citations`, `debug`, and pending/error status.
+- The client is the main holder of chat-turn UI state. `src/app/chat/ChatPageClient.js` keeps the in-memory `turns` array with fields such as `question`, `answer`, `knowledgeMode`, `isPermissionToBroadenRequest`, `isPersistenceOffer`, `toolInvocations`, `citations`, `familyPayload`, `debug`, and pending/error status.
 - On each new submission, the client rebuilds plain chat history from those turns and sends that history back to `src/app/api/chat/route.js` together with the current message.
-- For broader-answer continuity, the client may also send a compact `followUpSelection` object containing the source turn id, source question, and a minimal list of earlier tool names and result counts.
-- The server does not load prior turn state from a database or session store. Instead, it derives the current turn classification and related follow-up metadata again from the current request, the submitted history, the optional `followUpSelection`, and the model/tool results returned during that request.
-- Family result builders then shape that derived state into the response fields returned to the client, such as `turnType`, `followUpOptions`, `priorToolInvocations`, citations, family payloads, and debug data.
+- The server does not load prior turn state from a database or session store. It derives the current turn's normalized state from the current request and from the model/tool results produced during that request.
+- During execution, the server keeps the current turn's tool results in memory, including the raw `report_answer_state` tool result.
+- Family result builders then shape that per-turn derived state into the response fields returned to the client, such as `answer`, `knowledgeMode`, `isPermissionToBroadenRequest`, `isPersistenceOffer`, citations, family payloads, and debug data.
 
-In practical terms, this means the turn engine is not backed by durable server-side conversation storage today. It is client-owned, replayed on each request, and reinterpreted by the server for the current turn.
+The application does not keep a separate durable server-side conversation-mode store. There is no independent persisted lane or mode record that carries forward across turns on the server.
+
+In practical terms, this means answer state is not maintained in a separate durable server-side conversation store. It is reported and validated per turn, then returned as part of that turn's response payload.
 
 The main exception is UI preference persistence such as the selected visibility filter, which is stored separately in browser `localStorage`. That preference storage is not the same thing as persisted chat-turn state.
 
@@ -453,7 +491,7 @@ The model does not have direct access to arbitrary server-side or UI state. In t
 - the current user message
 - tool outputs sent back during the tool loop
 
-This means server-side orchestration state is not automatically visible to the model just because the application knows it. Data such as `turnType`, `followUpOptions`, `priorToolInvocations`, citations, family payload fields, and UI affordances are application-owned state unless the server explicitly translates them into one of the channels above.
+This means server-side orchestration state is not automatically visible to the model just because the application knows it. Data such as normalized answer-state fields, citations, family payload fields, and UI affordances are application-owned state unless the server explicitly translates them into one of the channels above.
 
 In practice, this is why dynamic request facts such as knowledge-tree visibility scope must be turned into a runtime system message if the model itself needs to act on them during the turn.
 

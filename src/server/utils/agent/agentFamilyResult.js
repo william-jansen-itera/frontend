@@ -16,22 +16,18 @@ function normalizeArray(value) {
 
 export function buildAgentFamilyResult({
   sourceToolFamily,
-  turnType,
   answer,
   toolsUsed,
   citations,
-  followUpOptions,
   familyPayload,
   debug,
 }) {
   return {
     schemaVersion: FAMILY_RESULT_SCHEMA_VERSION,
     sourceToolFamily: String(sourceToolFamily ?? '').trim(),
-    turnType: String(turnType ?? '').trim(),
     answer: String(answer ?? ''),
     toolsUsed: normalizeStringArray(toolsUsed),
     ...(Array.isArray(citations) ? { citations: normalizeArray(citations) } : {}),
-    ...(Array.isArray(followUpOptions) ? { followUpOptions: normalizeArray(followUpOptions) } : {}),
     ...(familyPayload === undefined ? {} : { familyPayload }),
     ...(debug === undefined ? {} : { debug }),
   };
@@ -44,7 +40,6 @@ export function isAgentFamilyResult(value) {
       && !Array.isArray(value)
       && typeof value.schemaVersion === 'string'
       && typeof value.sourceToolFamily === 'string'
-      && typeof value.turnType === 'string'
       && typeof value.answer === 'string'
       && Array.isArray(value.toolsUsed),
   );

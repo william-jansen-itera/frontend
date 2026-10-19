@@ -35,7 +35,6 @@ function buildPhaseTimingMap(phaseNames = []) {
 export function createAgentDebugState({
   sourceToolFamily,
   normalizedMessage,
-  normalizedFollowUpSelection,
   initialInput,
   phaseNames = [],
   extraTimings = {},
@@ -54,7 +53,6 @@ export function createAgentDebugState({
     },
     userQuery: {
       message: normalizedMessage,
-      followUpSelection: serializeDebugValue(normalizedFollowUpSelection),
     },
     toolCalls: [],
     curatedAgentInput: {

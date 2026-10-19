@@ -3,6 +3,7 @@ import { getAgentToolResultData, getAgentToolResultDebug, getAgentToolResultMeta
 import { appendDebugStep } from '@/server/utils/agent/agentDebug';
 
 const MAX_TOOL_ROUNDS = 5;
+const MAX_FINAL_RESPONSE_VALIDATION_RETRIES = 2;
 
 function getElapsedDurationMs(startedAtMs) {
   const elapsedMs = performance.now() - startedAtMs;
@@ -85,6 +86,7 @@ async function createAgentResponse(openAIClient, responseConfig, payload) {
       model: responseConfig.model,
       instructions: responseConfig.instructions,
       tools: responseConfig.tools,
+      ...(responseConfig?.text ? { text: responseConfig.text } : {}),
     });
   }
 
@@ -96,12 +98,14 @@ export async function runAgentFamilyExecution({
   responseConfig,
   initialInput,
   handlerMap,
+  finalResponseValidator = null,
   handlerContext = null,
   debug = null,
   includeDebug = false,
 }) {
   const modelCalls = [];
   const toolInvocations = [];
+  let finalResponseValidationRetries = 0;
 
   const initialModelCallStartedAt = new Date().toISOString();
   const initialModelCallStartedAtMs = performance.now();
@@ -132,6 +136,57 @@ export async function runAgentFamilyExecution({
       : [];
 
     if (functionCalls.length === 0) {
+      if (typeof finalResponseValidator === 'function') {
+        const validationInstruction = await finalResponseValidator({
+          response: currentResponse,
+          toolInvocations,
+        });
+
+        if (validationInstruction) {
+          if (finalResponseValidationRetries >= MAX_FINAL_RESPONSE_VALIDATION_RETRIES) {
+            appendDebugStep(debug, 'final response validation failed permanently', {
+              retries: finalResponseValidationRetries,
+            });
+            throw new Error(String(validationInstruction));
+          }
+
+          finalResponseValidationRetries += 1;
+          const validationModelCallStartedAt = new Date().toISOString();
+          const validationModelCallStartedAtMs = performance.now();
+          appendDebugStep(debug, 'final response validation retry requested', {
+            retryCount: finalResponseValidationRetries,
+          });
+          currentResponse = await createAgentResponse(openAIClient, responseConfig, {
+            input: [{
+              type: 'message',
+              role: 'system',
+              content: String(validationInstruction),
+            }],
+            previous_response_id: currentResponse.id,
+          });
+          appendDebugStep(debug, 'final response validation retry received', {
+            retryCount: finalResponseValidationRetries,
+            responseId: currentResponse?.id ?? null,
+            status: currentResponse?.status ?? null,
+          });
+
+          if (debug) {
+            modelCalls.push({
+              phase: 'final_response_validation_retry',
+              round: round + 1,
+              retryCount: finalResponseValidationRetries,
+              startedAt: validationModelCallStartedAt,
+              completedAt: new Date().toISOString(),
+              durationMs: getElapsedDurationMs(validationModelCallStartedAtMs),
+              responseId: currentResponse?.id ?? null,
+              status: currentResponse?.status ?? null,
+            });
+          }
+
+          continue;
+        }
+      }
+
       return {
         response: currentResponse,
         toolInvocations,

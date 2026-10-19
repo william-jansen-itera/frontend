@@ -25,7 +25,6 @@ import {
   updatePortfolioHoldingsToolDefinition,
   UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL,
 } from '@/server/utils/agent/investment/tools/updatePortfolioHoldingsTool';
-
 export const INVESTMENT_FAMILY = 'investment';
 
 function normalizePromptAgentName(agent, fallbackAgentName = null) {
@@ -197,7 +196,6 @@ function buildInvestmentHandlerMap({ includeDebug = false, updatedBy = null, per
   handlerMap.set(GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL, buildGetBuySellVolatilityRecommendationHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(GET_VOLATILITY_EVENTS_TOOL, buildReviewVolatilityEventsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL, buildUpdatePortfolioHoldingsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
-
   return handlerMap;
 }
 

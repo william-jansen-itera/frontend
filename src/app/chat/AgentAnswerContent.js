@@ -5,6 +5,22 @@ import styles from "./page.module.css";
 
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
 const MARKDOWN_TABLE_SEPARATOR_PATTERN = /^:?-{3,}:?$/;
+const AGENT_METADATA_PREFIX = "<!-- agent-meta: ";
+const AGENT_METADATA_SUFFIX = " -->";
+const PREVIEW_ID_LINE_PATTERN = /^<!-- Preview ID: [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12} -->$/i;
+
+function isAgentMetadataLine(line) {
+  if (!line.startsWith(AGENT_METADATA_PREFIX) || !line.endsWith(AGENT_METADATA_SUFFIX)) {
+    return false;
+  }
+
+  try {
+    const metadata = JSON.parse(line.slice(AGENT_METADATA_PREFIX.length, -AGENT_METADATA_SUFFIX.length));
+    return metadata !== null && typeof metadata === "object" && !Array.isArray(metadata) && Object.keys(metadata).length > 0;
+  } catch {
+    return false;
+  }
+}
 
 function getImageExtension(candidate) {
   const normalizedCandidate = String(candidate ?? "").trim().toLowerCase();
@@ -123,7 +139,7 @@ function splitTrailingUrlPunctuation(rawUrl) {
 
 function buildInlineBlocks(answer) {
   const normalizedAnswer = String(answer ?? "");
-  const inlineLinkPattern = /(!)?\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/g;
+  const inlineLinkPattern = /(!)?\[([^\]]*)\]\((https?:\/\/[^\s)]+|\/notes\?[^\s)]+)\)|(https?:\/\/[^\s<]+)/g;
   const blocks = [];
   let inlineSegments = [];
   let cursor = 0;
@@ -219,7 +235,12 @@ function buildInlineBlocks(answer) {
 }
 
 function buildAgentAnswerBlocks(answer) {
-  const normalizedAnswer = String(answer ?? "").replace(/\r\n?/g, "\n");
+  const normalizedAnswer = String(answer ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .filter((line) => !isAgentMetadataLine(line) && !PREVIEW_ID_LINE_PATTERN.test(line))
+    .join("\n")
+    .trimEnd();
   const lines = normalizedAnswer.split("\n");
   const blocks = [];
   let textBuffer = [];
