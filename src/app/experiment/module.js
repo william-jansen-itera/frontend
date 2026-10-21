@@ -6,7 +6,7 @@ const INDENT = 28;
 const ROW_HEIGHT = 32;
 const LINE_X = 8;
 const CONTENT_OFFSET = 14;
-const ROOT_OFFSET = 8;
+const ROOT_OFFSET = 16;
 
 function TreeNode({ node, style, dragHandle }) {
   const level = node.level;
@@ -40,9 +40,9 @@ function TreeNode({ node, style, dragHandle }) {
               left: 4,
               top: -16,
               height: ROW_HEIGHT + 32,
-              width: 6,
-              borderTopRightRadius: 3,
-              borderTopLeftRadius: 3,
+              width: 5,
+              borderTopRightRadius: 2.5,
+              borderTopLeftRadius: 2.5,
               backgroundColor: "#796756",
               pointerEvents: "none",
             }}
@@ -57,11 +57,11 @@ function TreeNode({ node, style, dragHandle }) {
             position: "absolute",
             left: 4,
             top: ROW_HEIGHT / 2 + 1,
-            width: 16,
-            height: 5,
-            borderTopRightRadius: 2.5,
-            borderBottomRightRadius: 2.5,
-            borderBottomLeftRadius: 2.5,
+            width: 24,
+            height: 4,
+            borderTopRightRadius: 2,
+            borderBottomRightRadius: 2,
+            borderBottomLeftRadius: 2,
             backgroundColor: "#796756",
             transform: "translateY(-50%)",
             pointerEvents: "none",
@@ -132,7 +132,7 @@ function TreeNode({ node, style, dragHandle }) {
         style={{
           marginLeft: level === 0
             ? ROOT_OFFSET + 16
-            : ROOT_OFFSET + level * INDENT + CONTENT_OFFSET,
+            : ROOT_OFFSET + level * INDENT + CONTENT_OFFSET - (node.isLeaf ? 10 : 0),
           marginRight: 6,
           fontSize: "1.1em",
           flexShrink: 0,
@@ -140,7 +140,7 @@ function TreeNode({ node, style, dragHandle }) {
           zIndex: 1,
         }}
       >
-        {node.isLeaf ? "🍃" : node.isOpen ? " ▾ " : " ▸ "}
+        {node.isLeaf ? "🍃" : node.isOpen ? "▾" : "▸"}
       </span>
       <span
         style={{
