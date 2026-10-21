@@ -113,7 +113,7 @@ body {
   overflow: visible;
   max-width: var(--page-content-width);
   margin: 0 auto 1.4rem;
-  padding: 1rem 1.25rem;
+  padding: 0.65rem 1.25rem;
   border: var(--surface-border);
   border-radius: 0 0 var(--surface-radius-panel) var(--surface-radius-panel);
   background: rgba(255, 255, 255, 0.82);
@@ -354,7 +354,7 @@ body {
 .appBrandImage {
   display: block;
   width: auto;
-  height: 4.6rem;
+  height: 3.5rem;
   opacity: 0.86;
 }
 
