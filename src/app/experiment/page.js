@@ -150,10 +150,8 @@ const data = [
 ];
 
 export default function Experiment() {
-  return (
-    
-      <TreeView data={data} />
-   
+  return (    
+      <TreeView data={data} />   
   );
 }
 
