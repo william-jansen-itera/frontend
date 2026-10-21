@@ -17,6 +17,8 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
   while (root.parent && root.level > 0) {
     root = root.parent;
   }
+  const isLastRoot = root.nextSibling == null;
+  const isRootRow = level === 0;
 
   return (
     <div
@@ -28,18 +30,24 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
         node.willReceiveDrop ? styles.treeRowDropTarget : "",
       ].filter(Boolean).join(" ")}
     >
-      {root.nextSibling != null && (
-        <span
-          aria-hidden="true"
-          className={styles.treeConnector}
-          style={{ left: 4, top: -16, height: TREE_ROW_HEIGHT + 32, width: 5, borderRadius: "2.5px 2.5px 0 0" }}
-        />
-      )}
+      <span
+        aria-hidden="true"
+        className={styles.treeConnector}
+        style={{
+          left: 4,
+          top: isRootRow ? TREE_ROW_HEIGHT / 2 : -16,
+          height: isLastRoot
+            ? (isRootRow ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT + 48)
+            : (isRootRow ? TREE_ROW_HEIGHT / 2 + 16 : TREE_ROW_HEIGHT + 32),
+          width: 5,
+          borderRadius: "2.5px 2.5px 0 0",
+        }}
+      />
       {level === 0 && (
         <span
           aria-hidden="true"
           className={`${styles.treeConnector} ${styles.treeConnectorHorizontal}`}
-          style={{ left: 4, top: TREE_ROW_HEIGHT / 2 + 1, width: 24, height: 4 }}
+          style={{ left: 4, top: TREE_ROW_HEIGHT / 2 + 1, width: 24, height: 4, borderTopLeftRadius: node.childIndex === 0 ? 2 : 0 }}
         />
       )}
       {Array.from({ length: level }, (_, depth) => {
