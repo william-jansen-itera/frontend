@@ -2,7 +2,7 @@ import styles from "./page.module.css";
 import { dataNodeHasChildren } from "./treeUtils";
 
 export const TREE_INDENT = 28;
-export const TREE_ROW_HEIGHT = 32;
+export const TREE_ROW_HEIGHT = 24;
 const LINE_X = 8;
 const CONTENT_OFFSET = 14;
 const ROOT_OFFSET = 16;
@@ -35,10 +35,10 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
         className={styles.treeConnector}
         style={{
           left: 4,
-          top: isRootRow ? TREE_ROW_HEIGHT / 2 : -16,
+          top: isRootRow ? TREE_ROW_HEIGHT / 2 : -TREE_ROW_HEIGHT / 2,
           height: isLastRoot
-            ? (isRootRow ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT + 48)
-            : (isRootRow ? TREE_ROW_HEIGHT / 2 + 16 : TREE_ROW_HEIGHT + 32),
+            ? (isRootRow ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT * 2.5)
+            : (isRootRow ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT * 2),
           width: 5,
           borderRadius: "2.5px 2.5px 0 0",
         }}
@@ -75,8 +75,8 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
             className={styles.treeConnector}
             style={{
               left: ROOT_OFFSET + depth * TREE_INDENT + LINE_X,
-              top: -16,
-              height: useExact ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT + 32,
+              top: -TREE_ROW_HEIGHT / 2,
+              height: useExact ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT * 2,
               width: Math.max(1, 4 - depth * 2),
               borderRadius: "2px 2px 0 0",
               zIndex: 1,
@@ -119,7 +119,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
           {isLeaf ? "\uD83C\uDF43" : "\u25B8"}
         </span>
       )}
-      <span className={`${styles.treeRowLabel} ${isLeaf ? styles.treeLeafLabel : ""} ${level === 0 ? styles.treeRootLabel : ""}`}>
+      <span className={`${styles.treeRowLabel} ${isLeaf ? styles.treeLeafLabel : ""}`}>
         {node.data.name}
       </span>
       {node.willReceiveDrop && !node.data.isLeafNode && (

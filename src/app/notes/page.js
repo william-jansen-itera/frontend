@@ -28,7 +28,7 @@ import {
 
 const ATTACHMENT_ACCEPT = ".csv,.doc,.docx,.gif,.html,.jpeg,.jpg,.json,.md,.pdf,.png,.ppt,.pptx,.txt,.webp,.xls,.xlsx";
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
-const TREE_PADDING_TOP = 18;
+const TREE_PADDING_TOP = 8;
 const TREE_PADDING_BOTTOM = 10;
 const TREE_HEIGHT_BUFFER = TREE_ROW_HEIGHT;
 
@@ -1369,7 +1369,6 @@ function NotesPage() {
               overscanCount={1}
               paddingTop={TREE_PADDING_TOP}
               paddingBottom={TREE_PADDING_BOTTOM}
-              padding={25}
               onMove={handleMove}
               onToggle={handleToggle}
               onSelect={(nodes) => {

@@ -69,7 +69,7 @@
 
 .treeConnector {
   position: absolute;
-  background: #766c63;
+  background: #80756b;
   pointer-events: none;
 }
 
@@ -95,14 +95,13 @@
   position: relative;
   z-index: 1;
   color: #3f3534;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 400;
 }
 
 .treeLeafLabel {
   color: #266247;
-}
-
-.treeRootLabel {
-  font-weight: 600;
 }
 
 .treeRowDropTarget {
