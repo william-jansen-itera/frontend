@@ -67,6 +67,15 @@
   transition: background-color 120ms ease, box-shadow 120ms ease;
 }
 
+.treeRow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+}
+
 .treeConnector {
   position: absolute;
   background: #80756b;
@@ -78,13 +87,16 @@
   transform: translateY(-50%);
 }
 
-.treeRow:hover {
+.treeRow:hover::before {
   background: rgba(219, 234, 254, 0.72);
 }
 
 .treeRowSelected {
-  background: linear-gradient(135deg, rgba(204, 251, 241, 0.92), rgba(219, 234, 254, 0.9));
   box-shadow: inset 0 0 0 1px rgba(8, 145, 178, 0.45);
+}
+
+.treeRowSelected::before {
+  background: linear-gradient(135deg, rgba(204, 251, 241, 0.92), rgba(219, 234, 254, 0.9));
 }
 
 .treeRowLabel {
@@ -93,7 +105,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   position: relative;
-  z-index: 1;
+  z-index: 3;
   color: #3f3534;
   font-family: inherit;
   font-size: inherit;
@@ -105,8 +117,11 @@
 }
 
 .treeRowDropTarget {
-  background-color: #dbeafe;
   box-shadow: inset 0 0 0 1px #60a5fa;
+}
+
+.treeRowDropTarget::before {
+  background: #dbeafe;
 }
 
 .treeToggle,
@@ -115,7 +130,7 @@
   font-size: 1.1em;
   flex-shrink: 0;
   position: relative;
-  z-index: 1;
+  z-index: 3;
 }
 
 .treeToggle {
@@ -135,6 +150,8 @@
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+  position: relative;
+  z-index: 3;
 }
 
 .detailsContent {
