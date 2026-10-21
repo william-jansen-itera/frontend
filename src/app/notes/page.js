@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
 import { NotesEditor } from "./NotesEditor";
-import { TreeNode } from "./TreeNode";
+import { TreeNode, TREE_INDENT, TREE_ROW_HEIGHT } from "./TreeNode";
 import { usePanelLayout } from "./usePanelLayout";
 import {
   PUBLIC_PRIVATE_VISIBILITY_VALUES,
@@ -28,7 +28,6 @@ import {
 
 const ATTACHMENT_ACCEPT = ".csv,.doc,.docx,.gif,.html,.jpeg,.jpg,.json,.md,.pdf,.png,.ppt,.pptx,.txt,.webp,.xls,.xlsx";
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
-const TREE_ROW_HEIGHT = 30;
 const TREE_PADDING_TOP = 18;
 const TREE_PADDING_BOTTOM = 10;
 const TREE_HEIGHT_BUFFER = TREE_ROW_HEIGHT;
@@ -1365,7 +1364,7 @@ function NotesPage() {
               openByDefault={false}
               width="100%"
               height={resolvedTreeHeight}
-              indent={24}
+              indent={TREE_INDENT}
               rowHeight={TREE_ROW_HEIGHT}
               overscanCount={1}
               paddingTop={TREE_PADDING_TOP}

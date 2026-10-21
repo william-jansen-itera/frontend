@@ -27,29 +27,34 @@ function TreeNode({ node, style, dragHandle }) {
       }}
       onClick={() => node.isInternal && node.toggle()}
     >
-      {/* Root-level connector (drawn on every row under a non-last root) */}
+      {/* Root-level connector — continues through the last root like a trunk */}
       {(() => {
         let root = node;
         while (root.parent && root.level > 0) root = root.parent;
-        if (root.nextSibling == null) return null;
 
+        const isLastRoot = root.nextSibling == null;
+        const isRootRow = level === 0;
+
+        // Always draw, including for the last root
         return (
           <div
             style={{
               position: "absolute",
               left: 4,
-              top: -16,
-              height: ROW_HEIGHT + 32,
+              top: isRootRow ? ROW_HEIGHT / 2 : -16,
+              // Last root’s final rows get a little extra length so it “hits the ground”
+              height: isLastRoot
+                ? (isRootRow ? ROW_HEIGHT : ROW_HEIGHT + 48)
+                : (isRootRow ? ROW_HEIGHT / 2 + 16 : ROW_HEIGHT + 32),
               width: 5,
-              borderTopRightRadius: 2.5,
               borderTopLeftRadius: 2.5,
+              borderTopRightRadius: 2.5,
               backgroundColor: "#796756",
               pointerEvents: "none",
             }}
           />
         );
       })()}
-
       {/* Short horizontal stub on root rows */}
       {level === 0 && (
         <div
@@ -61,7 +66,7 @@ function TreeNode({ node, style, dragHandle }) {
             height: 4,
             borderTopRightRadius: 2,
             borderBottomRightRadius: 2,
-            borderBottomLeftRadius: 2,
+            borderTopLeftRadius: node.childIndex === 0 ? 2 : 0,  // only the first root
             backgroundColor: "#796756",
             transform: "translateY(-50%)",
             pointerEvents: "none",

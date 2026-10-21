@@ -61,15 +61,21 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  position: relative;
   border-radius: 8px;
-  padding: 0 8px 0 12px;
+  padding: 0;
   transition: background-color 120ms ease, box-shadow 120ms ease;
 }
 
-.treeRowInset {
-  width: 6px;
-  flex: 0 0 6px;
+.treeConnector {
+  position: absolute;
+  background: #796756;
+  pointer-events: none;
+}
+
+.treeConnectorHorizontal {
+  border-radius: 0 2px 2px 2px;
+  transform: translateY(-50%);
 }
 
 .treeRow:hover {
@@ -86,6 +92,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  position: relative;
+  z-index: 1;
+  color: #3f3534;
+}
+
+.treeLeafLabel {
+  color: #266247;
+}
+
+.treeRootLabel {
+  font-weight: 600;
 }
 
 .treeRowDropTarget {
@@ -93,13 +110,28 @@
   box-shadow: inset 0 0 0 1px #60a5fa;
 }
 
+.treeToggle,
+.treeMarker {
+  margin-right: 6px;
+  font-size: 1.1em;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
 .treeToggle {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #3f3534;
+  font-family: inherit;
+  line-height: 1;
   cursor: pointer;
-  margin-right: 4px;
 }
 
 .treeDropHint {
   margin-left: auto;
+  padding-right: 8px;
   color: #1d4ed8;
   font-size: 12px;
   font-weight: 600;
