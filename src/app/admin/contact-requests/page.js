@@ -61,40 +61,42 @@ export default function AdminContactRequestsPage() {
         {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
       </section>
 
-      <article className={`appTopLevelPanel ${styles.panel}`}>
-        <div className={styles.panelBody}>
-          {isLoading ? (
-            <p className={styles.emptyState}>Loading requests...</p>
-          ) : contactRequests.length > 0 ? (
-            <div className={styles.list}>
-              {contactRequests.map((request) => (
-                <article key={request.eventId} className={styles.listItem}>
-                  <div className={styles.itemMeta}>
-                    <div className={styles.itemHeader}>
-                      <span className={styles.reviewBadgeSubmitted}>Submitted</span>
-                      <span className={styles.badgeMuted}>{formatTimestamp(request.createdAt)}</span>
+      <section className={styles.sectionStack}>
+        <article className={`appTopLevelPanel ${styles.panel}`}>
+          <div className={styles.panelBody}>
+            {isLoading ? (
+              <p className={styles.emptyState}>Loading requests...</p>
+            ) : contactRequests.length > 0 ? (
+              <div className={styles.list}>
+                {contactRequests.map((request) => (
+                  <article key={request.eventId} className={styles.listItem}>
+                    <div className={styles.itemMeta}>
+                      <div className={styles.itemHeader}>
+                        <span className={styles.reviewBadgeSubmitted}>Submitted</span>
+                        <span className={styles.badgeMuted}>{formatTimestamp(request.createdAt)}</span>
+                      </div>
+                      <h2 className={styles.itemTitle}>{request.name}</h2>
+                      <p className={styles.itemDetail}>Email: {request.email}</p>
+                      {request.appIdentifier ? <p className={styles.itemDetail}>Application: {request.appIdentifier}</p> : null}
+                      <p className={styles.itemDetail}>Event ID: {request.eventId}</p>
+                      <p className={styles.itemDetail}>Recorded at: {formatTimestamp(request.createdAt)}</p>
+                      <p className={styles.itemDetail}>Using as: {request.contactProfile}</p>
+                      {request.company ? <p className={styles.itemDetail}>Company: {request.company}</p> : null}
+                      {request.phone ? <p className={styles.itemDetail}>Phone: {request.phone}</p> : null}
+                      <p className={styles.itemDetail}>Call requested: {request.wantsCall ? "Yes" : "No"}</p>
+                      {request.userAgent ? <p className={styles.itemDetail}>User agent: {request.userAgent}</p> : null}
+                      {request.userAgentRaw ? <p className={styles.itemDetail}>Raw user agent: {request.userAgentRaw}</p> : null}
+                      <p className={styles.itemDetail}>{request.message}</p>
                     </div>
-                    <h2 className={styles.itemTitle}>{request.name}</h2>
-                    <p className={styles.itemDetail}>Email: {request.email}</p>
-                    {request.appIdentifier ? <p className={styles.itemDetail}>Application: {request.appIdentifier}</p> : null}
-                    <p className={styles.itemDetail}>Event ID: {request.eventId}</p>
-                    <p className={styles.itemDetail}>Recorded at: {formatTimestamp(request.createdAt)}</p>
-                    <p className={styles.itemDetail}>Using as: {request.contactProfile}</p>
-                    {request.company ? <p className={styles.itemDetail}>Company: {request.company}</p> : null}
-                    {request.phone ? <p className={styles.itemDetail}>Phone: {request.phone}</p> : null}
-                    <p className={styles.itemDetail}>Call requested: {request.wantsCall ? "Yes" : "No"}</p>
-                    {request.userAgent ? <p className={styles.itemDetail}>User agent: {request.userAgent}</p> : null}
-                    {request.userAgentRaw ? <p className={styles.itemDetail}>Raw user agent: {request.userAgentRaw}</p> : null}
-                    <p className={styles.itemDetail}>{request.message}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className={styles.emptyState}>No requests were received in the last 30 days.</p>
-          )}
-        </div>
-      </article>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className={styles.emptyState}>No requests were received in the last 30 days.</p>
+            )}
+          </div>
+        </article>
+      </section>
     </>
   );
 }

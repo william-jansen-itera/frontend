@@ -69,99 +69,101 @@ export default function AdminAnalyticsPage() {
         {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
       </section>
 
-      <article className={`appTopLevelPanel ${styles.panel}`}>
-        <div className={styles.panelBody}>
-          {isLoading ? (
-            <div className={styles.emptyState}>Loading analytics...</div>
-          ) : (
-            <div className={styles.analyticsTables}>
-              <section className={styles.analyticsSection}>
-                <h2 className={styles.analyticsHeading}>By page, device class, and browser family</h2>
-                <div className={styles.indexingTableWrapper}>
-                  <table className={styles.indexingTable}>
-                    <thead>
-                      <tr>
-                        <th scope="col" className={styles.indexingColumnHeader}>page path</th>
-                        <th scope="col" className={styles.indexingColumnHeader}>device class</th>
-                        <th scope="col" className={styles.indexingColumnHeader}>browser family</th>
-                        <th scope="col" className={styles.indexingColumnHeader}>visits</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analyticsSummary.byPageDeviceBrowser.length === 0 ? (
+      <section className={styles.sectionStack}>
+        <article className={`appTopLevelPanel ${styles.panel}`}>
+          <div className={styles.panelBody}>
+            {isLoading ? (
+              <div className={styles.emptyState}>Loading analytics...</div>
+            ) : (
+              <div className={styles.analyticsTables}>
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>By page, device class, and browser family</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
                         <tr>
-                          <td colSpan={4} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>device class</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>browser family</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
                         </tr>
-                      ) : analyticsSummary.byPageDeviceBrowser.map((row) => (
-                        <tr key={`${row.pagePath}:${row.deviceClass}:${row.browserFamily}`}>
-                          <td>{row.pagePath}</td>
-                          <td>{row.deviceClass}</td>
-                          <td>{row.browserFamily}</td>
-                          <td>{formatVisitCount(row.visitCount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byPageDeviceBrowser.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                          </tr>
+                        ) : analyticsSummary.byPageDeviceBrowser.map((row) => (
+                          <tr key={`${row.pagePath}:${row.deviceClass}:${row.browserFamily}`}>
+                            <td>{row.pagePath}</td>
+                            <td>{row.deviceClass}</td>
+                            <td>{row.browserFamily}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
 
-              <section className={styles.analyticsSection}>
-                <h2 className={styles.analyticsHeading}>By page</h2>
-                <div className={styles.indexingTableWrapper}>
-                  <table className={styles.indexingTable}>
-                    <thead>
-                      <tr>
-                        <th scope="col" className={styles.indexingColumnHeader}>page path</th>
-                        <th scope="col" className={styles.indexingColumnHeader}>visits</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analyticsSummary.byPage.length === 0 ? (
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>By page</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
                         <tr>
-                          <td colSpan={2} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
                         </tr>
-                      ) : analyticsSummary.byPage.map((row) => (
-                        <tr key={row.pagePath}>
-                          <td>{row.pagePath}</td>
-                          <td>{formatVisitCount(row.visitCount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byPage.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                          </tr>
+                        ) : analyticsSummary.byPage.map((row) => (
+                          <tr key={row.pagePath}>
+                            <td>{row.pagePath}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
 
-              <section className={styles.analyticsSection}>
-                <h2 className={styles.analyticsHeading}>By page and source</h2>
-                <div className={styles.indexingTableWrapper}>
-                  <table className={styles.indexingTable}>
-                    <thead>
-                      <tr>
-                        <th scope="col" className={styles.indexingColumnHeader}>page path</th>
-                        <th scope="col" className={styles.indexingColumnHeader}>source</th>
-                        <th scope="col" className={styles.indexingColumnHeader}>visits</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analyticsSummary.byPageSource.length === 0 ? (
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>By page and source</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
                         <tr>
-                          <td colSpan={3} className={styles.analyticsEmptyCell}>No source-tagged visit events recorded yet.</td>
+                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>source</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
                         </tr>
-                      ) : analyticsSummary.byPageSource.map((row) => (
-                        <tr key={`${row.pagePath}:${row.source}`}>
-                          <td>{row.pagePath}</td>
-                          <td>{row.source}</td>
-                          <td>{formatVisitCount(row.visitCount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            </div>
-          )}
-        </div>
-      </article>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byPageSource.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className={styles.analyticsEmptyCell}>No source-tagged visit events recorded yet.</td>
+                          </tr>
+                        ) : analyticsSummary.byPageSource.map((row) => (
+                          <tr key={`${row.pagePath}:${row.source}`}>
+                            <td>{row.pagePath}</td>
+                            <td>{row.source}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
+        </article>
+      </section>
     </>
   );
 }

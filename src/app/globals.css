@@ -83,18 +83,18 @@ body {
     linear-gradient(180deg, #edf8f5 0%, #f7fbfd 46%, #eef4f8 100%);
 }
 
+.appPageSurfaceNotes {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at top right, rgba(141, 130, 119, 0.2), transparent 26%),
+    linear-gradient(180deg, #f5eee8 0%, #f7f6f5 46%, #eef4f8 100%);
+}
+
 .appPageSurfaceSearch {
   background:
     radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
     radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 24%),
     linear-gradient(180deg, #f4f8ff 0%, #f9fbff 44%, #eef4f8 100%);
-}
-
-.appPageSurfaceNotes {
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.76), transparent 32%),
-    radial-gradient(circle at top right, rgba(100, 116, 139, 0.08), transparent 24%),
-    linear-gradient(180deg, #f7f8fa 0%, #fafbfc 44%, #eef1f4 100%);
 }
 
 .appChrome {

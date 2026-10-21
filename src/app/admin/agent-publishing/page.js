@@ -114,14 +114,16 @@ export default function AdminAgentPublishingPage() {
         </div>
       </section>
 
-      <AgentFamilyPublishingPanel
-        agentFamilies={agentFamilies}
-        isLoading={isLoading}
-        statusMessage={statusMessage}
-        errorMessage={errorMessage}
-        pendingItems={pendingItems}
-        onAction={handleAgentFamilyAction}
-      />
+      <section className={styles.sectionStack}>
+        <AgentFamilyPublishingPanel
+          agentFamilies={agentFamilies}
+          isLoading={isLoading}
+          statusMessage={statusMessage}
+          errorMessage={errorMessage}
+          pendingItems={pendingItems}
+          onAction={handleAgentFamilyAction}
+        />
+      </section>
     </>
   );
 }
