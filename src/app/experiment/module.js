@@ -49,7 +49,7 @@ function TreeNode({ node, style, dragHandle }) {
               width: 5,
               borderTopLeftRadius: 2.5,
               borderTopRightRadius: 2.5,
-              backgroundColor: "#9a8f84",
+              backgroundColor: "#8d8277",
               pointerEvents: "none",
             }}
           />
@@ -67,7 +67,7 @@ function TreeNode({ node, style, dragHandle }) {
             borderTopRightRadius: 2,
             borderBottomRightRadius: 2,
             borderTopLeftRadius: node.childIndex === 0 ? 2 : 0,  // only the first root
-            backgroundColor: "#9a8f84",
+            backgroundColor: "#8d8277",
             transform: "translateY(-50%)",
             pointerEvents: "none",
             zIndex: 0,
@@ -105,7 +105,7 @@ function TreeNode({ node, style, dragHandle }) {
               width: Math.max(1, 4 - i * 2),
               borderTopLeftRadius: 2,
               borderTopRightRadius: 2,
-              backgroundColor: "#9a8f84",
+              backgroundColor: "#8d8277",
               pointerEvents: "none",
               zIndex: 1,
             }}
@@ -125,7 +125,7 @@ function TreeNode({ node, style, dragHandle }) {
             borderBottomRightRadius: 2,
             borderBottomLeftRadius: 2,
             height: Math.max(1, 3 - (level - 1) * 2),
-            backgroundColor: "#9a8f84",
+            backgroundColor: "#8d8277",
             transform: "translateY(-50%)",
             pointerEvents: "none",
           }}
