@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import styles from "./page.module.css";
 import {
   ALL_VISIBILITY_VALUES,
@@ -47,7 +48,7 @@ function renderHighlightedText(text, keyPrefix) {
   });
 }
 
-function formatUpdatedAt(value) {
+function formatUpdatedAt(value, locale) {
   if (!value) {
     return null;
   }
@@ -58,23 +59,23 @@ function formatUpdatedAt(value) {
     return null;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale === "da" ? "da-DK" : "en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsedDate);
 }
 
-function buildAuditLabel(userDetails, timestamp, defaultLabel = null) {
+function buildAuditLabel(userDetails, timestamp, updatedLabel, locale, defaultLabel = null) {
   const parts = [];
   const normalizedUserDetails = String(userDetails ?? "").trim();
-  const formattedTimestamp = formatUpdatedAt(timestamp);
+  const formattedTimestamp = formatUpdatedAt(timestamp, locale);
 
   if (normalizedUserDetails) {
     parts.push(normalizedUserDetails);
   }
 
   if (formattedTimestamp) {
-    parts.push(`Updated ${formattedTimestamp}`);
+    parts.push(updatedLabel(formattedTimestamp));
   }
 
   if (parts.length === 0) {
@@ -186,6 +187,8 @@ function formatCoveragePercent(value) {
 }
 
 function SearchPageContent() {
+  const t = useTranslations("Pages.Search");
+  const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -413,32 +416,32 @@ function SearchPageContent() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className="appHeroCopy">
           <p className={`${styles.description} appPageDescription`}>
-            Search notes and attachments across your accessible trees, then jump directly to the matching node path.
+            {t("Description")}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.searchForm}>
           <label className={styles.searchField}>
-            <span className="appFieldLabel">Search</span>
+            <span className="appFieldLabel">{t("QueryLabel")}</span>
             <input
               key={queryParam}
               ref={queryInputRef}
               type="search"
               defaultValue={queryParam}
-              placeholder="Try a node title, note text, or attachment phrase"
+              placeholder={t("QueryPlaceholder")}
               className={`appTextControl ${styles.textInput}`}
             />
           </label>
 
           <label className={styles.filterField}>
-            <span className="appFieldLabel">Tree</span>
+            <span className="appFieldLabel">{t("TreeLabel")}</span>
             <select
               value={treeIdParam}
               onChange={handleTreeChange}
               disabled={isLoadingTrees}
               className={`appSelectControl ${styles.selectInput}`}
             >
-              <option value="">All trees</option>
+              <option value="">{t("AllTrees")}</option>
               {availableTrees.map((tree) => (
                 <option key={tree.id} value={tree.id}>
                   {tree.name}
@@ -448,20 +451,20 @@ function SearchPageContent() {
           </label>
 
           <label className={styles.filterField}>
-            <span className="appFieldLabel">Visibility</span>
+            <span className="appFieldLabel">{t("VisibilityLabel")}</span>
             <select
               value={visibilityParam}
               onChange={handleVisibilityChange}
               className={`appSelectControl ${styles.selectInput}`}
             >
-              <option value="public">Public</option>
-              <option value="private">Private</option>
-              <option value="both">Both</option>
+              <option value="public">{t("Visibility.Public")}</option>
+              <option value="private">{t("Visibility.Private")}</option>
+              <option value="both">{t("Visibility.Both")}</option>
             </select>
           </label>
 
           <button type="submit" className="appPrimaryFormButton">
-            {isSearching ? "Searching..." : "Search"}
+            {t(isSearching ? "Searching" : "SearchButton")}
           </button>
         </form>
       </section>
@@ -471,49 +474,49 @@ function SearchPageContent() {
 
       {!queryParam.trim() ? (
         <section className={`appTopLevelPanel ${styles.topLevelEmptyState}`}>
-          <h2>Start with a phrase</h2>
-          <p>Search runs against both SQL-backed node content and blob attachment content in the shared index.</p>
+          <h2>{t("StartTitle")}</h2>
+          <p>{t("StartDescription")}</p>
         </section>
       ) : (
         <section className={`appTopLevelPanel ${styles.resultsSection}`}>
           <div className={styles.resultsHeader}>
             <div>
-              <p className={styles.resultsEyebrow}>Node Results</p>
-              <h2 className={styles.resultsTitle}>{resultCount} match{resultCount === 1 ? "" : "es"}</h2>
+              <p className={styles.resultsEyebrow}>{t("ResultsHeading")}</p>
+              <h2 className={styles.resultsTitle}>{t("MatchCount", { count: resultCount })}</h2>
             </div>
           </div>
 
           {executedSearches.length > 0 || tokenCoverageFilter ? (
             <section className={styles.debugSection}>
               <div className={styles.debugHeader}>
-                <p className={styles.resultsEyebrow}>Executed Queries</p>
-                <p className={styles.debugSummary}>{executedSearches.length} search{executedSearches.length === 1 ? "" : "es"} recorded</p>
+                <p className={styles.resultsEyebrow}>{t("ExecutedQueries")}</p>
+                <p className={styles.debugSummary}>{t("RecordedSearches", { count: executedSearches.length })}</p>
               </div>
               {tokenCoverageFilter ? (
                 <details className={styles.debugCard} open>
                   <summary className={styles.debugCardSummary}>
-                    <span className={styles.debugKind}>token coverage filter</span>
+                    <span className={styles.debugKind}>{t("TokenCoverage")}</span>
                     <span className={styles.debugMeta}>
-                      {tokenCoverageFilter.enabled ? "enabled" : "disabled"} · threshold {formatCoveragePercent(tokenCoverageFilter.threshold)}
+                      {t(tokenCoverageFilter.enabled ? "Enabled" : "Disabled")} · {t("Threshold", { value: formatCoveragePercent(tokenCoverageFilter.threshold) })}
                     </span>
                   </summary>
                   <div className={styles.debugCardBody}>
                     <dl className={styles.debugFacts}>
                       <div className={styles.debugFactRow}>
-                        <dt>Results kept</dt>
-                        <dd>{Number(tokenCoverageFilter.resultCountAfter ?? 0)} of {Number(tokenCoverageFilter.resultCountBefore ?? 0)}</dd>
+                        <dt>{t("ResultsKept")}</dt>
+                        <dd>{t("Of", { count: Number(tokenCoverageFilter.resultCountAfter ?? 0), total: Number(tokenCoverageFilter.resultCountBefore ?? 0) })}</dd>
                       </div>
                       <div className={styles.debugFactRow}>
-                        <dt>Minimum token count</dt>
+                        <dt>{t("MinimumTokenCount")}</dt>
                         <dd>{Number(tokenCoverageFilter.minimumMatchedTokenCount ?? 0)}</dd>
                       </div>
                       <div className={styles.debugFactRow}>
-                        <dt>Query tokens</dt>
+                        <dt>{t("QueryTokens")}</dt>
                         <dd>{Array.isArray(tokenCoverageFilter.queryTokens) && tokenCoverageFilter.queryTokens.length > 0 ? tokenCoverageFilter.queryTokens.join(", ") : "n/a"}</dd>
                       </div>
                     </dl>
                     <details className={styles.debugJsonToggle}>
-                      <summary className={styles.debugJsonSummary}>Show full payload</summary>
+                      <summary className={styles.debugJsonSummary}>{t("ShowPayload")}</summary>
                       <pre className={styles.debugJson}>{formatJson(tokenCoverageFilter)}</pre>
                     </details>
                   </div>
@@ -524,25 +527,25 @@ function SearchPageContent() {
                   <details key={`${search.kind}-${index}`} className={styles.debugCard}>
                     <summary className={styles.debugCardSummary}>
                       <span className={styles.debugKind}>{search.kind}</span>
-                      <span className={styles.debugMeta}>mode {search.searchMode || "n/a"} · {search.resultCount} result{search.resultCount === 1 ? "" : "s"}</span>
+                      <span className={styles.debugMeta}>{t("ModeSummary", { mode: search.searchMode || "n/a", count: search.resultCount })}</span>
                     </summary>
                     <div className={styles.debugCardBody}>
                       <dl className={styles.debugFacts}>
                         <div className={styles.debugFactRow}>
-                          <dt>Query</dt>
+                          <dt>{t("Query")}</dt>
                           <dd>{String(search.query ?? "") || "n/a"}</dd>
                         </div>
                         <div className={styles.debugFactRow}>
-                          <dt>Mode</dt>
+                          <dt>{t("Mode")}</dt>
                           <dd>{String(search.searchMode ?? "n/a")}</dd>
                         </div>
                         <div className={styles.debugFactRow}>
-                          <dt>Results</dt>
+                          <dt>{t("Results")}</dt>
                           <dd>{Number(search.resultCount ?? 0)}</dd>
                         </div>
                       </dl>
                       <details className={styles.debugJsonToggle}>
-                        <summary className={styles.debugJsonSummary}>Show full payload</summary>
+                        <summary className={styles.debugJsonSummary}>{t("ShowPayload")}</summary>
                         <pre className={styles.debugJson}>{formatJson(search)}</pre>
                       </details>
                     </div>
@@ -554,8 +557,8 @@ function SearchPageContent() {
 
           {results.length === 0 && !isSearching && !searchError ? (
             <div className={styles.emptyState}>
-              <h2>No matches</h2>
-              <p>Try a broader phrase or remove the tree filter.</p>
+              <h2>{t("NoMatches")}</h2>
+              <p>{t("NoMatchesHint")}</p>
             </div>
           ) : (
             <div className={styles.resultList}>
@@ -567,7 +570,7 @@ function SearchPageContent() {
                     return (
                       <div className={styles.resultMetaRow}>
                         <div className={styles.resultBreadcrumbTrail}>
-                          <span className={styles.resultTreeLabel}>Node: {result.treeDisplayName || result.treeId}</span>
+                          <span className={styles.resultTreeLabel}>{t("NodePrefix", { name: result.treeDisplayName || result.treeId })}</span>
                           {breadcrumbItems.map((item, index) => (
                             <span key={`${result.id}-crumb-${index}`} className={styles.resultBreadcrumbItem}>
                               <span className={styles.resultBreadcrumbSeparator}>/</span>
@@ -582,7 +585,7 @@ function SearchPageContent() {
                             </span>
                           ))}
                         </div>
-                        <span className={styles.resultScore}>Score {Number(result.nodeScore ?? 0).toFixed(2)}</span>
+                        <span className={styles.resultScore}>{t("Score", { value: Number(result.nodeScore ?? 0).toFixed(2) })}</span>
                       </div>
                     );
                   })()}
@@ -607,13 +610,13 @@ function SearchPageContent() {
                                 <span className={styles.resultType}>{getAttachmentBadgeLabel(attachmentSummary)}</span>
                               </div>
                               <span className={styles.resultScore}>
-                                Score {attachmentSummary.score ? attachmentSummary.score.toFixed(2) : "n/a"}
+                                {t("Score", { value: attachmentSummary.score ? attachmentSummary.score.toFixed(2) : "n/a" })}
                               </span>
                             </div>
                             <p className={`${styles.attachmentSummaryText} ${styles.resultSnippetCode}`}>{renderHighlightedText(attachmentSummary.summary, `${attachmentSummary.id}-attachment-summary`)}</p>
-                            {buildAuditLabel(attachmentSummary.updatedByUserDetails, attachmentSummary.updatedAt ?? attachmentSummary.createdAt) ? (
+                            {buildAuditLabel(attachmentSummary.updatedByUserDetails, attachmentSummary.updatedAt ?? attachmentSummary.createdAt, (time) => t("Updated", { time }), locale) ? (
                               <p className={styles.resultAuditText}>
-                                {buildAuditLabel(attachmentSummary.updatedByUserDetails, attachmentSummary.updatedAt ?? attachmentSummary.createdAt)}
+                                {buildAuditLabel(attachmentSummary.updatedByUserDetails, attachmentSummary.updatedAt ?? attachmentSummary.createdAt, (time) => t("Updated", { time }), locale)}
                               </p>
                             ) : null}
                             {getAttachmentContentUrl(attachmentSummary) ? (
@@ -625,7 +628,7 @@ function SearchPageContent() {
                                   <div className={styles.attachmentPreviewFrame}>
                                     <Image
                                       src={getAttachmentContentUrl(attachmentSummary)}
-                                      alt={attachmentSummary.fileName || "Attachment preview"}
+                                      alt={attachmentSummary.fileName || t("AttachmentPreview")}
                                       width={240}
                                       height={180}
                                       sizes="240px"
@@ -640,7 +643,7 @@ function SearchPageContent() {
                                   rel="noreferrer"
                                   className={styles.attachmentOpenLink}
                                 >
-                                  Open
+                                  {t("Open")}
                                 </a>
                               </div>
                             ) : null}
@@ -651,8 +654,8 @@ function SearchPageContent() {
                   ) : null}
                   <div className={styles.resultFooter}>
                     <div className={styles.resultFacts}>
-                      {buildAuditLabel(result.updatedByUserDetails, result.updatedAt) ? (
-                        <span>{buildAuditLabel(result.updatedByUserDetails, result.updatedAt)}</span>
+                      {buildAuditLabel(result.updatedByUserDetails, result.updatedAt, (time) => t("Updated", { time }), locale) ? (
+                        <span>{buildAuditLabel(result.updatedByUserDetails, result.updatedAt, (time) => t("Updated", { time }), locale)}</span>
                       ) : null}
                     </div>
                   </div>
@@ -667,8 +670,9 @@ function SearchPageContent() {
 }
 
 export default function SearchPage() {
+  const t = useTranslations("Pages.Search");
   return (
-    <Suspense fallback={<div>Loading search...</div>}>
+    <Suspense fallback={<div>{t("Loading")}</div>}>
       <SearchPageContent />
     </Suspense>
   );

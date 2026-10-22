@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import styles from "../page.module.css";
 import { AgentFamilyPublishingPanel } from "./AgentFamilyPublishingPanel";
 import {
@@ -11,6 +12,7 @@ import {
 import { getErrorMessage } from "../adminShared";
 
 export default function AdminAgentPublishingPage() {
+  const t = useTranslations("Pages.Admin.Publishing");
   const [agentFamilies, setAgentFamilies] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState("");
@@ -97,10 +99,10 @@ export default function AdminAgentPublishingPage() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className={styles.heroHeader}>
           <div className="appHeroCopy">
-            <p className="appEyebrow">Agent publishing</p>
-            <h2 className="appPageTitle">Agent family operations</h2>
+            <p className="appEyebrow">{t("Title")}</p>
+            <h2 className="appPageTitle">{t("Heading")}</h2>
             <div className={styles.heroDescriptionStack}>
-              <p className="appPageDescription">Manage Azure prompt agent publishing and activation for registered agent families.</p>
+              <p className="appPageDescription">{t("Intro")}</p>
             </div>
           </div>
           <button
@@ -109,7 +111,7 @@ export default function AdminAgentPublishingPage() {
             disabled={isLoading}
             className="appPrimaryFormButton"
           >
-            {isLoading ? "Refreshing..." : "Refresh"}
+            {t(isLoading ? "Refreshing" : "Refresh")}
           </button>
         </div>
       </section>

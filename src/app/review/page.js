@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { buildAuditLabel, getErrorMessage } from "@/app/shared/displayFormatting";
 import { useAuth } from "@/app/useAuth";
 import styles from "./page.module.css";
@@ -32,8 +33,8 @@ function buildTreesHref(isPrivate) {
   return isPrivate ? "/trees?visibility=private" : "/trees";
 }
 
-function promptForRejectionComment(targetLabel) {
-  const nextComment = window.prompt(`Enter a rejection comment for ${targetLabel}:`, "");
+function promptForRejectionComment(targetLabel, t) {
+  const nextComment = window.prompt(t("Prompt", { scope: targetLabel }), "");
 
   if (nextComment === null) {
     return null;
@@ -54,20 +55,20 @@ function formatRejectionComment(value) {
   return normalizedValue || "No rejection comment recorded.";
 }
 
-function getTreeReviewScopeLabel(treeName) {
-  return `tree "${treeName}" and everything in it, including all nodes, leaves, and attachments`;
+function getTreeReviewScopeLabel(treeName, t) {
+  return t("Scope.Tree", { name: treeName });
 }
 
-function getNodeReviewScopeLabel(node) {
+function getNodeReviewScopeLabel(node, t) {
   if (node?.isLeafNode) {
-    return `leaf node "${node.name}" only`;
+    return t("Scope.Leaf", { name: node.name });
   }
 
-  return `branch node "${node?.name}", its descendant branches, and its leaf nodes`;
+  return t("Scope.Branch", { name: node?.name });
 }
 
-function getAttachmentReviewScopeLabel(fileName) {
-  return `attachment "${fileName}" only`;
+function getAttachmentReviewScopeLabel(fileName, t) {
+  return t("Scope.Attachment", { name: fileName });
 }
 
 function getReviewActionPastTense(action) {
@@ -87,6 +88,7 @@ function getReviewActionPastTense(action) {
 }
 
 export default function ReviewPage() {
+  const t = useTranslations("Pages.Review");
   const { user } = useAuth();
   const [reviewStatus, setReviewStatus] = useState("submitted");
   const [trees, setTrees] = useState([]);
@@ -183,9 +185,9 @@ export default function ReviewPage() {
 
   const handleTreeAction = async (tree, action) => {
     const pendingKey = `tree:${action}:${tree.id}`;
-    const treeScopeLabel = getTreeReviewScopeLabel(tree.name);
+    const treeScopeLabel = getTreeReviewScopeLabel(tree.name, t);
     const rejectionComment = action === "reject"
-      ? promptForRejectionComment(treeScopeLabel)
+      ? promptForRejectionComment(treeScopeLabel, t)
       : null;
 
     if (action === "reject" && rejectionComment === null) {
@@ -198,7 +200,7 @@ export default function ReviewPage() {
         ? "move back to draft"
         : action;
 
-    if (!window.confirm(`Are you sure you want to ${label} ${treeScopeLabel}?`)) {
+    if (!window.confirm(t("Confirm", { action: t(`Actions.${action}`), scope: treeScopeLabel }))) {
       return;
     }
 
@@ -225,7 +227,7 @@ export default function ReviewPage() {
         throw new Error(data?.error || "Tree review action could not be completed");
       }
 
-      setStatusMessage(`Tree ${tree.id} ${getReviewActionPastTense(action)}.`);
+      setStatusMessage(t("Done", { item: t("TreeId", { id: tree.id }), action: t(`Past.${action}`) }));
       await refreshReviewItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree review action could not be completed"));
@@ -236,9 +238,9 @@ export default function ReviewPage() {
 
   const handleNodeAction = async (node, action) => {
     const pendingKey = `node:${action}:${node.id}`;
-    const nodeTargetLabel = getNodeReviewScopeLabel(node);
+    const nodeTargetLabel = getNodeReviewScopeLabel(node, t);
     const rejectionComment = action === "reject"
-      ? promptForRejectionComment(nodeTargetLabel)
+      ? promptForRejectionComment(nodeTargetLabel, t)
       : null;
 
     if (action === "reject" && rejectionComment === null) {
@@ -251,7 +253,7 @@ export default function ReviewPage() {
         ? "move back to draft"
         : action;
 
-    if (!window.confirm(`Are you sure you want to ${label} ${nodeTargetLabel}?`)) {
+    if (!window.confirm(t("Confirm", { action: t(`Actions.${action}`), scope: nodeTargetLabel }))) {
       return;
     }
 
@@ -278,7 +280,7 @@ export default function ReviewPage() {
         throw new Error(data?.error || "Node review action could not be completed");
       }
 
-      setStatusMessage(`Node ${node.id} ${getReviewActionPastTense(action)}.`);
+      setStatusMessage(t("Done", { item: t("NodeId", { id: node.id }), action: t(`Past.${action}`) }));
       await refreshReviewItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Node review action could not be completed"));
@@ -289,9 +291,9 @@ export default function ReviewPage() {
 
   const handleAttachmentAction = async (attachment, action) => {
     const pendingKey = `attachment:${action}:${attachment.id}`;
-    const attachmentTargetLabel = getAttachmentReviewScopeLabel(attachment.fileName);
+    const attachmentTargetLabel = getAttachmentReviewScopeLabel(attachment.fileName, t);
     const rejectionComment = action === "reject"
-      ? promptForRejectionComment(attachmentTargetLabel)
+      ? promptForRejectionComment(attachmentTargetLabel, t)
       : null;
 
     if (action === "reject" && rejectionComment === null) {
@@ -304,7 +306,7 @@ export default function ReviewPage() {
         ? "move back to draft"
         : action;
 
-    if (!window.confirm(`Are you sure you want to ${label} ${attachmentTargetLabel}?`)) {
+    if (!window.confirm(t("Confirm", { action: t(`Actions.${action}`), scope: attachmentTargetLabel }))) {
       return;
     }
 
@@ -331,7 +333,7 @@ export default function ReviewPage() {
         throw new Error(data?.error || "Attachment review action could not be completed");
       }
 
-      setStatusMessage(`Attachment ${attachment.id} ${getReviewActionPastTense(action)}.`);
+      setStatusMessage(t("Done", { item: t("AttachmentId", { id: attachment.id }), action: t(`Past.${action}`) }));
       await refreshReviewItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Attachment review action could not be completed"));
@@ -357,13 +359,6 @@ export default function ReviewPage() {
       return;
     }
 
-    const actionVerb = normalizedAction === "submit"
-      ? "Submit"
-      : normalizedAction === "unsubmit"
-        ? "Unsubmit"
-      : normalizedAction === "approve"
-        ? "Approve"
-        : "Reject";
     const actionPastTense = normalizedAction === "submit"
       ? "Submitted"
       : normalizedAction === "unsubmit"
@@ -379,15 +374,20 @@ export default function ReviewPage() {
         ? "Approving..."
         : "Rejecting...";
     const statusLabel = reviewStatus === "rejected" ? "rejected" : "submitted";
+    const bulkScope = t("BulkScope", {
+      count: itemCount,
+      status: t(`BulkStatuses.${reviewStatus === "rejected" ? "rejected" : "submitted"}`, { count: itemCount }),
+      kind: t(`ItemCount.${kind}`, { count: itemCount }),
+    });
     const rejectionComment = normalizedAction === "reject"
-      ? promptForRejectionComment(`${itemCount} ${statusLabel} ${itemLabel}${itemCount === 1 ? "" : "s"}`)
+      ? promptForRejectionComment(bulkScope, t)
       : null;
 
     if (normalizedAction === "reject" && rejectionComment === null) {
       return;
     }
 
-    if (!window.confirm(`${actionVerb} all ${itemCount} ${statusLabel} ${itemLabel}${itemCount === 1 ? "" : "s"}?`)) {
+    if (!window.confirm(t("BulkConfirm", { action: t(`Actions.${normalizedAction}`), scope: bulkScope }))) {
       return;
     }
 
@@ -456,7 +456,7 @@ export default function ReviewPage() {
         }
       }
 
-      setStatusMessage(`${actionPastTense} ${itemCount} ${statusLabel} ${itemLabel}${itemCount === 1 ? "" : "s"}.`);
+      setStatusMessage(t("BulkDone", { action: t(`Past.${normalizedAction}`), scope: bulkScope, count: itemCount }));
       await refreshReviewItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, `${statusLabel.charAt(0).toUpperCase()}${statusLabel.slice(1)} ${itemLabel}${itemCount === 1 ? "" : "s"} could not be ${getReviewActionPastTense(normalizedAction)}`));
@@ -482,7 +482,7 @@ export default function ReviewPage() {
           disabled={isLoading || items.length === 0 || Boolean(pendingItems[unsubmitKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey])}
           className="appCompactActionButton appCompactActionButtonNeutral"
         >
-          {pendingItems[unsubmitKey] ? "Unsubmitting..." : "Unsubmit All"}
+          {t(pendingItems[unsubmitKey] ? "Unsubmitting" : "UnsubmitAll")}
         </button>
         <button
           type="button"
@@ -490,7 +490,7 @@ export default function ReviewPage() {
           disabled={isLoading || items.length === 0 || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonPrimary"
         >
-          {pendingItems[approveKey] ? "Approving..." : "Approve All"}
+          {t(pendingItems[approveKey] ? "Approving" : "ApproveAll")}
         </button>
         <button
           type="button"
@@ -498,7 +498,7 @@ export default function ReviewPage() {
           disabled={isLoading || items.length === 0 || Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonDanger"
         >
-          {pendingItems[rejectKey] ? "Rejecting..." : "Reject All"}
+          {t(pendingItems[rejectKey] ? "Rejecting" : "RejectAll")}
         </button>
       </div>
     );
@@ -529,7 +529,7 @@ export default function ReviewPage() {
           disabled={Boolean(pendingItems[unsubmitKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey])}
           className="appCompactActionButton appCompactActionButtonNeutral"
         >
-          {pendingItems[unsubmitKey] ? "Unsubmitting..." : "Unsubmit"}
+          {t(pendingItems[unsubmitKey] ? "Unsubmitting" : "Unsubmit")}
         </button>
         <button
           type="button"
@@ -545,7 +545,7 @@ export default function ReviewPage() {
           disabled={Boolean(pendingItems[approveKey]) || Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonPrimary"
         >
-          {pendingItems[approveKey] ? "Approving..." : "Approve"}
+          {t(pendingItems[approveKey] ? "Approving" : "Approve")}
         </button>
         <button
           type="button"
@@ -561,7 +561,7 @@ export default function ReviewPage() {
           disabled={Boolean(pendingItems[rejectKey]) || Boolean(pendingItems[approveKey]) || Boolean(pendingItems[unsubmitKey])}
           className="appCompactActionButton appCompactActionButtonDanger"
         >
-          {pendingItems[rejectKey] ? "Rejecting..." : "Reject"}
+          {t(pendingItems[rejectKey] ? "Rejecting" : "Reject")}
         </button>
       </>
     );
@@ -571,8 +571,8 @@ export default function ReviewPage() {
     return (
       <main className={`${styles.pageShell} appPageShell`}>
         <section className={`appTopLevelPanel ${styles.heroCard}`}>
-          <p className="appEyebrow">Review</p>
-          <p className="appPageDescription">Sign in to review submitted or rejected trees, nodes, and attachments from approval-enabled trees.</p>
+          <p className="appEyebrow">{t("Title")}</p>
+          <p className="appPageDescription">{t("SignInHint")}</p>
         </section>
       </main>
     );
@@ -583,14 +583,14 @@ export default function ReviewPage() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className={styles.heroHeader}>
           <div className="appHeroCopy">
-            <p className="appEyebrow">Review</p>
+            <p className="appEyebrow">{t("Title")}</p>
             <div className={styles.heroDescriptionStack}>
-              <p className="appPageDescription">Review items from approval-enabled trees only. Use this page for submitted approvals and rejected submissions.</p>
+              <p className="appPageDescription">{t("Intro")}</p>
             </div>
           </div>
           <div className={styles.heroControls}>
             <label className={styles.fieldStack}>
-              <span className="appFieldLabel">View</span>
+              <span className="appFieldLabel">{t("View")}</span>
               <select
                 value={reviewStatus}
                 onChange={(event) => {
@@ -599,8 +599,8 @@ export default function ReviewPage() {
                 }}
                 className="appSelectControl"
               >
-                <option value="submitted">{formatReviewStatusLabel("submitted")}</option>
-                <option value="rejected">{formatReviewStatusLabel("rejected")}</option>
+                <option value="submitted">{t("Submitted")}</option>
+                <option value="rejected">{t("Rejected")}</option>
               </select>
             </label>
             <button
@@ -609,7 +609,7 @@ export default function ReviewPage() {
               disabled={isLoading}
               className="appPrimaryFormButton"
             >
-              {isLoading ? "Refreshing..." : "Refresh"}
+              {t(isLoading ? "Refreshing" : "Refresh")}
             </button>
           </div>
         </div>
@@ -622,36 +622,36 @@ export default function ReviewPage() {
           <article className={`appTopLevelPanel ${styles.panel}`}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
               <div className={styles.panelHeaderGroup}>
-                <span className={styles.panelHeading}>Trees</span>
+                <span className={styles.panelHeading}>{t("Trees")}</span>
                 <span className={styles.countLabel}>{trees.length}</span>
               </div>
               {renderBulkActions(trees, "tree")}
             </div>
             <div className={styles.panelBody}>
               {isLoading ? (
-                <div className={styles.emptyState}>Loading trees...</div>
+                <div className={styles.emptyState}>{t("LoadingTrees")}</div>
               ) : trees.length === 0 ? (
-                <div className={styles.emptyState}>No trees are currently in the {reviewStatus} state.</div>
+                <div className={styles.emptyState}>{t("NoTrees", { status: t(reviewStatus === "rejected" ? "Rejected" : "Submitted") })}</div>
               ) : (
                 <div className={styles.list}>
                   {trees.map((tree) => (
                     <article key={tree.id} className={styles.listItem}>
                       <div className={styles.itemMeta}>
                         <div className={styles.itemHeader}>
-                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Tree {tree.id}</span></span>
-                          <span className={styles.badgeMuted}><span className={styles.badgeTextNudge}>{tree.isPrivate ? "Private" : "Public"}</span></span>
+                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>{t("TreeId", { id: tree.id })}</span></span>
+                          <span className={styles.badgeMuted}><span className={styles.badgeTextNudge}>{t(tree.isPrivate ? "Private" : "Public")}</span></span>
                         </div>
                         <h2 className={styles.itemTitle}>{tree.name}</h2>
-                        <p className={styles.itemDetail}>{buildAuditLabel(tree.submittedByUserDetails, tree.submittedAt, "No submitter recorded")}</p>
+                        <p className={styles.itemDetail}>{buildAuditLabel(tree.submittedByUserDetails, tree.submittedAt, t("NoSubmitter"))}</p>
                         {tree.reviewedAt || tree.reviewedByUserDetails ? (
                           <p className={styles.itemDetail}>{buildAuditLabel(tree.reviewedByUserDetails, tree.reviewedAt, null)}</p>
                         ) : null}
                         {reviewStatus === "rejected" ? (
-                          <p className={styles.itemDetail}>Rejection comment: {formatRejectionComment(tree.rejectionComment)}</p>
+                          <p className={styles.itemDetail}>{t("RejectionComment", { comment: formatRejectionComment(tree.rejectionComment) })}</p>
                         ) : null}
                       </div>
                       <div className={styles.actionGroup}>
-                        <Link href={buildTreesHref(tree.isPrivate)} className="appCompactActionButton appCompactActionButtonNeutral">Open</Link>
+                        <Link href={buildTreesHref(tree.isPrivate)} className="appCompactActionButton appCompactActionButtonNeutral">{t("Open")}</Link>
                         {renderActions(tree, "tree")}
                       </div>
                     </article>
@@ -664,39 +664,39 @@ export default function ReviewPage() {
           <article className={`appTopLevelPanel ${styles.panel}`}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
               <div className={styles.panelHeaderGroup}>
-                <span className={styles.panelHeading}>Attachments</span>
+                <span className={styles.panelHeading}>{t("Attachments")}</span>
                 <span className={styles.countLabel}>{attachments.length}</span>
               </div>
               {renderBulkActions(attachments, "attachment")}
             </div>
             <div className={styles.panelBody}>
               {isLoading ? (
-                <div className={styles.emptyState}>Loading attachments...</div>
+                <div className={styles.emptyState}>{t("LoadingAttachments")}</div>
               ) : attachments.length === 0 ? (
-                <div className={styles.emptyState}>No attachments are currently in the {reviewStatus} state.</div>
+                <div className={styles.emptyState}>{t("NoAttachments", { status: t(reviewStatus === "rejected" ? "Rejected" : "Submitted") })}</div>
               ) : (
                 <div className={styles.list}>
                   {attachments.map((attachment) => (
                     <article key={attachment.id} className={styles.listItem}>
                       <div className={styles.itemMeta}>
                         <div className={styles.itemHeader}>
-                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Tree {attachment.treeId}</span></span>
-                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Node {attachment.nodeId}</span></span>
-                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Attachment {attachment.id}</span></span>
+                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>{t("TreeId", { id: attachment.treeId })}</span></span>
+                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>{t("NodeId", { id: attachment.nodeId })}</span></span>
+                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>{t("AttachmentId", { id: attachment.id })}</span></span>
                         </div>
                         <h2 className={styles.itemTitle}>{attachment.fileName}</h2>
-                        <p className={styles.itemDetail}>Tree: {attachment.treeName}</p>
-                        <p className={styles.itemDetail}>{attachment.nodeBreadcrumb || "No breadcrumb available."}</p>
-                        <p className={styles.itemDetail}>{buildAuditLabel(attachment.submittedByUserDetails, attachment.submittedAt, "No submitter recorded")}</p>
+                        <p className={styles.itemDetail}>{t("TreeLabel", { name: attachment.treeName })}</p>
+                        <p className={styles.itemDetail}>{attachment.nodeBreadcrumb || t("NoBreadcrumb")}</p>
+                        <p className={styles.itemDetail}>{buildAuditLabel(attachment.submittedByUserDetails, attachment.submittedAt, t("NoSubmitter"))}</p>
                         {attachment.reviewedAt || attachment.reviewedByUserDetails ? (
                           <p className={styles.itemDetail}>{buildAuditLabel(attachment.reviewedByUserDetails, attachment.reviewedAt, null)}</p>
                         ) : null}
                         {reviewStatus === "rejected" ? (
-                          <p className={styles.itemDetail}>Rejection comment: {formatRejectionComment(attachment.rejectionComment)}</p>
+                          <p className={styles.itemDetail}>{t("RejectionComment", { comment: formatRejectionComment(attachment.rejectionComment) })}</p>
                         ) : null}
                       </div>
                       <div className={styles.actionGroup}>
-                        <Link href={buildNotesHref(attachment.treeId, attachment.nodeId, attachment.isPrivate)} className="appCompactActionButton appCompactActionButtonNeutral">Open</Link>
+                        <Link href={buildNotesHref(attachment.treeId, attachment.nodeId, attachment.isPrivate)} className="appCompactActionButton appCompactActionButtonNeutral">{t("Open")}</Link>
                         {renderActions(attachment, "attachment")}
                       </div>
                     </article>
@@ -711,39 +711,39 @@ export default function ReviewPage() {
           <article className={`appTopLevelPanel ${styles.panel}`}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
               <div className={styles.panelHeaderGroup}>
-                <span className={styles.panelHeading}>Nodes</span>
+                <span className={styles.panelHeading}>{t("Nodes")}</span>
                 <span className={styles.countLabel}>{nodes.length}</span>
               </div>
               {renderBulkActions(nodes, "node")}
             </div>
             <div className={styles.panelBody}>
               {isLoading ? (
-                <div className={styles.emptyState}>Loading nodes...</div>
+                <div className={styles.emptyState}>{t("LoadingNodes")}</div>
               ) : nodes.length === 0 ? (
-                <div className={styles.emptyState}>No nodes are currently in the {reviewStatus} state.</div>
+                <div className={styles.emptyState}>{t("NoNodes", { status: t(reviewStatus === "rejected" ? "Rejected" : "Submitted") })}</div>
               ) : (
                 <div className={styles.list}>
                   {nodes.map((node) => (
                     <article key={node.id} className={styles.listItem}>
                       <div className={styles.itemMeta}>
                         <div className={styles.itemHeader}>
-                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Tree {node.treeId}</span></span>
-                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>Node {node.id}</span></span>
-                          <span className={styles.badgeMuted}><span className={styles.badgeTextNudge}>{node.isLeafNode ? "Leaf" : "Branch"}</span></span>
+                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>{t("TreeId", { id: node.treeId })}</span></span>
+                          <span className={primaryBadgeClassName}><span className={styles.badgeTextNudge}>{t("NodeId", { id: node.id })}</span></span>
+                          <span className={styles.badgeMuted}><span className={styles.badgeTextNudge}>{t(node.isLeafNode ? "Leaf" : "Branch")}</span></span>
                         </div>
                         <h2 className={styles.itemTitle}>{node.name}</h2>
-                        <p className={styles.itemDetail}>Tree: {node.treeName}</p>
-                        <p className={styles.itemDetail}>{node.breadcrumb || "No breadcrumb available."}</p>
-                        <p className={styles.itemDetail}>{buildAuditLabel(node.submittedByUserDetails, node.submittedAt, "No submitter recorded")}</p>
+                        <p className={styles.itemDetail}>{t("TreeLabel", { name: node.treeName })}</p>
+                        <p className={styles.itemDetail}>{node.breadcrumb || t("NoBreadcrumb")}</p>
+                        <p className={styles.itemDetail}>{buildAuditLabel(node.submittedByUserDetails, node.submittedAt, t("NoSubmitter"))}</p>
                         {node.reviewedAt || node.reviewedByUserDetails ? (
                           <p className={styles.itemDetail}>{buildAuditLabel(node.reviewedByUserDetails, node.reviewedAt, null)}</p>
                         ) : null}
                         {reviewStatus === "rejected" ? (
-                          <p className={styles.itemDetail}>Rejection comment: {formatRejectionComment(node.rejectionComment)}</p>
+                          <p className={styles.itemDetail}>{t("RejectionComment", { comment: formatRejectionComment(node.rejectionComment) })}</p>
                         ) : null}
                       </div>
                       <div className={styles.actionGroup}>
-                        <Link href={buildNotesHref(node.treeId, node.id, node.isPrivate)} className="appCompactActionButton appCompactActionButtonNeutral">Open</Link>
+                        <Link href={buildNotesHref(node.treeId, node.id, node.isPrivate)} className="appCompactActionButton appCompactActionButtonNeutral">{t("Open")}</Link>
                         {renderActions(node, "node")}
                       </div>
                     </article>

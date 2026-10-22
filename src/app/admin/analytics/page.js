@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import styles from "../page.module.css";
 import { formatTimestamp, formatVisitCount, getErrorMessage } from "../adminShared";
 
 export default function AdminAnalyticsPage() {
+  const t = useTranslations("Pages.Admin.Analytics");
   const [analyticsSummary, setAnalyticsSummary] = useState({ byPageDeviceBrowser: [], byPage: [], byPageSource: [], generatedAt: null });
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -48,10 +50,10 @@ export default function AdminAnalyticsPage() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className={styles.heroHeader}>
           <div className="appHeroCopy">
-            <p className="appEyebrow">Analytics</p>
-            <h2 className="appPageTitle">Page visit aggregates</h2>
+            <p className="appEyebrow">{t("Title")}</p>
+            <h2 className="appPageTitle">{t("Heading")}</h2>
             <div className={styles.heroDescriptionStack}>
-              <p className="appPageDescription">Live aggregates from the append-only visit event log.</p>
+              <p className="appPageDescription">{t("Intro")}</p>
             </div>
           </div>
           <button
@@ -60,11 +62,11 @@ export default function AdminAnalyticsPage() {
             disabled={isLoading}
             className="appPrimaryFormButton"
           >
-            {isLoading ? "Refreshing..." : "Refresh"}
+            {t(isLoading ? "Refreshing" : "Refresh")}
           </button>
         </div>
         {analyticsSummary.generatedAt ? (
-          <p className={styles.tableMeta}>Last aggregated: {formatTimestamp(analyticsSummary.generatedAt)}</p>
+          <p className={styles.tableMeta}>{t("LastAggregated", { date: formatTimestamp(analyticsSummary.generatedAt) })}</p>
         ) : null}
         {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
       </section>
@@ -73,25 +75,25 @@ export default function AdminAnalyticsPage() {
         <article className={`appTopLevelPanel ${styles.panel}`}>
           <div className={styles.panelBody}>
             {isLoading ? (
-              <div className={styles.emptyState}>Loading analytics...</div>
+              <div className={styles.emptyState}>{t("Loading")}</div>
             ) : (
               <div className={styles.analyticsTables}>
                 <section className={styles.analyticsSection}>
-                  <h2 className={styles.analyticsHeading}>By page, device class, and browser family</h2>
+                  <h2 className={styles.analyticsHeading}>{t("ByDevice")}</h2>
                   <div className={styles.indexingTableWrapper}>
                     <table className={styles.indexingTable}>
                       <thead>
                         <tr>
-                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
-                          <th scope="col" className={styles.indexingColumnHeader}>device class</th>
-                          <th scope="col" className={styles.indexingColumnHeader}>browser family</th>
-                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Path")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Device")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Browser")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {analyticsSummary.byPageDeviceBrowser.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                            <td colSpan={4} className={styles.analyticsEmptyCell}>{t("Empty")}</td>
                           </tr>
                         ) : analyticsSummary.byPageDeviceBrowser.map((row) => (
                           <tr key={`${row.pagePath}:${row.deviceClass}:${row.browserFamily}`}>
@@ -107,19 +109,19 @@ export default function AdminAnalyticsPage() {
                 </section>
 
                 <section className={styles.analyticsSection}>
-                  <h2 className={styles.analyticsHeading}>By page</h2>
+                  <h2 className={styles.analyticsHeading}>{t("ByPage")}</h2>
                   <div className={styles.indexingTableWrapper}>
                     <table className={styles.indexingTable}>
                       <thead>
                         <tr>
-                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
-                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Path")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {analyticsSummary.byPage.length === 0 ? (
                           <tr>
-                            <td colSpan={2} className={styles.analyticsEmptyCell}>No visit events recorded yet.</td>
+                            <td colSpan={2} className={styles.analyticsEmptyCell}>{t("Empty")}</td>
                           </tr>
                         ) : analyticsSummary.byPage.map((row) => (
                           <tr key={row.pagePath}>
@@ -133,20 +135,20 @@ export default function AdminAnalyticsPage() {
                 </section>
 
                 <section className={styles.analyticsSection}>
-                  <h2 className={styles.analyticsHeading}>By page and source</h2>
+                  <h2 className={styles.analyticsHeading}>{t("BySource")}</h2>
                   <div className={styles.indexingTableWrapper}>
                     <table className={styles.indexingTable}>
                       <thead>
                         <tr>
-                          <th scope="col" className={styles.indexingColumnHeader}>page path</th>
-                          <th scope="col" className={styles.indexingColumnHeader}>source</th>
-                          <th scope="col" className={styles.indexingColumnHeader}>visits</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Path")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Source")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {analyticsSummary.byPageSource.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className={styles.analyticsEmptyCell}>No source-tagged visit events recorded yet.</td>
+                            <td colSpan={3} className={styles.analyticsEmptyCell}>{t("EmptySource")}</td>
                           </tr>
                         ) : analyticsSummary.byPageSource.map((row) => (
                           <tr key={`${row.pagePath}:${row.source}`}>

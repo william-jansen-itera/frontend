@@ -29,6 +29,11 @@
   max-width: 980px;
 }
 
+.heroCard :global(.appHeroCopy) {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+
 .cardText {
   margin: 0;
   color: var(--ui-body-color);

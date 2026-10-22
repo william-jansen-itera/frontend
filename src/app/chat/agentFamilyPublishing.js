@@ -55,7 +55,7 @@ export function setChatFamilySearchParam(searchParams, family, availableFamilies
   searchParams.set("family", normalizedFamily);
 }
 
-export function buildChatPlaceholder(availableFamilies) {
+export function buildChatPlaceholder(availableFamilies, phrases = {}) {
   const familyLabels = Array.isArray(availableFamilies)
     ? availableFamilies
       .map((family) => String(family?.label ?? family?.family ?? "").trim().toLowerCase())
@@ -63,15 +63,15 @@ export function buildChatPlaceholder(availableFamilies) {
     : [];
 
   if (familyLabels.length === 0) {
-    return "No chat families are currently available";
+    return phrases.empty ?? "No chat families are currently available";
   }
 
   if (familyLabels.length === 1) {
-    return `Ask the agent about ${familyLabels[0]}`;
+    return phrases.single?.(familyLabels[0]) ?? `Ask the agent about ${familyLabels[0]}`;
   }
 
   const leadingLabels = familyLabels.slice(0, -1).join(", ");
   const trailingLabel = familyLabels[familyLabels.length - 1];
 
-  return `Ask the agent about ${leadingLabels}, or ${trailingLabel}`;
+  return phrases.multiple?.(leadingLabels, trailingLabel) ?? `Ask the agent about ${leadingLabels}, or ${trailingLabel}`;
 }

@@ -1,54 +1,55 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import styles from "./NotesEditor.module.css";
 
 const INSERT_GROUPS = [
   {
-    title: "Bullets",
+    titleKey: "Bullets",
     items: [
-      { label: "Bullet", preview: "•", insertText: "• " },
-      { label: "Open bullet", preview: "◦", insertText: "◦ " },
-      { label: "Square bullet", preview: "▪", insertText: "▪ " },
-      { label: "Arrow bullet", preview: "▸", insertText: "▸ " },
-      { label: "Dash", preview: "-", insertText: "- " },
+      { labelKey: "Bullet", preview: "•", insertText: "• " },
+      { labelKey: "OpenBullet", preview: "◦", insertText: "◦ " },
+      { labelKey: "SquareBullet", preview: "▪", insertText: "▪ " },
+      { labelKey: "ArrowBullet", preview: "▸", insertText: "▸ " },
+      { labelKey: "Dash", preview: "-", insertText: "- " },
     ],
   },
   {
-    title: "Status",
+    titleKey: "Status",
     items: [
-      { label: "Check", preview: "✓", insertText: "✓ " },
-      { label: "Cross", preview: "✗", insertText: "✗ " },
-      { label: "Warning", preview: "⚠️", insertText: "⚠️ " },
-      { label: "Question", preview: "❓", insertText: "❓ " },
-      { label: "Unchecked", preview: "☐", insertText: "☐ " },
-      { label: "Checked", preview: "☑", insertText: "☑ " },
+      { labelKey: "Check", preview: "✓", insertText: "✓ " },
+      { labelKey: "Cross", preview: "✗", insertText: "✗ " },
+      { labelKey: "Warning", preview: "⚠️", insertText: "⚠️ " },
+      { labelKey: "Question", preview: "❓", insertText: "❓ " },
+      { labelKey: "Unchecked", preview: "☐", insertText: "☐ " },
+      { labelKey: "Checked", preview: "☑", insertText: "☑ " },
     ],
   },
   {
-    title: "Templates",
+    titleKey: "Templates",
     items: [
-      { label: "Action", preview: "Action:", insertText: "Action: " },
-      { label: "Decision", preview: "Decision:", insertText: "Decision: " },
-      { label: "Question", preview: "Question:", insertText: "Question: " },
-      { label: "Note", preview: "Note:", insertText: "Note: " },
+      { labelKey: "Action", preview: "Action:", insertText: "Action: " },
+      { labelKey: "Decision", preview: "Decision:", insertText: "Decision: " },
+      { labelKey: "Question", preview: "Question:", insertText: "Question: " },
+      { labelKey: "Note", preview: "Note:", insertText: "Note: " },
       {
-        label: "2 bullets + sub",
+        labelKey: "TwoBulletsSub",
         preview: "• ◦ • ◦",
         insertText: "• \n   ◦ \n• \n   ◦ ",
       },
       {
-        label: "2 bullets + sub + sub",
+        labelKey: "TwoBulletsTwoSubs",
         preview: "• ◦ ▪ •",
         insertText: "• \n   ◦ \n      ▪ \n• \n   ◦ \n      ▪ ",
       },
       {
-        label: "4 bullets",
+        labelKey: "FourBullets",
         preview: "• • • •",
         insertText: "• \n• \n• \n• ",
       },
       {
-        label: "4 dash bullets",
+        labelKey: "FourDashBullets",
         preview: "- - - -",
         insertText: "- \n- \n- \n- ",
       },
@@ -67,6 +68,7 @@ export function NotesEditor({
   onStartEditing = null,
   onCancelEditing = null,
 }) {
+  const t = useTranslations("Pages.Notes.Editor");
   const editorRef = useRef(null);
   const textareaRef = useRef(null);
   const selectionRef = useRef({ start: 0, end: 0 });
@@ -139,7 +141,7 @@ export function NotesEditor({
           onClick={onStartEditing}
           disabled={disabled || isEditing}
         >
-          Edit
+          {t("Edit")}
         </button>
         <button
           type="button"
@@ -151,7 +153,7 @@ export function NotesEditor({
           aria-expanded={isPanelOpen}
           aria-haspopup="dialog"
         >
-          Insert
+          {t("Insert")}
         </button>
         {onGenerate ? (
           <button
@@ -160,7 +162,7 @@ export function NotesEditor({
             onClick={onGenerate}
             disabled={disabled || !isEditing || !canGenerate || isGenerating}
           >
-            {isGenerating ? "Generating..." : "Generate"}
+            {t(isGenerating ? "Generating" : "Generate")}
           </button>
         ) : null}
         <button
@@ -172,24 +174,24 @@ export function NotesEditor({
           }}
           disabled={disabled || !isEditing}
         >
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
 
       {isEditing && isPanelOpen && (
-        <div className={styles.insertPanel} role="dialog" aria-label="Insert symbols and templates">
+        <div className={styles.insertPanel} role="dialog" aria-label={t("InsertDialog")}>
           {INSERT_GROUPS.map((group) => (
-            <section key={group.title} className={styles.insertGroup}>
-              <h3 className={styles.insertGroupTitle}>{group.title}</h3>
+            <section key={group.titleKey} className={styles.insertGroup}>
+              <h3 className={styles.insertGroupTitle}>{t(`Groups.${group.titleKey}`)}</h3>
               <div className={styles.insertGrid}>
                 {group.items.map((item) => (
                   <button
-                    key={`${group.title}-${item.label}`}
+                    key={`${group.titleKey}-${item.labelKey}`}
                     type="button"
                     className={styles.insertItem}
                     disabled={disabled}
-                    title={item.label}
-                    aria-label={item.label}
+                    title={t(`Items.${item.labelKey}`)}
+                    aria-label={t(`Items.${item.labelKey}`)}
                     onMouseDown={(event) => {
                       event.preventDefault();
                     }}
@@ -198,7 +200,7 @@ export function NotesEditor({
                     }}
                   >
                     <span className={styles.insertItemPreview}>{item.preview ?? item.insertText.trim()}</span>
-                    <span className={styles.insertItemLabel}>{item.label}</span>
+                    <span className={styles.insertItemLabel}>{t(`Items.${item.labelKey}`)}</span>
                   </button>
                 ))}
               </div>
@@ -222,7 +224,7 @@ export function NotesEditor({
         />
       ) : (
         <div className={styles.readView}>
-          {String(value || "").trim() ? value : <span className={styles.readViewEmpty}>No notes yet.</span>}
+          {String(value || "").trim() ? value : <span className={styles.readViewEmpty}>{t("NoNotes")}</span>}
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@
 import PageVisitTracker from './PageVisitTracker';
 import Link from "next/link";
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from './useAuth';
 import styles from './page.module.css';
 
@@ -56,6 +57,7 @@ async function callHelloNextApi(name) {
 }
 
 export default function Home() {
+  const t = useTranslations('Pages.Home');
   const { user, isAuthResolved } = useAuth();
   const [applicationStatus, setApplicationStatus] = useState(DEFAULT_STATUS);
   const isSignedIn = Boolean(user);
@@ -75,26 +77,26 @@ export default function Home() {
       <PageVisitTracker pagePath="/" />
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
-          <p className="appEyebrow">Material. Domain. Speak.</p>
+          <p className="appEyebrow">{t('Eyebrow')}</p>
           <h1 className={`${styles.title} appPageTitle`}>
-            Grow a tree of knowledge.
+            {t('HeroLineOne')}
             <br />
-            Talk to it.
+            {t('HeroLineTwo')}
           </h1>
         </div>
         <div className={styles.statusRow}>
           <div className={styles.statusCard}>
-            <p className={styles.statusLabel}>How it works</p>
+            <p className={styles.statusLabel}>{t('HowItWorks')}</p>
             <p className={styles.statusValue}>
-              Grow trees with Notes. Inspect them with Search. Talk to them with Agent — it speaks from a tree or existing applications relevant to the context, and shows how the answer is grounded.{' '}
-              <Link href="/about" prefetch={false} className={styles.inlineLink}>Read more</Link>
+              {t('Overview')}{' '}
+              <Link href="/about" prefetch={false} className={styles.inlineLink}>{t('ReadMore')}</Link>
             </p>
           </div>
           {isSignedIn ? (
             <div className={styles.statusCard}>
-              <p className={styles.statusLabel}>Service status</p>
+              <p className={styles.statusLabel}>{t('ServiceStatus')}</p>
               <p className={`${styles.statusValue} ${styles[`statusValue${applicationStatus.level.charAt(0).toUpperCase()}${applicationStatus.level.slice(1)}`] || ''}`.trim()}>
-                {applicationStatus.message || 'Checking...'}
+                {applicationStatus.message || t('Checking')}
               </p>
             </div>
           ) : null}
@@ -103,24 +105,24 @@ export default function Home() {
 
       <section className={styles.routeGrid}>
         <article className={styles.routeCard}>
-          <p className={styles.cardEyebrow}>Notes</p>
-          <h2 className={styles.cardTitle}>Grow the tree</h2>
-          <p className={styles.cardDescription}>Create or generate trees, branches, and leaves — notes and attachments live on the leaves. The structure and the material together power search and Agent. A tree can also grow roots into existing applications. Agent orchestrates them and uses their output as context, and to create new branches and leaves.</p>
-          <Link href="/notes" prefetch={false} className={styles.cardLink}>Open Notes</Link>
+          <p className={styles.cardEyebrow}>{t('Notes.Name')}</p>
+          <h2 className={styles.cardTitle}>{t('Notes.Title')}</h2>
+          <p className={styles.cardDescription}>{t('Notes.Description')}</p>
+          <Link href="/notes" prefetch={false} className={styles.cardLink}>{t('Notes.Open')}</Link>
         </article>
 
         <article className={styles.routeCard}>
-          <p className={styles.cardEyebrow}>Search</p>
-          <h2 className={styles.cardTitle}>Inspect the material</h2>
-          <p className={styles.cardDescription}>Look through notes and attachments, see the highlights, and jump to the branch and leaf they came from. Search information and results are detailed enough for a forensic read.</p>
-          <Link href="/search" prefetch={false} className={styles.cardLink}>Open Search</Link>
+          <p className={styles.cardEyebrow}>{t('Search.Name')}</p>
+          <h2 className={styles.cardTitle}>{t('Search.Title')}</h2>
+          <p className={styles.cardDescription}>{t('Search.Description')}</p>
+          <Link href="/search" prefetch={false} className={styles.cardLink}>{t('Search.Open')}</Link>
         </article>
 
         <article className={styles.routeCard}>
-          <p className={styles.cardEyebrow}>Agent</p>
-          <h2 className={styles.cardTitle}>Talk to the tree</h2>
-          <p className={styles.cardDescription}>Ask a domain and get an answer drawn from its material or its applications — with the evidence attached.</p>
-          <Link href="/chat" prefetch={false} className={styles.cardLink}>Open Agent</Link>
+          <p className={styles.cardEyebrow}>{t('Agent.Name')}</p>
+          <h2 className={styles.cardTitle}>{t('Agent.Title')}</h2>
+          <p className={styles.cardDescription}>{t('Agent.Description')}</p>
+          <Link href="/chat" prefetch={false} className={styles.cardLink}>{t('Agent.Open')}</Link>
         </article>
       </section>
     </main>

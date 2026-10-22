@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import styles from "../page.module.css";
 import { formatTimestamp, getErrorMessage } from "../adminShared";
 
 export default function AdminContactRequestsPage() {
+  const t = useTranslations("Pages.Admin.ContactRequests");
   const [contactRequests, setContactRequests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -43,10 +45,10 @@ export default function AdminContactRequestsPage() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className={styles.heroHeader}>
           <div className="appHeroCopy">
-            <p className="appEyebrow">Contact requests</p>
-            <h2 className="appPageTitle">Recent intake</h2>
+            <p className="appEyebrow">{t("Title")}</p>
+            <h2 className="appPageTitle">{t("Heading")}</h2>
             <div className={styles.heroDescriptionStack}>
-              <p className="appPageDescription">Requests received in the last 30 days through the public contact form.</p>
+              <p className="appPageDescription">{t("Intro")}</p>
             </div>
           </div>
           <button
@@ -55,7 +57,7 @@ export default function AdminContactRequestsPage() {
             disabled={isLoading}
             className="appPrimaryFormButton"
           >
-            {isLoading ? "Refreshing..." : "Refresh"}
+            {t(isLoading ? "Refreshing" : "Refresh")}
           </button>
         </div>
         {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
@@ -65,34 +67,34 @@ export default function AdminContactRequestsPage() {
         <article className={`appTopLevelPanel ${styles.panel}`}>
           <div className={styles.panelBody}>
             {isLoading ? (
-              <p className={styles.emptyState}>Loading requests...</p>
+              <p className={styles.emptyState}>{t("Loading")}</p>
             ) : contactRequests.length > 0 ? (
               <div className={styles.list}>
                 {contactRequests.map((request) => (
                   <article key={request.eventId} className={styles.listItem}>
                     <div className={styles.itemMeta}>
                       <div className={styles.itemHeader}>
-                        <span className={styles.reviewBadgeSubmitted}>Submitted</span>
+                        <span className={styles.reviewBadgeSubmitted}>{t("Submitted")}</span>
                         <span className={styles.badgeMuted}>{formatTimestamp(request.createdAt)}</span>
                       </div>
                       <h2 className={styles.itemTitle}>{request.name}</h2>
-                      <p className={styles.itemDetail}>Email: {request.email}</p>
-                      {request.appIdentifier ? <p className={styles.itemDetail}>Application: {request.appIdentifier}</p> : null}
-                      <p className={styles.itemDetail}>Event ID: {request.eventId}</p>
-                      <p className={styles.itemDetail}>Recorded at: {formatTimestamp(request.createdAt)}</p>
-                      <p className={styles.itemDetail}>Using as: {request.contactProfile}</p>
-                      {request.company ? <p className={styles.itemDetail}>Company: {request.company}</p> : null}
-                      {request.phone ? <p className={styles.itemDetail}>Phone: {request.phone}</p> : null}
-                      <p className={styles.itemDetail}>Call requested: {request.wantsCall ? "Yes" : "No"}</p>
-                      {request.userAgent ? <p className={styles.itemDetail}>User agent: {request.userAgent}</p> : null}
-                      {request.userAgentRaw ? <p className={styles.itemDetail}>Raw user agent: {request.userAgentRaw}</p> : null}
+                      <p className={styles.itemDetail}>{t("Email", { value: request.email })}</p>
+                      {request.appIdentifier ? <p className={styles.itemDetail}>{t("Application", { value: request.appIdentifier })}</p> : null}
+                      <p className={styles.itemDetail}>{t("EventId", { value: request.eventId })}</p>
+                      <p className={styles.itemDetail}>{t("RecordedAt", { value: formatTimestamp(request.createdAt) })}</p>
+                      <p className={styles.itemDetail}>{t("UsingAs", { value: request.contactProfile })}</p>
+                      {request.company ? <p className={styles.itemDetail}>{t("Company", { value: request.company })}</p> : null}
+                      {request.phone ? <p className={styles.itemDetail}>{t("Phone", { value: request.phone })}</p> : null}
+                      <p className={styles.itemDetail}>{t("CallRequested", { value: t(request.wantsCall ? "Yes" : "No") })}</p>
+                      {request.userAgent ? <p className={styles.itemDetail}>{t("UserAgent", { value: request.userAgent })}</p> : null}
+                      {request.userAgentRaw ? <p className={styles.itemDetail}>{t("RawUserAgent", { value: request.userAgentRaw })}</p> : null}
                       <p className={styles.itemDetail}>{request.message}</p>
                     </div>
                   </article>
                 ))}
               </div>
             ) : (
-              <p className={styles.emptyState}>No requests were received in the last 30 days.</p>
+              <p className={styles.emptyState}>{t("Empty")}</p>
             )}
           </div>
         </article>

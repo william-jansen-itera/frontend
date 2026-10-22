@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import styles from "../page.module.css";
 import {
   formatIndexingErrorMessage,
@@ -11,6 +12,7 @@ import {
 } from "../adminShared";
 
 export default function AdminIndexingPage() {
+  const t = useTranslations("Pages.Admin.Indexing");
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [pendingItems, setPendingItems] = useState({});
@@ -55,10 +57,10 @@ export default function AdminIndexingPage() {
     <>
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className="appHeroCopy">
-          <p className="appEyebrow">Indexing</p>
-          <h2 className="appPageTitle">Search indexing</h2>
+          <p className="appEyebrow">{t("Title")}</p>
+          <h2 className="appPageTitle">{t("Heading")}</h2>
           <div className={styles.heroDescriptionStack}>
-            <p className="appPageDescription">Incremental starts the selected indexer run. Full resets the selected indexer and then starts it. All targets both the SQL node-data indexer and the blob-content indexer.</p>
+            <p className="appPageDescription">{t("Intro")}</p>
           </div>
         </div>
         {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}
@@ -72,16 +74,16 @@ export default function AdminIndexingPage() {
               <table className={styles.indexingTable}>
                 <thead>
                   <tr>
-                    <th scope="col" className={styles.indexingCornerCell}>scope</th>
+                    <th scope="col" className={styles.indexingCornerCell}>{t("Scope")}</th>
                     {INDEXING_COLUMNS.map((column) => (
-                      <th key={column.key} scope="col" className={styles.indexingColumnHeader}>{column.label}</th>
+                      <th key={column.key} scope="col" className={styles.indexingColumnHeader}>{t(`Modes.${column.key}`)}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {INDEXING_ROWS.map((row) => (
                     <tr key={row.key}>
-                      <th scope="row" className={styles.indexingRowHeader}>{row.label}</th>
+                      <th scope="row" className={styles.indexingRowHeader}>{t(`Targets.${row.key}`)}</th>
                       {INDEXING_COLUMNS.map((column) => {
                         const pendingKey = `indexing:${column.key}:${row.key}`;
 
@@ -92,9 +94,9 @@ export default function AdminIndexingPage() {
                               onClick={() => handleIndexingAction(row.key, column.key)}
                               disabled={Boolean(pendingItems[pendingKey])}
                               className="appCompactActionButton appCompactActionButtonNeutral"
-                              aria-label={`Start ${column.label} indexing for ${row.label}`}
+                              aria-label={t("StartFor", { mode: t(`Modes.${column.key}`), target: t(`Targets.${row.key}`) })}
                             >
-                              {pendingItems[pendingKey] ? "Starting..." : "Start"}
+                              {t(pendingItems[pendingKey] ? "Starting" : "Start")}
                             </button>
                           </td>
                         );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import PageVisitTracker from "../PageVisitTracker";
 import styles from "./page.module.css";
@@ -28,6 +29,7 @@ function isValidEmail(value) {
 }
 
 export default function ContactPage() {
+  const t = useTranslations("Pages.Contact");
   const [form, setForm] = useState(INITIAL_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -74,7 +76,7 @@ export default function ContactPage() {
       }
 
       setForm(INITIAL_FORM);
-      setStatusMessage(payload?.message || "Thanks. We will get back to you shortly.");
+      setStatusMessage(payload?.message || t("ThankYou"));
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Your message could not be sent."));
     } finally {
@@ -88,30 +90,30 @@ export default function ContactPage() {
 
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
-          <p className="appEyebrow">Contact</p>
-          <h1 className={`${styles.title} appPageTitle`}>Tell us the knowledge domain you want to unblock</h1>
+          <p className="appEyebrow">{t("Title")}</p>
+          <h1 className={`${styles.title} appPageTitle`}>{t("Headline")}</h1>
           <p className={styles.cardText}>
-            Agent searches your material for grounding, and assembles more by orchestrating your applications when the context needs them, using their output.
+            {t("Intro")}
           </p>
         </div>
       </section>
 
       <section className={styles.contentGrid}>
         <article className={styles.infoCard}>
-          <p className={styles.cardEyebrow}>When to reach out</p>
+          <p className={styles.cardEyebrow}>{t("When")}</p>
           <p className={styles.cardText}>
-            Use this if a knowledge domain is hard to manage or blocking the work and you want to see whether MDS fits. Say what the domain is. If you want, say how that knowledge is structured today.
+            {t("WhenText")}
           </p>
         </article>
 
         <section className={styles.formCard}>
           <div className={styles.formIntro}>
-            <p className={styles.cardEyebrow}>Leave your details</p>
+            <p className={styles.cardEyebrow}>{t("Details")}</p>
           </div>
 
           <form onSubmit={handleSubmit} className={styles.formGrid}>
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Name</span>
+              <span className={styles.fieldLabel}>{t("Name")}</span>
               <input
                 type="text"
                 name="name"
@@ -124,7 +126,7 @@ export default function ContactPage() {
             </label>
 
             <label className={styles.field}>
-              <span className={styles.fieldLabel}>Email</span>
+              <span className={styles.fieldLabel}>{t("Email")}</span>
               <input
                 type="email"
                 name="email"
@@ -137,7 +139,7 @@ export default function ContactPage() {
             </label>
 
             <label className={`${styles.field} ${styles.fieldFull}`}>
-              <span className={styles.fieldLabel}>What domain are you trying to unblock?</span>
+              <span className={styles.fieldLabel}>{t("Domain")}</span>
               <textarea
                 name="message"
                 value={form.message}
@@ -149,7 +151,7 @@ export default function ContactPage() {
             </label>
 
             <fieldset className={styles.profileFieldset}>
-              <legend className={styles.fieldLabel}>I would use this as</legend>
+              <legend className={styles.fieldLabel}>{t("UseAs")}</legend>
               <div className={styles.profileOptionRow}>
                 <label className={styles.profileOption}>
                   <input
@@ -160,7 +162,7 @@ export default function ContactPage() {
                     onChange={handleFieldChange}
                     required
                   />
-                  <span>an individual</span>
+                  <span>{t("Individual")}</span>
                 </label>
 
                 <label className={styles.profileOption}>
@@ -172,14 +174,14 @@ export default function ContactPage() {
                     onChange={handleFieldChange}
                     required
                   />
-                  <span>a company</span>
+                  <span>{t("CompanyOption")}</span>
                 </label>
               </div>
             </fieldset>
 
             {form.contactProfile === "company" ? (
               <label className={styles.field}>
-                <span className={styles.fieldLabel}>Company</span>
+                <span className={styles.fieldLabel}>{t("Company")}</span>
                 <input
                   type="text"
                   name="company"
@@ -201,12 +203,12 @@ export default function ContactPage() {
                 checked={form.wantsCall}
                 onChange={handleFieldChange}
               />
-              <span>I would like a call.</span>
+              <span>{t("WantsCall")}</span>
             </label>
 
             {form.wantsCall ? (
               <label className={styles.field}>
-                <span className={styles.fieldLabel}>Phone number</span>
+                <span className={styles.fieldLabel}>{t("Phone")}</span>
                 <input
                   type="tel"
                   name="phone"
@@ -226,9 +228,9 @@ export default function ContactPage() {
 
             <div className={styles.actionsRow}>
               <button type="submit" className={styles.submitButton} disabled={isSubmitting || !isFormComplete}>
-                {isSubmitting ? "Sending..." : "Send"}
+                {t(isSubmitting ? "Sending" : "Send")}
               </button>
-              <Link href="/about" prefetch={false} className={styles.secondaryLink}>Read more first</Link>
+              <Link href="/about" prefetch={false} className={styles.secondaryLink}>{t("ReadMore")}</Link>
             </div>
           </form>
         </section>

@@ -1,4 +1,5 @@
 import styles from "./page.module.css";
+import { useTranslations } from "next-intl";
 import { dataNodeHasChildren } from "./treeUtils";
 
 export const TREE_INDENT = 28;
@@ -8,6 +9,7 @@ const CONTENT_OFFSET = 14;
 const ROOT_OFFSET = 16;
 
 export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
+  const t = useTranslations("Pages.Notes.Tree");
   const isSelected = String(node.data.id) === String(selectedNodeId);
   const level = node.level;
   const isLeaf = Boolean(node.data.isLeafNode);
@@ -101,7 +103,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
           type="button"
           className={styles.treeToggle}
           style={{ marginLeft: level === 0 ? ROOT_OFFSET + 16 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET }}
-          aria-label={`${node.isOpen ? "Collapse" : "Expand"} ${node.data.name}`}
+          aria-label={t(node.isOpen ? "Collapse" : "Expand", { name: node.data.name })}
           aria-expanded={node.isOpen}
           onClick={(event) => {
             event.stopPropagation();
@@ -123,7 +125,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
         {node.data.name}
       </span>
       {node.willReceiveDrop && !node.data.isLeafNode && (
-        <span className={styles.treeDropHint}>Drop into node</span>
+        <span className={styles.treeDropHint}>{t("DropIntoNode")}</span>
       )}
     </div>
   );

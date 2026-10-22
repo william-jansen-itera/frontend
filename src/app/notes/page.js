@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
 import { NotesEditor } from "./NotesEditor";
@@ -115,22 +116,9 @@ function formatSecretReference(secretMetadata) {
   return version ? `${displayLabel || secretName} (version ${version})` : (displayLabel || secretName);
 }
 
-function formatReviewStatusLabel(reviewStatus) {
+function formatReviewStatusLabel(reviewStatus, t) {
   const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
-
-  if (normalizedStatus === "submitted") {
-    return "Submitted";
-  }
-
-  if (normalizedStatus === "approved") {
-    return "Approved";
-  }
-
-  if (normalizedStatus === "rejected") {
-    return "Rejected";
-  }
-
-  return "Draft";
+  return t(`Review.Statuses.${["submitted", "approved", "rejected"].includes(normalizedStatus) ? normalizedStatus : "draft"}`);
 }
 
 function getReviewStatusClassName(reviewStatus, styles) {
@@ -151,11 +139,11 @@ function getReviewStatusClassName(reviewStatus, styles) {
   return styles.reviewStatusDraft;
 }
 
-function buildReviewAuditLabel(reviewStatus, submittedByUserDetails, submittedAt, reviewedByUserDetails, reviewedAt) {
+function buildReviewAuditLabel(reviewStatus, submittedByUserDetails, submittedAt, reviewedByUserDetails, reviewedAt, t) {
   const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
 
   if (normalizedStatus === "submitted") {
-    return buildAuditLabel(submittedByUserDetails, submittedAt, "Submitted for review");
+    return buildAuditLabel(submittedByUserDetails, submittedAt, t("Review.SubmittedAudit"));
   }
 
   if (normalizedStatus === "approved") {
@@ -166,11 +154,11 @@ function buildReviewAuditLabel(reviewStatus, submittedByUserDetails, submittedAt
     return buildAuditLabel(reviewedByUserDetails, reviewedAt, null);
   }
 
-  return "Not yet submitted";
+  return t("Review.DraftAudit");
 }
 
-function promptForRejectionComment(targetLabel) {
-  const nextComment = window.prompt(`Enter a rejection comment for ${targetLabel}:`, "");
+function promptForRejectionComment(targetLabel, t) {
+  const nextComment = window.prompt(t("Review.Prompt", { scope: targetLabel }), "");
 
   if (nextComment === null) {
     return null;
@@ -186,23 +174,23 @@ function promptForRejectionComment(targetLabel) {
   return normalizedComment;
 }
 
-function formatRejectionComment(value) {
+function formatRejectionComment(value, t) {
   const normalizedValue = String(value ?? "").trim();
-  return normalizedValue || "No rejection comment recorded.";
+  return normalizedValue || t("Review.NoComment");
 }
 
-function getNodeReviewScopeLabel(node) {
-  const nodeName = node?.name || "this node";
+function getNodeReviewScopeLabel(node, t) {
+  const nodeName = node?.name || t("Dialogs.ThisNode");
 
   if (node?.isLeafNode) {
-    return `leaf node "${nodeName}" only`;
+    return t("Review.LeafScope", { name: nodeName });
   }
 
-  return `branch node "${nodeName}", its descendant branches, and its leaf nodes`;
+  return t("Review.BranchScope", { name: nodeName });
 }
 
-function getAttachmentReviewScopeLabel(fileName) {
-  return `attachment "${fileName || "this file"}" only`;
+function getAttachmentReviewScopeLabel(fileName, t) {
+  return t("Review.AttachmentScope", { name: fileName || t("Dialogs.ThisFile") });
 }
 
 function countVisibleNodes(nodes, expandedState) {
@@ -230,8 +218,9 @@ function updateExpandedStateValue(currentExpandedState, id, isExpanded) {
 }
 
 export default function NotesPageWrapper() {
+  const t = useTranslations("Pages.Notes");
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div>{t("Loading")}</div>}>
       <NotesPage />
     </Suspense>
   );
@@ -239,6 +228,7 @@ export default function NotesPageWrapper() {
 
 // Main NotesPage component runs whenever state changes, including treeIdParam, treeData, expandedState, and selectedNodeId
 function NotesPage() {
+  const t = useTranslations("Pages.Notes");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -747,9 +737,7 @@ function NotesPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete node "${selectedNode?.name || 'this node'}"? This action cannot be undone.`,
-    );
+    const confirmed = window.confirm(t("Dialogs.DeleteNode", { name: selectedNode?.name || t("Dialogs.ThisNode") }));
 
     if (!confirmed) {
       return;
@@ -775,9 +763,7 @@ function NotesPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Generate new child nodes under "${selectedNode.name}"? Existing child nodes will be kept and any generated nodes will be added after them.`,
-    );
+    const confirmed = window.confirm(t("Dialogs.GenerateChildren", { name: selectedNode.name }));
 
     if (!confirmed) {
       return;
@@ -892,9 +878,7 @@ function NotesPage() {
     }
 
     const attachment = nodeEditorState.attachments.find((item) => String(item.id) === String(attachmentId));
-    const confirmed = window.confirm(
-      `Delete file "${attachment?.fileName || 'this file'}"? This action cannot be undone.`,
-    );
+    const confirmed = window.confirm(t("Dialogs.DeleteFile", { name: attachment?.fileName || t("Dialogs.ThisFile") }));
 
     if (!confirmed) {
       return;
@@ -939,23 +923,17 @@ function NotesPage() {
       return;
     }
 
-    const selectedNodeLabel = getNodeReviewScopeLabel(selectedNode);
+    const selectedNodeLabel = getNodeReviewScopeLabel(selectedNode, t);
 
     const rejectionComment = action === "reject"
-      ? promptForRejectionComment(selectedNodeLabel)
+      ? promptForRejectionComment(selectedNodeLabel, t)
       : null;
 
     if (action === "reject" && rejectionComment === null) {
       return;
     }
 
-    const actionLabel = action === "submit"
-      ? `submit ${selectedNodeLabel} for review`
-      : action === "approve"
-        ? `approve ${selectedNodeLabel}`
-        : `reject ${selectedNodeLabel}`;
-
-    if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) {
+    if (!window.confirm(t(`Review.Confirmations.${action}`, { scope: selectedNodeLabel }))) {
       return;
     }
 
@@ -997,22 +975,16 @@ function NotesPage() {
     }
 
     const attachment = nodeEditorState.attachments.find((item) => String(item.id) === String(attachmentId));
-    const attachmentLabel = getAttachmentReviewScopeLabel(attachment?.fileName);
+    const attachmentLabel = getAttachmentReviewScopeLabel(attachment?.fileName, t);
     const rejectionComment = action === "reject"
-      ? promptForRejectionComment(attachmentLabel)
+      ? promptForRejectionComment(attachmentLabel, t)
       : null;
 
     if (action === "reject" && rejectionComment === null) {
       return;
     }
 
-    const actionLabel = action === "submit"
-      ? `submit ${attachmentLabel} for review`
-      : action === "approve"
-        ? `approve ${attachmentLabel}`
-        : `reject ${attachmentLabel}`;
-
-    if (!window.confirm(`Are you sure you want to ${actionLabel}?`)) {
+    if (!window.confirm(t(`Review.Confirmations.${action}`, { scope: attachmentLabel }))) {
       return;
     }
 
@@ -1052,9 +1024,7 @@ function NotesPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Generate draft notes for "${selectedNode?.name || 'this node'}"? The generated notes will be inserted into the editor and will not be saved until you press Save.`,
-    );
+    const confirmed = window.confirm(t("Dialogs.GenerateNotes", { name: selectedNode?.name || t("Dialogs.ThisNode") }));
 
     if (!confirmed) {
       return;
@@ -1242,7 +1212,7 @@ function NotesPage() {
         >
           <div className={styles.panelHeader}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
-              <span className={styles.panelHeading}>Tree</span>
+              <span className={styles.panelHeading}>{t("Tree.Heading")}</span>
               <label className={styles.toolbarLabel}>
                 <select
                   value={resolvedTreeIdValue}
@@ -1254,7 +1224,7 @@ function NotesPage() {
                   disabled={availableTrees.length === 0}
                 >
                   {availableTrees.length === 0 ? (
-                    <option value="">No trees available</option>
+                    <option value="">{t("Tree.NoTrees")}</option>
                   ) : (
                     availableTrees.map((tree) => (
                       <option key={tree.id} value={tree.id}>
@@ -1274,8 +1244,8 @@ function NotesPage() {
                     navigateToSelectionHref(getTreeSelectionHref(pathname, searchParams.toString(), null, nextVisibility));
                   }}
                 >
-                  <option value="public">Public</option>
-                  <option value="private">Private</option>
+                  <option value="public">{t("Visibility.Public")}</option>
+                  <option value="private">{t("Visibility.Private")}</option>
                 </select>
               </label>
               <button
@@ -1285,7 +1255,7 @@ function NotesPage() {
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
               >
-                Manage
+                {t("Tree.Manage")}
               </button>
               <button
                 onClick={handleAddRoot}
@@ -1293,7 +1263,7 @@ function NotesPage() {
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
               >
-                Add Root
+                {t("Tree.AddRoot")}
               </button>
               <button
                 onClick={handleAddChild}
@@ -1301,7 +1271,7 @@ function NotesPage() {
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
               >
-                Add Child
+                {t("Tree.AddChild")}
               </button>
               <button
                 onClick={handleGenerateChildren}
@@ -1309,7 +1279,7 @@ function NotesPage() {
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
               >
-                {isGeneratingChildren ? "Generating..." : "Generate"}
+                {t(isGeneratingChildren ? "Tree.Generating" : "Tree.Generate")}
               </button>
               <button
                 onClick={handleDelete}
@@ -1317,7 +1287,7 @@ function NotesPage() {
                 type="button"
                 className="appCompactActionButton appCompactActionButtonDanger"
               >
-                Delete
+                {t("Tree.Delete")}
               </button>
               {approvalEnabled && canSubmitSelectedNode ? (
                 <button
@@ -1326,7 +1296,7 @@ function NotesPage() {
                   type="button"
                   className="appCompactActionButton appCompactActionButtonNeutral"
                 >
-                  {pendingReviewKey === "node:submit" ? "Submitting..." : "Submit"}
+                  {t(pendingReviewKey === "node:submit" ? "Review.Submitting" : "Review.Submit")}
                 </button>
               ) : null}
               {approvalEnabled && canApproveOrRejectSelectedNode ? (
@@ -1337,7 +1307,7 @@ function NotesPage() {
                     type="button"
                     className="appCompactActionButton appCompactActionButtonPrimary"
                   >
-                    {pendingReviewKey === "node:approve" ? "Approving..." : "Approve"}
+                      {t(pendingReviewKey === "node:approve" ? "Review.Approving" : "Review.Approve")}
                   </button>
                   <button
                     onClick={() => handleNodeReviewAction("reject")}
@@ -1345,13 +1315,13 @@ function NotesPage() {
                     type="button"
                     className="appCompactActionButton appCompactActionButtonDanger"
                   >
-                    {pendingReviewKey === "node:reject" ? "Rejecting..." : "Reject"}
+                      {t(pendingReviewKey === "node:reject" ? "Review.Rejecting" : "Review.Reject")}
                   </button>
                 </>
               ) : null}
             </div>
             {selectedTree && !canWriteSelectedTree ? (
-              <div className={styles.readOnlyMessage}>Read-only: only the owner or assigned editors can change this tree.</div>
+              <div className={styles.readOnlyMessage}>{t("Details.ReadOnly")}</div>
             ) : null}
           </div>
           <div ref={treeContentRef} className={styles.treeContent}>
@@ -1435,14 +1405,14 @@ function NotesPage() {
         >
           <div className={styles.panelHeader}>
             <div className={`appPanelTopBar ${styles.panelToolbar} ${styles.detailsToolbar}`}>
-              <span className={styles.panelHeading}>Node Details</span>
+              <span className={styles.panelHeading}>{t("Details.Heading")}</span>
               <button
                 onClick={handleSaveNodeDetails}
                 disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonPrimary"
               >
-                {isSavingNodeDetails ? "Saving..." : "Save"}
+                {t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
               </button>
             </div>
           </div>
@@ -1450,13 +1420,13 @@ function NotesPage() {
             {!selectedNode ? (
               <div className={styles.detailsForm}>
                 <div className={styles.emptyState}>
-                  Select a node to edit its details.
+                  {t("Details.SelectNode")}
                 </div>
               </div>
             ) : (
               <div className={styles.detailsForm}>
                 <label className={styles.formField}>
-                  <span className="appFieldLabel">Name</span>
+                  <span className="appFieldLabel">{t("Details.Name")}</span>
                   <input
                     type="text"
                     value={nodeEditorState.name}
@@ -1467,10 +1437,10 @@ function NotesPage() {
                 </label>
                 {approvalEnabled ? (
                   <div className={styles.reviewDetailCard}>
-                    <span className="appFieldLabel">Review status</span>
+                    <span className="appFieldLabel">{t("Review.Status")}</span>
                     <div className={styles.reviewDetailRow}>
                       <span className={`${styles.reviewStatusBadge} ${getReviewStatusClassName(selectedNodeReviewStatus, styles)}`}>
-                        {formatReviewStatusLabel(selectedNodeReviewStatus)}
+                        {formatReviewStatusLabel(selectedNodeReviewStatus, t)}
                       </span>
                       {buildReviewAuditLabel(
                         selectedNodeReviewStatus,
@@ -1478,6 +1448,7 @@ function NotesPage() {
                         nodeEditorState.submittedAt,
                         nodeEditorState.reviewedByUserDetails,
                         nodeEditorState.reviewedAt,
+                        t,
                       ) ? (
                         <span className={styles.reviewMetaText}>
                           {buildReviewAuditLabel(
@@ -1486,13 +1457,14 @@ function NotesPage() {
                             nodeEditorState.submittedAt,
                             nodeEditorState.reviewedByUserDetails,
                             nodeEditorState.reviewedAt,
+                            t,
                           )}
                         </span>
                       ) : null}
                     </div>
                     {selectedNodeReviewStatus === "rejected" ? (
                       <p className={styles.reviewMetaText}>
-                        Rejection comment: {formatRejectionComment(nodeEditorState.rejectionComment)}
+                        {t("Review.RejectionComment", { comment: formatRejectionComment(nodeEditorState.rejectionComment, t) })}
                       </p>
                     ) : null}
                   </div>
@@ -1500,12 +1472,12 @@ function NotesPage() {
                 {isLeafSelection ? (
                   <>
                     <div className={styles.formField}>
-                      <span className="appFieldLabel">Notes</span>
+                      <span className="appFieldLabel">{t("Details.Notes")}</span>
                       <span className={styles.auditText}>
                         {buildAuditLabel(
                           nodeEditorState.updatedByUserDetails,
                           nodeEditorState.updatedAt,
-                          "Not yet updated",
+                          t("Details.NotYetUpdated"),
                         )}
                       </span>
                       <NotesEditor
@@ -1522,7 +1494,7 @@ function NotesPage() {
                     </div>
                     <div className={styles.secretSection}>
                       <div className={styles.secretSectionHeader}>
-                        <span className="appFieldLabel">Secret</span>
+                        <span className="appFieldLabel">{t("Details.Secret")}</span>
                       </div>
                       <label className={styles.secretToggle}>
                         <input
@@ -1531,7 +1503,7 @@ function NotesPage() {
                           onChange={(event) => handleSecretToggleChange(event.target.checked)}
                           disabled={isNodeDetailsBusy || !canWriteSelectedTree || !isEditingNotes}
                         />
-                        <span>Store a secret for this leaf in Key Vault</span>
+                        <span>{t("Details.StoreSecret")}</span>
                       </label>
                       {nodeEditorState.isSecret ? (
                         <div className={styles.secretCard}>
@@ -1542,7 +1514,7 @@ function NotesPage() {
                                 value={nodeEditorState.secretValue}
                                 onChange={(event) => handleNodeEditorChange("secretValue", event.target.value)}
                                 disabled={isNodeDetailsBusy || !canWriteSelectedTree}
-                                placeholder="Secret value"
+                                placeholder={t("Details.SecretValue")}
                                 className={`appTextControl ${styles.textInput}`}
                               />
                               <button
@@ -1554,7 +1526,7 @@ function NotesPage() {
                                 className="appCompactActionButton appCompactActionButtonNeutral"
                                 aria-pressed={isSecretValueVisible}
                               >
-                                {isSecretValueVisible ? "Hide" : "Show"}
+                                {t(isSecretValueVisible ? "Details.Hide" : "Details.Show")}
                               </button>
                             </div>
                           ) : (
@@ -1575,13 +1547,13 @@ function NotesPage() {
                                 disabled={isRevealingSecret || (!canRevealSecret && !nodeEditorState.revealedSecretValue)}
                                 className="appCompactActionButton appCompactActionButtonNeutral"
                               >
-                                {isRevealingSecret ? "Revealing..." : nodeEditorState.revealedSecretValue ? "Hide" : "Reveal"}
+                                {t(isRevealingSecret ? "Details.Revealing" : nodeEditorState.revealedSecretValue ? "Details.Hide" : "Details.Reveal")}
                               </button>
                               {nodeEditorState.revealedSecretValue ? (
                                 <span className={styles.secretValueText}>{nodeEditorState.revealedSecretValue}</span>
                               ) : (
                                 <span className={styles.secretPlaceholder}>
-                                  {nodeEditorState.maskedSecretValue || "Stored secret"}
+                                  {nodeEditorState.maskedSecretValue || t("Details.StoredSecret")}
                                 </span>
                               )}
                             </div>
@@ -1591,12 +1563,12 @@ function NotesPage() {
                     </div>
                     <section className={styles.attachmentSection}>
                       <div className={styles.attachmentSectionHeader}>
-                        <span className="appFieldLabel">Attachments</span>
-                        <span className={styles.attachmentHint}>Allowed up to 10 MB each.</span>
+                        <span className="appFieldLabel">{t("Details.Attachments")}</span>
+                        <span className={styles.attachmentHint}>{t("Details.AttachmentLimit")}</span>
                       </div>
                       <div className={styles.attachmentPicker}>
                         <label className={`appCompactActionButton appCompactActionButtonNeutral ${isNodeDetailsBusy ? styles.pickerButtonDisabled : ""}`}>
-                          <span>Choose files</span>
+                          <span>{t("Details.ChooseFiles")}</span>
                           <input
                             ref={attachmentInputRef}
                             type="file"
@@ -1613,14 +1585,14 @@ function NotesPage() {
                           type="button"
                           className="appCompactActionButton appCompactActionButtonPrimary"
                         >
-                          {isUploadingAttachments ? "Uploading..." : `Upload${pendingFiles.length ? ` (${pendingFiles.length})` : ""}`}
+                          {isUploadingAttachments ? t("Details.Uploading") : pendingFiles.length ? t("Details.UploadCount", { count: pendingFiles.length }) : t("Details.Upload")}
                         </button>
                         {pendingFiles.length > 0 ? (
-                          <span className={styles.attachmentPickerStatus}>{pendingFiles.length} file{pendingFiles.length === 1 ? "" : "s"} selected</span>
+                          <span className={styles.attachmentPickerStatus}>{t("Details.FilesSelected", { count: pendingFiles.length })}</span>
                         ) : null}
                       </div>
                       {nodeEditorState.attachments.length === 0 ? (
-                        <div className={styles.emptyState}>No files uploaded for this node.</div>
+                        <div className={styles.emptyState}>{t("Details.NoFiles")}</div>
                       ) : (
                         <div className={styles.attachmentList}>
                           {nodeEditorState.attachments.map((attachment) => (
@@ -1630,7 +1602,7 @@ function NotesPage() {
                                   <div className={styles.attachmentPreviewInline}>
                                     <Image
                                       src={getNodeAttachmentContentUrl(attachment)}
-                                      alt={attachment.fileName || "Attachment preview"}
+                                      alt={attachment.fileName || t("Details.Preview")}
                                       width={240}
                                       height={180}
                                       sizes="240px"
@@ -1648,13 +1620,13 @@ function NotesPage() {
                                   {buildAuditLabel(
                                     attachment.updatedByUserDetails,
                                     attachment.updatedAt ?? attachment.createdAt,
-                                    "Uploader unknown",
+                                    t("Details.UnknownUploader"),
                                   )}
                                 </span>
                                 {approvalEnabled ? (
                                   <div className={styles.reviewDetailRow}>
                                     <span className={`${styles.reviewStatusBadge} ${getReviewStatusClassName(attachment.reviewStatus, styles)}`}>
-                                      {formatReviewStatusLabel(attachment.reviewStatus)}
+                                      {formatReviewStatusLabel(attachment.reviewStatus, t)}
                                     </span>
                                     {buildReviewAuditLabel(
                                       attachment.reviewStatus,
@@ -1662,6 +1634,7 @@ function NotesPage() {
                                       attachment.submittedAt,
                                       attachment.reviewedByUserDetails,
                                       attachment.reviewedAt,
+                                      t,
                                     ) ? (
                                       <span className={styles.reviewMetaText}>
                                         {buildReviewAuditLabel(
@@ -1670,6 +1643,7 @@ function NotesPage() {
                                           attachment.submittedAt,
                                           attachment.reviewedByUserDetails,
                                           attachment.reviewedAt,
+                                          t,
                                         )}
                                       </span>
                                     ) : null}
@@ -1684,7 +1658,7 @@ function NotesPage() {
                                     rel="noreferrer"
                                     className={`appCompactActionButton appCompactActionButtonNeutral ${styles.attachmentActionLink}`}
                                   >
-                                    Open
+                                    {t("Details.Open")}
                                   </a>
                                 ) : null}
                                 {approvalEnabled && (attachment.reviewStatus === "draft" || attachment.reviewStatus === "rejected") ? (
@@ -1694,7 +1668,7 @@ function NotesPage() {
                                     type="button"
                                     className="appCompactActionButton appCompactActionButtonNeutral"
                                   >
-                                    {pendingReviewKey === `attachment:${attachment.id}:submit` ? "Submitting..." : "Submit"}
+                                    {t(pendingReviewKey === `attachment:${attachment.id}:submit` ? "Review.Submitting" : "Review.Submit")}
                                   </button>
                                 ) : null}
                                 {approvalEnabled && attachment.reviewStatus === "submitted" ? (
@@ -1705,7 +1679,7 @@ function NotesPage() {
                                       type="button"
                                       className="appCompactActionButton appCompactActionButtonPrimary"
                                     >
-                                      {pendingReviewKey === `attachment:${attachment.id}:approve` ? "Approving..." : "Approve"}
+                                      {t(pendingReviewKey === `attachment:${attachment.id}:approve` ? "Review.Approving" : "Review.Approve")}
                                     </button>
                                     <button
                                       onClick={() => handleAttachmentReviewAction(attachment.id, "reject")}
@@ -1713,7 +1687,7 @@ function NotesPage() {
                                       type="button"
                                       className="appCompactActionButton appCompactActionButtonDanger"
                                     >
-                                      {pendingReviewKey === `attachment:${attachment.id}:reject` ? "Rejecting..." : "Reject"}
+                                      {t(pendingReviewKey === `attachment:${attachment.id}:reject` ? "Review.Rejecting" : "Review.Reject")}
                                     </button>
                                   </>
                                 ) : null}
@@ -1723,7 +1697,7 @@ function NotesPage() {
                                   type="button"
                                   className="appCompactActionButton appCompactActionButtonDanger"
                                 >
-                                  {deletingAttachmentId === String(attachment.id) ? "Deleting..." : "Delete file"}
+                                  {t(deletingAttachmentId === String(attachment.id) ? "Details.Deleting" : "Details.DeleteFile")}
                                 </button>
                               </div>
                             </div>
@@ -1734,11 +1708,11 @@ function NotesPage() {
                   </>
                 ) : (
                   <div className={styles.detailConstraintMessage}>
-                    Notes and attachments are only available for leaf nodes.
+                    {t("Details.LeafOnly")}
                   </div>
                 )}
                 {selectedTree && !canWriteSelectedTree ? (
-                  <div className={styles.readOnlyMessage}>You can browse this tree, but editing is disabled because you are not an owner or editor.</div>
+                  <div className={styles.readOnlyMessage}>{t("Details.BrowseOnly")}</div>
                 ) : null}
                 {nodeDetailsError && (
                   <div className={styles.fieldError}>

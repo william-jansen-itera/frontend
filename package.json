@@ -16,6 +16,7 @@
     "mailparser": "^3.9.36",
     "mssql": "^12.7.0",
     "next": "^16.2.12",
+    "next-intl": "^4.14.9",
     "nodemailer": "^10.0.15",
     "react": "^19.2.8",
     "react-arborist": "^3.16.0",

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { useAuth } from "@/app/useAuth";
 import styles from "./page.module.css";
 import { AgentAnswerContent } from "./AgentAnswerContent";
@@ -316,6 +317,7 @@ function getCitationBreadcrumbItems(citation, visibility = "public") {
 }
 
 function CitationHighlightToggle({ matchSummary, summaryKey }) {
+  const t = useTranslations("Pages.Chat");
   const [isOpen, setIsOpen] = useState(false);
 
   if (!matchSummary) {
@@ -330,7 +332,7 @@ function CitationHighlightToggle({ matchSummary, summaryKey }) {
         aria-expanded={isOpen}
         onClick={() => setIsOpen((currentValue) => !currentValue)}
       >
-        Highlight from source
+        {t("Highlight")}
       </button>
       {isOpen ? (
         <p className={styles.citationSummary}>
@@ -342,13 +344,14 @@ function CitationHighlightToggle({ matchSummary, summaryKey }) {
 }
 
 function CitationBreadcrumbs({ citations, visibility }) {
+  const t = useTranslations("Pages.Chat");
   if (!Array.isArray(citations) || citations.length === 0) {
     return null;
   }
 
   return (
     <div className={styles.citationSection}>
-      <p className={styles.citationEyebrow}>Grounding nodes</p>
+      <p className={styles.citationEyebrow}>{t("GroundingNodes")}</p>
       <div className={styles.citationList}>
         {citations.map((citation, index) => {
           const breadcrumbItems = getCitationBreadcrumbItems(citation, visibility);
@@ -358,7 +361,7 @@ function CitationBreadcrumbs({ citations, visibility }) {
           return (
             <div key={key} className={styles.citationCard}>
               <div className={styles.resultBreadcrumbTrail}>
-                <span className={styles.resultTreeLabel}>Node: {citation.treeDisplayName || citation.treeId}</span>
+                <span className={styles.resultTreeLabel}>{t("NodeLabel", { name: citation.treeDisplayName || citation.treeId })}</span>
                 {breadcrumbItems.map((item, itemIndex) => (
                   <span key={`${key}-crumb-${itemIndex}`} className={styles.resultBreadcrumbItem}>
                     <span className={styles.resultBreadcrumbSeparator}>/</span>
@@ -390,6 +393,7 @@ function formatCoveragePercent(value) {
 }
 
 function ToolTokenCoverageSummary({ tokenCoverageFilter }) {
+  const t = useTranslations("Pages.Chat.Debug");
   if (!tokenCoverageFilter || typeof tokenCoverageFilter !== "object") {
     return null;
   }
@@ -399,20 +403,21 @@ function ToolTokenCoverageSummary({ tokenCoverageFilter }) {
   return (
     <div className={styles.searchExecutionCard}>
       <div className={styles.searchExecutionHeader}>
-        <span className={styles.searchExecutionKind}>token coverage filter</span>
+        <span className={styles.searchExecutionKind}>{t("CoverageFilter")}</span>
         <span className={styles.searchExecutionMeta}>
-          {tokenCoverageFilter.enabled ? "enabled" : "disabled"} · threshold {formatCoveragePercent(tokenCoverageFilter.threshold)}
+          {t("CoverageMeta", { state: t(tokenCoverageFilter.enabled ? "Enabled" : "Disabled"), threshold: formatCoveragePercent(tokenCoverageFilter.threshold) })}
         </span>
       </div>
       <p className={styles.searchExecutionQuery}>
-        kept {Number(tokenCoverageFilter.resultCountAfter ?? 0)} of {Number(tokenCoverageFilter.resultCountBefore ?? 0)} grouped result{Number(tokenCoverageFilter.resultCountBefore ?? 0) === 1 ? "" : "s"}
-        {queryTokens.length > 0 ? ` · ${queryTokens.length} query token${queryTokens.length === 1 ? "" : "s"}` : ""}
+        {t("CoverageResults", { after: Number(tokenCoverageFilter.resultCountAfter ?? 0), before: Number(tokenCoverageFilter.resultCountBefore ?? 0) })}
+        {queryTokens.length > 0 ? t("QueryTokens", { count: queryTokens.length }) : ""}
       </p>
     </div>
   );
 }
 
 function ToolSearchExecutionSummary({ searches, tokenCoverageFilter }) {
+  const t = useTranslations("Pages.Chat.Debug");
   const hasSearches = Array.isArray(searches) && searches.length > 0;
 
   if (!hasSearches && !tokenCoverageFilter) {
@@ -425,9 +430,9 @@ function ToolSearchExecutionSummary({ searches, tokenCoverageFilter }) {
       {searches.map((search, index) => (
         <div key={`${search.kind || "search"}-${index}`} className={styles.searchExecutionCard}>
           <div className={styles.searchExecutionHeader}>
-            <span className={styles.searchExecutionKind}>{search.kind || "search"}</span>
+            <span className={styles.searchExecutionKind}>{search.kind || t("Search")}</span>
             <span className={styles.searchExecutionMeta}>
-              mode {search.searchMode || "n/a"} · {Number(search.resultCount ?? 0)} result{Number(search.resultCount ?? 0) === 1 ? "" : "s"}
+              {t("SearchMode", { mode: search.searchMode || "n/a", count: Number(search.resultCount ?? 0) })}
             </span>
           </div>
           <p className={styles.searchExecutionQuery}>{String(search.query ?? "") || "n/a"}</p>
@@ -474,8 +479,9 @@ function areDebugValuesEquivalent(leftValue, rightValue) {
 }
 
 function ExecutionTimingSummary({ timings, toolCalls }) {
+  const t = useTranslations("Pages.Chat.Debug");
   if (!timings || typeof timings !== "object") {
-    return <p className={styles.sectionEmpty}>No timing data was recorded for this turn.</p>;
+    return <p className={styles.sectionEmpty}>{t("NoTiming")}</p>;
   }
 
   const orderedEntries = buildTimingDebugEntries({ timings, toolCalls });
@@ -485,11 +491,11 @@ function ExecutionTimingSummary({ timings, toolCalls }) {
     <div className={styles.searchExecutionList}>
       <div className={styles.searchExecutionCard}>
         <div className={styles.searchExecutionHeader}>
-          <span className={styles.searchExecutionKind}>request</span>
-          <span className={styles.searchExecutionMeta}>total {formatDuration(timings.totalDurationMs)}</span>
+          <span className={styles.searchExecutionKind}>{t("Request")}</span>
+          <span className={styles.searchExecutionMeta}>{t("Total", { duration: formatDuration(timings.totalDurationMs) })}</span>
         </div>
         <p className={styles.searchExecutionQuery}>
-          {formatTimestamp(timings.requestStartedAt)} to {formatTimestamp(timings.requestCompletedAt)}
+          {t("To", { start: formatTimestamp(timings.requestStartedAt), end: formatTimestamp(timings.requestCompletedAt) })}
         </p>
       </div>
 
@@ -500,14 +506,14 @@ function ExecutionTimingSummary({ timings, toolCalls }) {
             <span className={styles.searchExecutionMeta}>{formatDuration(entry.durationMs)}</span>
           </div>
           <p className={styles.searchExecutionQuery}>
-            {formatTimestamp(entry.startedAt)} to {formatTimestamp(entry.completedAt)}
+            {t("To", { start: formatTimestamp(entry.startedAt), end: formatTimestamp(entry.completedAt) })}
             {entry.meta ? ` · ${entry.meta}` : ""}
           </p>
         </div>
       ))}
 
       <details className={styles.debugDetail}>
-        <summary>Raw timing JSON</summary>
+        <summary>{t("RawTiming")}</summary>
         <pre className={styles.jsonBlock}>{formatJson(timingDebugJson)}</pre>
       </details>
     </div>
@@ -549,11 +555,12 @@ function getTurnToolBadgeState(turn) {
 }
 
 function TurnDebugPanel({ turn }) {
+  const t = useTranslations("Pages.Chat.Debug");
   if (!turn) {
     return (
       <div className={styles.debugEmptyState}>
-        <h2>Select a turn</h2>
-        <p>Send a message to inspect the query, tool activity, curated agent input, and final model output.</p>
+        <h2>{t("Select")}</h2>
+        <p>{t("SelectHint")}</p>
       </div>
     );
   }
@@ -561,8 +568,8 @@ function TurnDebugPanel({ turn }) {
   if (turn.isPending) {
     return (
       <div className={styles.debugEmptyState}>
-        <h2>Waiting for response</h2>
-        <p>Debug details will appear here after the current turn finishes.</p>
+        <h2>{t("Waiting")}</h2>
+        <p>{t("WaitingHint")}</p>
       </div>
     );
   }
@@ -570,9 +577,9 @@ function TurnDebugPanel({ turn }) {
   if (turn.error) {
     return (
       <div className={styles.debugEmptyState}>
-        <h2>Turn failed</h2>
-        <p>Error details are not shown in the debug panel.</p>
-        <p>Use application logs for failure diagnostics.</p>
+        <h2>{t("Failed")}</h2>
+        <p>{t("FailedHint")}</p>
+        <p>{t("LogsHint")}</p>
       </div>
     );
   }
@@ -580,8 +587,8 @@ function TurnDebugPanel({ turn }) {
   if (!turn.debug) {
     return (
       <div className={styles.debugEmptyState}>
-        <h2>Debug unavailable</h2>
-        <p>This response did not include debug data. Check the server-side debug setting if you want this panel populated.</p>
+        <h2>{t("Unavailable")}</h2>
+        <p>{t("UnavailableHint")}</p>
       </div>
     );
   }
@@ -606,35 +613,35 @@ function TurnDebugPanel({ turn }) {
     <div className={styles.debugSections}>
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">1. User Query</p>
-          <h2 className={styles.sectionTitle}>Conversation input</h2>
+          <p className="appSectionEyebrow">{t("UserQuery")}</p>
+          <h2 className={styles.sectionTitle}>{t("ConversationInput")}</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(debugUserQuery)}</pre>
       </section>
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">2. Turn Classification</p>
-          <h2 className={styles.sectionTitle}>Shared grounded-vs-broader decision</h2>
+          <p className="appSectionEyebrow">{t("Classification")}</p>
+          <h2 className={styles.sectionTitle}>{t("Decision")}</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(turnClassificationDebug)}</pre>
       </section>
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">3. Execution Timing</p>
-          <h2 className={styles.sectionTitle}>Where the time went</h2>
+          <p className="appSectionEyebrow">{t("Timing")}</p>
+          <h2 className={styles.sectionTitle}>{t("TimeSpent")}</h2>
         </div>
         <ExecutionTimingSummary timings={timings} toolCalls={toolCalls} />
       </section>
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">4. Tool Calls</p>
-          <h2 className={styles.sectionTitle}>{toolCalls.length} invocation{toolCalls.length === 1 ? "" : "s"}</h2>
+          <p className="appSectionEyebrow">{t("ToolCalls")}</p>
+          <h2 className={styles.sectionTitle}>{t("InvocationCount", { count: toolCalls.length })}</h2>
         </div>
         {toolCalls.length === 0 ? (
-          <p className={styles.sectionEmpty}>No tool calls were recorded for this turn.</p>
+          <p className={styles.sectionEmpty}>{t("NoToolCalls")}</p>
         ) : (
           <div className={styles.toolCallList}>
             {toolCalls.map((toolCall) => {
@@ -646,24 +653,24 @@ function TurnDebugPanel({ turn }) {
                 <article key={toolCall.callId || `${toolCall.round}-${toolCall.toolName}`} className={styles.toolCard}>
                   <div className={styles.toolHeader}>
                     <div>
-                      <p className={styles.toolLabel}>Tool cycle {toolCall.round}</p>
-                      <h3 className={styles.toolName}>{toolCall.toolName || "Tool call"}</h3>
+                      <p className={styles.toolLabel}>{t("ToolCycle", { round: toolCall.round })}</p>
+                      <h3 className={styles.toolName}>{toolCall.toolName || t("ToolCall")}</h3>
                       <p className={styles.debugMetaText}>
-                        {formatTimestamp(toolCall.startedAt)} to {formatTimestamp(toolCall.completedAt)} · {formatDuration(toolCall.durationMs)}
+                        {t("To", { start: formatTimestamp(toolCall.startedAt), end: formatTimestamp(toolCall.completedAt) })} · {formatDuration(toolCall.durationMs)}
                       </p>
                     </div>
-                    {toolCall.error ? <span className={styles.toolErrorBadge}>Error</span> : null}
+                    {toolCall.error ? <span className={styles.toolErrorBadge}>{t("Error")}</span> : null}
                   </div>
 
                   <details className={styles.debugDetail}>
-                    <summary>Parsed arguments</summary>
+                    <summary>{t("Arguments")}</summary>
                     <pre className={styles.jsonBlock}>{formatJson(toolCall.parsedArguments)}</pre>
                   </details>
 
                   {(Array.isArray(toolCall.searchResult?.searches) && toolCall.searchResult.searches.length > 0)
                     || toolCall.searchResult?.tokenCoverageFilter ? (
                       <details className={styles.debugDetail} open>
-                        <summary>Search execution</summary>
+                        <summary>{t("SearchExecution")}</summary>
                         <ToolSearchExecutionSummary
                           searches={toolCall.searchResult.searches}
                           tokenCoverageFilter={toolCall.searchResult.tokenCoverageFilter}
@@ -673,33 +680,33 @@ function TurnDebugPanel({ turn }) {
 
                   {shouldShowActualSearchResults ? (
                     <details className={styles.debugDetail}>
-                      <summary>Actual search results</summary>
+                      <summary>{t("SearchResults")}</summary>
                       <pre className={styles.jsonBlock}>{formatJson(toolCall.searchResult)}</pre>
                     </details>
                   ) : null}
 
                   <details className={styles.debugDetail}>
-                    <summary>Tool output</summary>
+                    <summary>{t("ToolOutput")}</summary>
                     <pre className={styles.jsonBlock}>{formatJson(toolCall.toolOutput)}</pre>
                   </details>
 
                   {toolCall.toolDebug ? (
                     <details className={styles.debugDetail}>
-                      <summary>Tool debug</summary>
+                      <summary>{t("ToolDebug")}</summary>
                       <pre className={styles.jsonBlock}>{formatJson(toolCall.toolDebug)}</pre>
                     </details>
                   ) : null}
 
                   {toolCall.toolMetaData ? (
                     <details className={styles.debugDetail}>
-                      <summary>Tool meta data</summary>
+                      <summary>{t("ToolMetadata")}</summary>
                       <pre className={styles.jsonBlock}>{formatJson(toolCall.toolMetaData)}</pre>
                     </details>
                   ) : null}
 
                   {toolCall.error ? (
                     <details className={styles.debugDetail} open>
-                      <summary>Tool error</summary>
+                      <summary>{t("ToolError")}</summary>
                       <pre className={styles.jsonBlock}>{formatJson(toolCall.error)}</pre>
                     </details>
                   ) : null}
@@ -712,16 +719,16 @@ function TurnDebugPanel({ turn }) {
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">5. Curated Agent Input</p>
-          <h2 className={styles.sectionTitle}>Messages passed back to the model</h2>
+          <p className="appSectionEyebrow">{t("AgentInput")}</p>
+          <h2 className={styles.sectionTitle}>{t("AgentInputHint")}</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.curatedAgentInput)}</pre>
       </section>
 
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
-          <p className="appSectionEyebrow">6. Agent Output</p>
-          <h2 className={styles.sectionTitle}>Model response and answer</h2>
+          <p className="appSectionEyebrow">{t("AgentOutput")}</p>
+          <h2 className={styles.sectionTitle}>{t("AgentOutputHint")}</h2>
         </div>
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.agentOutput)}</pre>
       </section>
@@ -730,6 +737,7 @@ function TurnDebugPanel({ turn }) {
 }
 
 export default function ChatPageClient({ includeDebug }) {
+  const t = useTranslations("Pages.Chat");
   const { user } = useAuth();
   const userMessageLabel = buildUserMessageLabel(user);
   const pathname = usePathname();
@@ -1021,7 +1029,7 @@ export default function ChatPageClient({ includeDebug }) {
           <div className={styles.chatColumnSurface}>
             <section className={styles.heroCard}>
             <div className={`appPanelTopBar ${styles.promptPanelHeader}`}>
-              <p className="appEyebrow">Prompt</p>
+              <p className="appEyebrow">{t("Prompt")}</p>
               <label className={styles.toolbarLabel}>
                 <select
                   value={chatFamily ?? ""}
@@ -1029,7 +1037,7 @@ export default function ChatPageClient({ includeDebug }) {
                   disabled={isSubmitting || availableChatFamilies.length === 0}
                 >
                   {availableChatFamilies.length === 0 ? (
-                    <option value="" disabled>No families available</option>
+                    <option value="" disabled>{t("NoFamilies")}</option>
                   ) : null}
                   {availableChatFamilies.map((family) => (
                     <option key={family.family} value={family.family}>{family.label || family.family}</option>
@@ -1043,9 +1051,9 @@ export default function ChatPageClient({ includeDebug }) {
                     onChange={handleVisibilityChange}
                     disabled={isSubmitting || !isVisibilityReady}
                   >
-                    <option value="public">Public</option>
-                    <option value="private">Private</option>
-                    <option value="both">Both</option>
+                    <option value="public">{t("Visibility.Public")}</option>
+                    <option value="private">{t("Visibility.Private")}</option>
+                    <option value="both">{t("Visibility.Both")}</option>
                   </select>
                 </label>
               ) : null}
@@ -1055,7 +1063,7 @@ export default function ChatPageClient({ includeDebug }) {
                 className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
                 disabled={isSubmitting || !prompt.trim() || !isVisibilityReady || !chatFamily}
               >
-                {isSubmitting ? "Thinking..." : "Send"}
+                {t(isSubmitting ? "Thinking" : "Send")}
               </button>
             </div>
             <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
@@ -1064,7 +1072,11 @@ export default function ChatPageClient({ includeDebug }) {
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   onKeyDown={handlePromptKeyDown}
-                  placeholder={buildChatPlaceholder(availableChatFamilies)}
+                  placeholder={buildChatPlaceholder(availableChatFamilies, {
+                    empty: t("NoChatFamilies"),
+                    single: (topic) => t("AskAbout", { topic }),
+                    multiple: (topics, last) => t("AskAboutMany", { topics, last }),
+                  })}
                   className={styles.textArea}
                   rows={4}
                   disabled={availableChatFamilies.length === 0}
@@ -1079,11 +1091,9 @@ export default function ChatPageClient({ includeDebug }) {
               <div ref={chatFeedRef} className={`${styles.chatFeed} ${isSingleTurnLayout ? styles.chatFeedSingleTurn : ""} ${isInitialTransientState ? styles.chatFeedInitialPending : ""} ${isHistoryEmpty ? styles.chatFeedEmpty : ""}`}>
               {turns.length === 0 ? (
                 <div className={`${styles.emptyState} ${styles.emptyStateCompact}`}>
-                  <h3>Start a turn</h3>
+                  <h3>{t("Start")}</h3>
                   <p>
-                    {showTurnInspector
-                      ? "This will show the conversation."
-                      : "The conversation history and grounded citations will appear here as you ask questions."}
+                    {t(showTurnInspector ? "EmptyWithInspector" : "Empty")}
                   </p>
                 </div>
               ) : (
@@ -1108,16 +1118,16 @@ export default function ChatPageClient({ includeDebug }) {
                     >
                       <div className={styles.turnMetaRow}>
                         <span className={styles.turnTimestamp}>{formatTimestamp(turn.createdAt)}</span>
-                        <span className={styles.turnStatus}>{turn.isPending ? "Pending" : turn.error ? "Error" : "Complete"}</span>
+                        <span className={styles.turnStatus}>{t(turn.isPending ? "Status.Pending" : turn.error ? "Status.Error" : "Status.Complete")}</span>
                       </div>
 
                       {!turn.isPending && !turn.error ? (
                         <div className={styles.toolChipRow}>
                           {toolBadgeState.toolLabels.map((label) => (
-                            <span key={`${turn.id}-${label}`} className={styles.toolChip}>{label}</span>
+                            <span key={`${turn.id}-${label}`} className={styles.toolChip}>{t("Modes.Tool", { name: label.slice(6) })}</span>
                           ))}
                           {toolBadgeState.statusLabel ? (
-                            <span className={toolBadgeState.statusLabel === "GROUNDED MODE" ? styles.modeChip : styles.noToolChip}>{toolBadgeState.statusLabel}</span>
+                            <span className={toolBadgeState.statusLabel === "GROUNDED MODE" ? styles.modeChip : styles.noToolChip}>{t(`Modes.${({ "GROUNDED MODE": "Grounded", "BROAD MODE": "Broad", "NO TOOL RESULT": "NoResult", "NO TOOL USED": "NoTool" })[toolBadgeState.statusLabel]}`)}</span>
                           ) : null}
                         </div>
                       ) : null}
@@ -1129,7 +1139,7 @@ export default function ChatPageClient({ includeDebug }) {
                         <div className={styles.messageContent}>
                           {turn.isPending ? (
                             <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""} ${turn.isPending ? styles.messageTextThinking : ""}`}>
-                              Waiting for response...
+                              {t("Waiting")}
                             </p>
                           ) : turn.error ? (
                             <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>
@@ -1137,7 +1147,7 @@ export default function ChatPageClient({ includeDebug }) {
                             </p>
                           ) : (
                             <AgentAnswerContent
-                              answer={turn.answer || "No answer returned."}
+                              answer={turn.answer || t("NoAnswer")}
                               keyPrefix={`${turn.id}-answer`}
                               textClassName={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}
                             />
@@ -1165,13 +1175,13 @@ export default function ChatPageClient({ includeDebug }) {
           <aside className={`appPanelShell ${styles.debugPanel} ${isDebugCompactState ? styles.debugPanelEmpty : ""}`}>
             <div className={`appPanelTopBar ${styles.panelHeader}`}>
               <div>
-                <p className="appEyebrow">Turn inspector</p>
+                <p className="appEyebrow">{t("Inspector")}</p>
               </div>
             </div>
             <div className={`${styles.debugBody} ${isDebugCompactState ? styles.debugBodyEmpty : ""}`}>
               {!isDebugPending ? (
                 <p className={styles.debugIntro}>
-                  Inspect exactly how the agent searched, curated evidence, and produced the answer.
+                  {t("InspectorIntro")}
                 </p>
               ) : null}
               <TurnDebugPanel turn={selectedTurn} />

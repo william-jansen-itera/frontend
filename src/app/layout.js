@@ -5,9 +5,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { NextIntlClientProvider, useTranslations } from "next-intl";
 import { AuthProvider, useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import { ADMIN_SECTIONS } from "./admin/adminShared";
+import enMessages from "./language/en.json";
+import daMessages from "./language/da.json";
+import { usePersistedLanguage } from "./usePersistedLanguage";
 import {
   ALL_VISIBILITY_VALUES,
   buildVisibilityHref,
@@ -28,16 +32,24 @@ const geistMono = Geist_Mono({
 });
 
 const navLinks = [
-  { href: "/notes", label: "Notes", requiresRole: "mdsusers" },
-  { href: "/search", label: "Search", requiresRole: "mdsusers" },
-  { href: "/chat", label: "Agent", requiresRole: "mdsusers" },
-  { href: "/review", label: "Review", requiresRole: "mdsusers" },
-  { href: "/me", label: "Me", requiresAuthenticated: true },
-  { href: "/admin", label: "Admin", requiresRole: "mdsadmins", children: adminNavChildren },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" },
-  { href: "/architecture", label: "Architecture", requiresRole: "mdsadmins" },
+  { href: "/notes", labelKey: "Notes", requiresRole: "mdsusers" },
+  { href: "/search", labelKey: "Search", requiresRole: "mdsusers" },
+  { href: "/chat", labelKey: "Agent", requiresRole: "mdsusers" },
+  { href: "/review", labelKey: "Review", requiresRole: "mdsusers" },
+  { href: "/me", labelKey: "Me", requiresAuthenticated: true },
+  { href: "/admin", labelKey: "Admin", requiresRole: "mdsadmins", children: adminNavChildren },
+  { href: "/about", labelKey: "About" },
+  { href: "/contact", labelKey: "Contact" },
+  { href: "/architecture", labelKey: "Architecture", requiresRole: "mdsadmins" },
 ];
+
+const adminNavKeys = {
+  "/admin/deletions": "DeletedItems",
+  "/admin/agent-publishing": "AgentPublishing",
+  "/admin/analytics": "Analytics",
+  "/admin/indexing": "Indexing",
+  "/admin/contact-requests": "ContactRequests",
+};
 
 function getPageSurfaceClassName(pathname) {
   if (pathname.startsWith("/admin")) {
@@ -102,9 +114,12 @@ function HeaderAuthControls({
   user,
   signIn,
   signOut,
+  language,
+  setLanguage,
   mobile = false,
   onAction = null,
 }) {
+  const t = useTranslations("Menu");
   const authGroupClassName = mobile ? "appAuthGroup appAuthGroupMobile" : "appAuthGroup";
 
   const handleSignIn = () => {
@@ -119,18 +134,26 @@ function HeaderAuthControls({
 
   return (
     <div className={authGroupClassName}>
+      <label className="appLanguageControl">
+        <span>{t("LanguageLabel")}</span>
+        <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+          <option value="en">English</option>
+          <option value="da">Dansk</option>
+        </select>
+      </label>
       {!user ? (
-        <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">Sign In</button>
+        <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">{t("SignIn")}</button>
       ) : (
         <>
-          <button onClick={handleSignOut} className="appAuthButton appAuthButtonSecondary">Sign Out</button>
+          <button onClick={handleSignOut} className="appAuthButton appAuthButtonSecondary">{t("SignOut")}</button>
         </>
       )}
     </div>
   );
 }
 
-function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "public" }) {
+function LayoutContent({ children, pathname, user, signIn, signOut, language, setLanguage, visibility = "public" }) {
+  const t = useTranslations("Menu");
   const [mobileMenuPathname, setMobileMenuPathname] = useState(null);
   const [openNavGroupHref, setOpenNavGroupHref] = useState(null);
   const navRef = useRef(null);
@@ -199,7 +222,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
                   aria-controls={submenuId}
                   onClick={() => setOpenNavGroupHref((current) => (current === link.href ? null : link.href))}
                 >
-                  <span>{link.label}</span>
+                  <span>{t(link.labelKey)}</span>
                   <span className="appNavLinkChevron" aria-hidden="true">▾</span>
                 </button>
 
@@ -220,7 +243,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
                           }
                         }}
                       >
-                        {childLink.label}
+                        {adminNavKeys[childLink.href] ? t(adminNavKeys[childLink.href]) : childLink.label}
                       </Link>
                     );
                   })}
@@ -237,7 +260,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
               className={`appNavLink ${isActive ? "appNavLinkActive" : ""}`.trim()}
               onClick={mobile ? () => setMobileMenuPathname(null) : undefined}
             >
-              {link.label}
+              {t(link.labelKey)}
             </Link>
           );
         })}
@@ -251,7 +274,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
         <nav ref={navRef} className="appNav" aria-label="Primary">
           <div className="appNavMainRow">
             <div className="appNavBrandGroup">
-              <Link href={buildNavHref("/")} className="appBrandLink" aria-label="MDS home">
+              <Link href={buildNavHref("/")} className="appBrandLink" aria-label={t("HomeLabel")}>
                 <Image
                   src="/MDS logo black heavier.png"
                   alt="MDS"
@@ -264,12 +287,20 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
               {renderNavLinks()}
             </div>
 
+            <HeaderAuthControls
+              user={user}
+              signIn={signIn}
+              signOut={signOut}
+              language={language}
+              setLanguage={setLanguage}
+            />
+
             <button
               type="button"
               className="appNavMenuButton"
               aria-expanded={isMobileMenuOpen}
               aria-controls="app-mobile-menu"
-              aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-label={isMobileMenuOpen ? t("CloseNavigation") : t("OpenNavigation")}
               onClick={() => setMobileMenuPathname((current) => (current === pathname ? null : pathname))}
             >
               <span className="appNavMenuButtonLine" />
@@ -278,12 +309,6 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
             </button>
           </div>
 
-          <HeaderAuthControls
-            user={user}
-            signIn={signIn}
-            signOut={signOut}
-          />
-
           {isMobileMenuOpen ? (
             <div id="app-mobile-menu" className="appMobileMenu">
               {renderNavLinks({ mobile: true })}
@@ -291,6 +316,8 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
                 user={user}
                 signIn={signIn}
                 signOut={signOut}
+                language={language}
+                setLanguage={setLanguage}
                 mobile
                 onAction={() => setMobileMenuPathname(null)}
               />
@@ -303,7 +330,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
   );
 }
 
-function LayoutContentWithVisibility({ children, user, signIn, signOut }) {
+function LayoutContentWithVisibility({ children, user, signIn, signOut, language, setLanguage }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const requestedVisibilityParam = searchParams.get("visibility");
@@ -318,6 +345,8 @@ function LayoutContentWithVisibility({ children, user, signIn, signOut }) {
       user={user}
       signIn={signIn}
       signOut={signOut}
+      language={language}
+      setLanguage={setLanguage}
       visibility={visibility}
     >
       {children}
@@ -328,33 +357,41 @@ function LayoutContentWithVisibility({ children, user, signIn, signOut }) {
 function RootLayoutShell({ children }) {
   const { user, signIn, signOut } = useAuth();
   const pathname = usePathname();
+  const { language, setLanguage } = usePersistedLanguage();
 
   useEffect(() => {
     document.title = "MDS";
-  }, []);
+    document.documentElement.lang = language;
+  }, [language]);
 
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <Suspense fallback={(
-          <LayoutContent
-            pathname={pathname}
-            user={user}
-            signIn={signIn}
-            signOut={signOut}
+        <NextIntlClientProvider locale={language} messages={language === "da" ? daMessages : enMessages} timeZone="UTC">
+          <Suspense fallback={(
+            <LayoutContent
+              pathname={pathname}
+              user={user}
+              signIn={signIn}
+              signOut={signOut}
+              language={language}
+              setLanguage={setLanguage}
+            >
+              {children}
+            </LayoutContent>
+          )}
           >
-            {children}
-          </LayoutContent>
-        )}
-        >
-          <LayoutContentWithVisibility
-            user={user}
-            signIn={signIn}
-            signOut={signOut}
-          >
-            {children}
-          </LayoutContentWithVisibility>
-        </Suspense>
+            <LayoutContentWithVisibility
+              user={user}
+              signIn={signIn}
+              signOut={signOut}
+              language={language}
+              setLanguage={setLanguage}
+            >
+              {children}
+            </LayoutContentWithVisibility>
+          </Suspense>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

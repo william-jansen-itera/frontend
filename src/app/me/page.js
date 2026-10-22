@@ -2,6 +2,7 @@
 
 import styles from "./page.module.css";
 import { useAuth } from "../useAuth";
+import { useTranslations } from "next-intl";
 
 function formatValue(value, fallback = "Not available") {
   const normalizedValue = String(value ?? "").trim();
@@ -9,6 +10,7 @@ function formatValue(value, fallback = "Not available") {
 }
 
 export default function MePage() {
+  const t = useTranslations("Pages.Me");
   const { user, signIn, isAuthResolved } = useAuth();
 
   if (!isAuthResolved) {
@@ -16,9 +18,9 @@ export default function MePage() {
       <main className="appPageShell">
         <section className={styles.heroCard}>
           <div className="appHeroCopy">
-            <p className="appEyebrow">Me</p>
-            <h1 className={`${styles.title} appPageTitle`}>Loading your profile.</h1>
-            <p className="appPageDescription">Fetching the current authenticated principal.</p>
+            <p className="appEyebrow">{t("Title")}</p>
+            <h1 className={`${styles.title} appPageTitle`}>{t("Loading")}</h1>
+            <p className="appPageDescription">{t("Fetching")}</p>
           </div>
         </section>
       </main>
@@ -30,11 +32,11 @@ export default function MePage() {
       <main className="appPageShell">
         <section className={styles.heroCard}>
           <div className="appHeroCopy">
-            <p className="appEyebrow">Me</p>
-            <h1 className={`${styles.title} appPageTitle`}>You are not signed in.</h1>
-            <p className="appPageDescription">Sign in to inspect your basic identity details and current roles.</p>
+            <p className="appEyebrow">{t("Title")}</p>
+            <h1 className={`${styles.title} appPageTitle`}>{t("SignedOut")}</h1>
+            <p className="appPageDescription">{t("SignInHint")}</p>
             <div className={styles.actionRow}>
-              <button type="button" onClick={signIn} className="appPrimaryFormButton">Sign In</button>
+              <button type="button" onClick={signIn} className="appPrimaryFormButton">{t("SignIn")}</button>
             </div>
           </div>
         </section>
@@ -43,17 +45,17 @@ export default function MePage() {
   }
 
   const profileFields = [
-    { label: "Display name", value: formatValue(user.displayName || user.userDetails) },
-    { label: "User details", value: formatValue(user.userDetails), isMonospace: true },
-    { label: "Object ID", value: formatValue(user.objectId), isMonospace: true },
-    { label: "Roles", value: Array.isArray(user.userRoles) && user.userRoles.length > 0 ? user.userRoles.join(", ") : "No roles assigned" },
+    { label: t("DisplayName"), value: formatValue(user.displayName || user.userDetails, t("NotAvailable")) },
+    { label: t("UserDetails"), value: formatValue(user.userDetails, t("NotAvailable")), isMonospace: true },
+    { label: t("ObjectId"), value: formatValue(user.objectId, t("NotAvailable")), isMonospace: true },
+    { label: t("Roles"), value: Array.isArray(user.userRoles) && user.userRoles.length > 0 ? user.userRoles.join(", ") : t("NoRoles") },
   ];
 
   return (
     <main className="appPageShell">
       <section className={styles.heroCard}>
         <div className="appHeroCopy">
-          <p className="appEyebrow">Me</p>
+          <p className="appEyebrow">{t("Title")}</p>
           <div className={styles.fieldList}>
             {profileFields.map((field) => (
               <div key={field.label} className={styles.fieldRow}>

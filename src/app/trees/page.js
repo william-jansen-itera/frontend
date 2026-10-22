@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "../useAuth";
 import styles from "./page.module.css";
@@ -176,38 +177,38 @@ function formatSyncError(syncStatus) {
   return `${syncStatus.message} Missing descriptions: ${missingTreeLabels.join(", ")}.`;
 }
 
-function formatPublishOutcomeMessage(syncStatus, treeId) {
+function formatPublishOutcomeMessage(syncStatus, treeId, t) {
   const excludedTrees = Array.isArray(syncStatus?.excludedTrees) ? syncStatus.excludedTrees : [];
 
   const isExcluded = excludedTrees.some((tree) => String(tree?.id ?? "") === String(treeId));
 
   if (isExcluded) {
-    return "Description was empty and not published to the agent.";
+    return t("Feedback.DescriptionExcluded");
   }
 
-  return "Stored description was published to the agent.";
+  return t("Feedback.DescriptionPublished");
 }
 
-function formatReviewStatusLabel(reviewStatus) {
+function formatReviewStatusLabel(reviewStatus, t) {
   const normalizedStatus = String(reviewStatus ?? "draft").trim().toLowerCase();
 
   if (normalizedStatus === "submitted") {
-    return "Submitted";
+    return t("ReviewStatuses.Submitted");
   }
 
   if (normalizedStatus === "approved") {
-    return "Approved";
+    return t("ReviewStatuses.Approved");
   }
 
   if (normalizedStatus === "rejected") {
-    return "Rejected";
+    return t("ReviewStatuses.Rejected");
   }
 
-  return "Draft";
+  return t("ReviewStatuses.Draft");
 }
 
-function promptForRejectionComment(targetLabel) {
-  const nextComment = window.prompt(`Enter a rejection comment for ${targetLabel}:`, "");
+function promptForRejectionComment(targetLabel, t) {
+  const nextComment = window.prompt(t("RejectionPrompt", { scope: targetLabel }), "");
 
   if (nextComment === null) {
     return null;
@@ -221,10 +222,6 @@ function promptForRejectionComment(targetLabel) {
   }
 
   return normalizedComment;
-}
-
-function getTreeReviewScopeLabel(treeName) {
-  return `tree "${treeName}" and everything in it, including all nodes, leaves, and attachments`;
 }
 
 function getReviewStatusClassName(reviewStatus, styles) {
@@ -245,7 +242,7 @@ function getReviewStatusClassName(reviewStatus, styles) {
   return styles.reviewStatusDraft;
 }
 
-function formatReviewTimestamp(value) {
+function formatReviewTimestamp(value, locale) {
   if (!value) {
     return null;
   }
@@ -256,27 +253,27 @@ function formatReviewTimestamp(value) {
     return null;
   }
 
-  return parsedValue.toLocaleString();
+  return parsedValue.toLocaleString(locale);
 }
 
-function formatReviewAuditLabel(tree) {
+function formatReviewAuditLabel(tree, t, locale) {
   const reviewStatus = String(tree?.reviewStatus ?? "draft").trim().toLowerCase();
-  const submittedTimestamp = formatReviewTimestamp(tree?.submittedAt);
-  const reviewedTimestamp = formatReviewTimestamp(tree?.reviewedAt);
+  const submittedTimestamp = formatReviewTimestamp(tree?.submittedAt, locale);
+  const reviewedTimestamp = formatReviewTimestamp(tree?.reviewedAt, locale);
 
   if (reviewStatus === "submitted") {
     const parts = [];
     const submittedByUserDetails = String(tree?.submittedByUserDetails ?? "").trim();
 
     if (submittedByUserDetails) {
-      parts.push(`Submitted by ${submittedByUserDetails}`);
+      parts.push(t("ReviewAudit.SubmittedBy", { name: submittedByUserDetails }));
     }
 
     if (submittedTimestamp) {
       parts.push(submittedTimestamp);
     }
 
-    return parts.join(" • ") || "Submitted for review";
+    return parts.join(" • ") || t("ReviewAudit.Submitted");
   }
 
   if (reviewStatus === "approved") {
@@ -284,14 +281,14 @@ function formatReviewAuditLabel(tree) {
     const reviewedByUserDetails = String(tree?.reviewedByUserDetails ?? "").trim();
 
     if (reviewedByUserDetails) {
-      parts.push(`Approved by ${reviewedByUserDetails}`);
+      parts.push(t("ReviewAudit.ApprovedBy", { name: reviewedByUserDetails }));
     }
 
     if (reviewedTimestamp) {
       parts.push(reviewedTimestamp);
     }
 
-    return parts.join(" • ") || "Approved";
+    return parts.join(" • ") || t("ReviewAudit.Approved");
   }
 
   if (reviewStatus === "rejected") {
@@ -299,20 +296,22 @@ function formatReviewAuditLabel(tree) {
     const reviewedByUserDetails = String(tree?.reviewedByUserDetails ?? "").trim();
 
     if (reviewedByUserDetails) {
-      parts.push(`Rejected by ${reviewedByUserDetails}`);
+      parts.push(t("ReviewAudit.RejectedBy", { name: reviewedByUserDetails }));
     }
 
     if (reviewedTimestamp) {
       parts.push(reviewedTimestamp);
     }
 
-    return parts.join(" • ") || "Rejected";
+    return parts.join(" • ") || t("ReviewAudit.Rejected");
   }
 
-  return "Not yet submitted";
+  return t("ReviewAudit.Draft");
 }
 
 function TreesPageContent() {
+  const t = useTranslations("Pages.Trees");
+  const locale = useLocale();
   const { user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -531,7 +530,7 @@ function TreesPageContent() {
       }));
       updateRowFeedback(treeId, {
         transferError: matches.length === 0 ? "No matching people were found." : "",
-        transferMessage: matches.length > 0 ? `Found ${matches.length} possible owner${matches.length === 1 ? "" : "s"}.` : "",
+        transferMessage: matches.length > 0 ? t("Feedback.OwnersFound", { count: matches.length }) : "",
       });
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -555,9 +554,9 @@ function TreesPageContent() {
       return;
     }
 
-    const confirmMessage = tree.isPrivate
-      ? `Transfer this private tree to ${selectedTarget.displayName}? You may lose access immediately if you are not also assigned as an editor.`
-      : `Transfer this tree to ${selectedTarget.displayName}? Public visibility will stay unchanged, but only the owner and assigned editors can edit.`;
+    const confirmMessage = t(tree.isPrivate ? "ConfirmTransferPrivate" : "ConfirmTransferPublic", {
+      name: selectedTarget.displayName,
+    });
 
     if (!window.confirm(confirmMessage)) {
       return;
@@ -610,14 +609,12 @@ function TreesPageContent() {
       if (treeStillVisible) {
         updateRowFeedback(treeId, {
           transferError: "",
-          transferMessage: `Owner updated to ${selectedTarget.displayName}.`,
+          transferMessage: t("Feedback.OwnerUpdated", { name: selectedTarget.displayName }),
         });
       } else {
-        setStatusMessage(
-          tree.isPrivate
-            ? `Ownership transferred to ${selectedTarget.displayName}. This private tree is no longer visible to you.`
-            : `Ownership transferred to ${selectedTarget.displayName}.`,
-        );
+        setStatusMessage(t(tree.isPrivate ? "Feedback.PrivateOwnerTransferred" : "Feedback.OwnerTransferred", {
+          name: selectedTarget.displayName,
+        }));
       }
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -681,7 +678,7 @@ function TreesPageContent() {
       }));
       updateRowFeedback(treeId, {
         editorError: nextOptions.length === 0 ? "No matching people were found." : "",
-        editorMessage: nextOptions.length > 0 ? `Found ${nextOptions.length} possible editor${nextOptions.length === 1 ? "" : "s"}.` : "",
+        editorMessage: nextOptions.length > 0 ? t("Feedback.EditorsFound", { count: nextOptions.length }) : "",
       });
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -763,7 +760,7 @@ function TreesPageContent() {
       }));
       updateRowFeedback(treeId, {
         editorError: "",
-        editorMessage: `${selectedTarget.displayName} can now edit this tree.`,
+        editorMessage: t("Feedback.EditorAdded", { name: selectedTarget.displayName }),
       });
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -783,7 +780,7 @@ function TreesPageContent() {
       return;
     }
 
-    const confirmed = window.confirm(`Remove ${getEditorLabel(editor)} as an editor for "${tree.name}"?`);
+    const confirmed = window.confirm(t("ConfirmRemoveEditor", { editor: getEditorLabel(editor), tree: tree.name }));
 
     if (!confirmed) {
       return;
@@ -819,7 +816,7 @@ function TreesPageContent() {
       applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
       updateRowFeedback(treeId, {
         editorError: "",
-        editorMessage: `${getEditorLabel(editor)} can no longer edit this tree.`,
+        editorMessage: t("Feedback.EditorRemoved", { name: getEditorLabel(editor) }),
       });
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -1008,7 +1005,7 @@ function TreesPageContent() {
       }));
       setDescriptionEditing(treeId, true);
       updateRowFeedback(treeId, {
-        infoMessage: "Draft description generated. Review or edit it, then click Save to publish.",
+        infoMessage: t("Feedback.DraftGenerated"),
         generateError: "",
         populateError: "",
         populateMessage: "",
@@ -1075,13 +1072,11 @@ function TreesPageContent() {
       const syncStatus = data?.syncStatus ?? null;
       const syncError = formatSyncError(syncStatus);
       const syncMessage = syncStatus?.status === "success"
-        ? formatPublishOutcomeMessage(syncStatus, treeId)
+        ? formatPublishOutcomeMessage(syncStatus, treeId, t)
         : "";
 
       updateRowFeedback(treeId, {
-        infoMessage: syncError
-          ? "Description was saved, but the hosted-agent publish step did not complete."
-          : "Description was saved.",
+        infoMessage: t(syncError ? "Feedback.DescriptionSavedWithoutPublish" : "Feedback.DescriptionSaved"),
         populateError: "",
         populateMessage: "",
         saveError: "",
@@ -1107,9 +1102,7 @@ function TreesPageContent() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Clear tree "${tree.name}"? This clears the saved description and unpublishes the tree from the agent before republishing the remaining tools.`,
-    );
+    const confirmed = window.confirm(t("ConfirmClear", { name: tree.name }));
 
     if (!confirmed) {
       return;
@@ -1154,9 +1147,7 @@ function TreesPageContent() {
       const syncError = formatSyncError(syncStatus);
 
       updateRowFeedback(treeId, {
-        infoMessage: syncError
-          ? "Description was cleared, but the hosted-agent publish step did not complete."
-          : "Description was cleared and removed from the agent.",
+        infoMessage: t(syncError ? "Feedback.DescriptionClearedWithoutPublish" : "Feedback.DescriptionCleared"),
         populateError: "",
         populateMessage: "",
         saveError: "",
@@ -1184,9 +1175,7 @@ function TreesPageContent() {
     setDescriptionEditing(treeId, false);
 
     updateRowFeedback(treeId, {
-      infoMessage: storedDescription
-        ? "Saved description restored."
-        : "Draft removed. This tree has no saved description yet.",
+      infoMessage: t(storedDescription ? "Feedback.DescriptionRestored" : "Feedback.DraftRemoved"),
       generateError: "",
       populateError: "",
       populateMessage: "",
@@ -1218,9 +1207,7 @@ function TreesPageContent() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Populate tree \"${tree.name}\"? This will generate new data and insert it into the tree.`,
-    );
+    const confirmed = window.confirm(t("ConfirmPopulate", { name: tree.name }));
 
     if (!confirmed) {
       return;
@@ -1251,7 +1238,7 @@ function TreesPageContent() {
       applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
       updateRowFeedback(treeId, {
         populateError: "",
-        populateMessage: data?.message || "Tree content was appended successfully.",
+        populateMessage: data?.message || t("Feedback.TreePopulated"),
       });
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -1264,7 +1251,7 @@ function TreesPageContent() {
   };
 
   const handleDeleteTree = async (tree) => {
-    const confirmed = window.confirm(`Delete tree \"${tree.name}\" and all its nodes and attachments?`);
+    const confirmed = window.confirm(t("ConfirmDelete", { name: tree.name }));
 
     if (!confirmed) {
       return;
@@ -1303,9 +1290,7 @@ function TreesPageContent() {
     const nextApprovalEnabled = !Boolean(tree.approvalEnabled);
 
     if (!nextApprovalEnabled) {
-      const confirmed = window.confirm(
-        `Disable approvals for "${tree.name}"? This will reset the tree and its nodes and attachments back to draft.`,
-      );
+      const confirmed = window.confirm(t("ConfirmDisableApprovals", { name: tree.name }));
 
       if (!confirmed) {
         return;
@@ -1341,9 +1326,7 @@ function TreesPageContent() {
       applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
       updateRowFeedback(treeId, {
         reviewError: "",
-        reviewMessage: nextApprovalEnabled
-          ? "Approval workflow enabled for this tree."
-          : "Approval workflow disabled and all review states reset to draft.",
+        reviewMessage: t(nextApprovalEnabled ? "ApprovalsEnabledMessage" : "ApprovalsDisabledMessage"),
       });
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -1357,24 +1340,16 @@ function TreesPageContent() {
 
   const handleTreeReviewAction = async (tree, action) => {
     const treeId = String(tree.id);
-    const treeScopeLabel = getTreeReviewScopeLabel(tree.name);
+    const treeScopeLabel = t("ReviewScope", { name: tree.name });
     const rejectionComment = action === "reject"
-      ? promptForRejectionComment(treeScopeLabel)
+      ? promptForRejectionComment(treeScopeLabel, t)
       : null;
 
     if (action === "reject" && rejectionComment === null) {
       return;
     }
 
-    const reviewActionLabel = action === "submit"
-      ? `submit ${treeScopeLabel} for review`
-      : action === "unsubmit"
-        ? `move ${treeScopeLabel} back to draft`
-      : action === "approve"
-        ? `approve ${treeScopeLabel}`
-        : `reject ${treeScopeLabel}`;
-
-    if (!window.confirm(`Are you sure you want to ${reviewActionLabel}?`)) {
+    if (!window.confirm(t(`ReviewConfirmations.${action}`, { scope: treeScopeLabel }))) {
       return;
     }
 
@@ -1407,13 +1382,7 @@ function TreesPageContent() {
       applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
       updateRowFeedback(treeId, {
         reviewError: "",
-        reviewMessage: action === "submit"
-          ? "Tree submitted for review."
-          : action === "unsubmit"
-            ? "Tree moved back to draft."
-          : action === "approve"
-            ? "Tree approved."
-            : "Tree rejected.",
+        reviewMessage: t(`ReviewMessages.${action}`),
       });
     } catch (error) {
       updateRowFeedback(treeId, {
@@ -1430,18 +1399,18 @@ function TreesPageContent() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className="appHeroCopy">
           <p className={`${styles.description} appPageDescription`}>
-            Create new trees, manage visibility, maintain editor access, and submit entire trees for review. Only the owner can transfer ownership, change the editor list, or enable approvals, and only the owner or assigned editors can change tree content.
+            {t("Description")}
           </p>
         </div>
 
         <form onSubmit={handleCreateTree} className={styles.createForm}>
           <label className={styles.createField}>
-            <span className="appFieldLabel">New tree name</span>
+            <span className="appFieldLabel">{t("NewTreeName")}</span>
             <input
               type="text"
               value={newTreeName}
               onChange={(event) => setNewTreeName(event.target.value)}
-              placeholder="Enter tree title"
+              placeholder={t("TreeTitlePlaceholder")}
               className={`appTextControl ${styles.textInput} ${styles.createTreeInput}`}
             />
           </label>
@@ -1450,37 +1419,37 @@ function TreesPageContent() {
             disabled={isCreating || !newTreeName.trim()}
             className={`appPrimaryFormButton ${styles.createButton}`}
           >
-            {isCreating ? "Creating..." : "Create Tree"}
+            {t(isCreating ? "Creating" : "Create")}
           </button>
         </form>
       </section>
 
       <section className={`appTopLevelPanel ${styles.listPanel}`}>
         <div className={`appPanelTopBar ${styles.listToolbar}`}>
-          <span className={styles.panelHeading}>Current Trees</span>
+          <span className={styles.panelHeading}>{t("CurrentTrees")}</span>
           <label className={styles.toolbarLabel}>
             <select
               value={visibilityFilter}
               onChange={handleVisibilityFilterChange}
             >
-              <option value="public">Public</option>
-              <option value="private">Private</option>
+              <option value="public">{t("Visibility.Public")}</option>
+              <option value="private">{t("Visibility.Private")}</option>
             </select>
           </label>
         </div>
 
         <div className={styles.listBody}>
-          <h2 className={styles.sectionTitle}>{trees.length} tree{trees.length === 1 ? "" : "s"}</h2>
+          <h2 className={styles.sectionTitle}>{t("TreeCount", { count: trees.length })}</h2>
           <p className={styles.syncHint}>
-            Trees without a saved description are not published to the agent.
+            {t("PublicationHint")}
           </p>
           {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}
           {errorMessage ? <p className={styles.errorMessage}>{errorMessage}</p> : null}
 
           {isLoading ? (
-            <div className={styles.emptyState}>Loading trees...</div>
+            <div className={styles.emptyState}>{t("Loading")}</div>
           ) : trees.length === 0 ? (
-            <div className={styles.emptyState}>No trees exist for this application instance yet.</div>
+            <div className={styles.emptyState}>{t("Empty")}</div>
           ) : (
             <div className={styles.treeList}>
               {trees.map((tree) => {
@@ -1523,7 +1492,7 @@ function TreesPageContent() {
                       <div className={styles.treeMetaRow}>
                         <div className={styles.treeMetaHeader}>
                           <div className={styles.treeIdRow}>
-                            <span className={styles.treeId}>Tree {treeId}</span>
+                            <span className={styles.treeId}>{t("TreeId", { id: treeId })}</span>
                           </div>
                         </div>
                         <div className={styles.treeMeta}>
@@ -1541,8 +1510,8 @@ function TreesPageContent() {
                                 disabled={isPending || !canWriteTree}
                                 className={`appSelectControl ${styles.treeVisibilitySelect}`}
                               >
-                                <option value="public">Public</option>
-                                <option value="private">Private</option>
+                                <option value="public">{t("Visibility.Public")}</option>
+                                <option value="private">{t("Visibility.Private")}</option>
                               </select>
                             </div>
                             <div className={styles.treeTitleRow}>
@@ -1565,7 +1534,7 @@ function TreesPageContent() {
                                 disabled={isPending || !canWriteTree || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
                                 className="appCompactActionButton appCompactActionButtonNeutral"
                               >
-                                {rowPendingState.meta ? "Saving..." : "Save"}
+                                {t(rowPendingState.meta ? "Saving" : "Save")}
                               </button>
                             </div>
                           </div>
@@ -1576,7 +1545,7 @@ function TreesPageContent() {
                               disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
                               className="appCompactActionButton appCompactActionButtonNeutral"
                             >
-                              {rowPendingState.populate ? "Populating..." : "Populate"}
+                              {t(rowPendingState.populate ? "Populating" : "Populate")}
                             </button>
                             <Link
                               href={buildVisibilityHref(
@@ -1587,7 +1556,7 @@ function TreesPageContent() {
                               )}
                               className={`appCompactActionButton ${styles.actionButtonLink}`}
                             >
-                              Open
+                              {t("Open")}
                             </Link>
                             <button
                               type="button"
@@ -1595,7 +1564,7 @@ function TreesPageContent() {
                               disabled={isPending || !canWriteTree}
                               className="appCompactActionButton appCompactActionButtonDanger"
                             >
-                              {rowPendingState.delete ? "Working..." : "Delete"}
+                              {t(rowPendingState.delete ? "Working" : "Delete")}
                             </button>
                           </div>
                         </div>
@@ -1605,18 +1574,18 @@ function TreesPageContent() {
                         <div className={styles.descriptionBlock}>
                           <div className={styles.descriptionFieldRow}>
                             <div className={styles.descriptionHeaderRow}>
-                              <span className={`${styles.descriptionLabel} appFieldLabel`}>Description</span>
-                              <span className={styles.descriptionContextLabel}>(used by agent)</span>
+                              <span className={`${styles.descriptionLabel} appFieldLabel`}>{t("DescriptionLabel")}</span>
+                              <span className={styles.descriptionContextLabel}>{t("DescriptionContext")}</span>
                               {isDescriptionChanged || storedDescription ? (
                                 <div className={styles.descriptionBadgeRow}>
                                   {isDescriptionChanged ? (
-                                    <span className={styles.draftBadge}>Unsaved draft</span>
+                                    <span className={styles.draftBadge}>{t("UnsavedDraft")}</span>
                                   ) : null}
                                   {storedDescription ? (
                                     <>
-                                      <span className={styles.savedBadge}>Saved</span>
+                                      <span className={styles.savedBadge}>{t("Saved")}</span>
                                       {isDescriptionPublished ? (
-                                        <span className={styles.agentBadge}>Published to agent</span>
+                                        <span className={styles.agentBadge}>{t("Published")}</span>
                                       ) : null}
                                     </>
                                   ) : null}
@@ -1634,13 +1603,13 @@ function TreesPageContent() {
                                   }));
                                 }}
                                 disabled={!canWriteTree || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
-                                placeholder="Generate a draft or write a tree description manually"
+                                placeholder={t("DescriptionPlaceholder")}
                                 className={`appTextAreaControl ${styles.descriptionInput}`}
                                 rows={4}
                               />
                             ) : (
                               <div className={`${styles.descriptionPreview} ${!draftDescription.trim() ? styles.descriptionPreviewEmpty : ""}`}>
-                                {draftDescription.trim() || "No summary saved yet."}
+                                {draftDescription.trim() || t("NoSummary")}
                               </div>
                             )}
                           </div>
@@ -1675,7 +1644,7 @@ function TreesPageContent() {
                             disabled={isPending || !canWriteTree || isDescriptionEditing}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
-                            Edit
+                            {t("Edit")}
                           </button>
                           <button
                             type="button"
@@ -1683,7 +1652,7 @@ function TreesPageContent() {
                             disabled={!canWriteTree || !isDescriptionEditing || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
-                            {rowPendingState.generate ? "Generating..." : "Generate"}
+                            {t(rowPendingState.generate ? "Generating" : "Generate")}
                           </button>
                           <button
                             type="button"
@@ -1691,7 +1660,7 @@ function TreesPageContent() {
                             disabled={!canWriteTree || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
                             className="appCompactActionButton appCompactActionButtonPrimary"
                           >
-                            {rowPendingState.save ? "Saving..." : rowPendingState.sync ? "Syncing..." : "Save"}
+                            {t(rowPendingState.save ? "Saving" : rowPendingState.sync ? "Syncing" : "Save")}
                           </button>
                           <button
                             type="button"
@@ -1699,7 +1668,7 @@ function TreesPageContent() {
                             disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || (!hasSavedDescription && !isDescriptionPublished)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
-                            {rowPendingState.save ? "Working..." : "Clear"}
+                            {t(rowPendingState.save ? "Working" : "Clear")}
                           </button>
                           <button
                             type="button"
@@ -1707,7 +1676,7 @@ function TreesPageContent() {
                             disabled={isPending || (!isDescriptionChanged && !isDescriptionEditing)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
-                            Cancel
+                            {t("Cancel")}
                           </button>
                         </div>
                       </div>
@@ -1715,8 +1684,8 @@ function TreesPageContent() {
                       <div className={styles.transferRow}>
                         <div className={styles.transferBlock}>
                           <div className={styles.transferHeader}>
-                            <span className={`${styles.transferLabel} appFieldLabel`}>Review</span>
-                            <span className={styles.transferHint}>Approval applies to the entire tree here and gates Review-page visibility for this tree and its child content.</span>
+                            <span className={`${styles.transferLabel} appFieldLabel`}>{t("Review")}</span>
+                            <span className={styles.transferHint}>{t("ReviewHint")}</span>
                           </div>
                           <div className={styles.reviewSectionBody}>
                             <div className={styles.reviewSummaryRow}>
@@ -1727,14 +1696,14 @@ function TreesPageContent() {
                                   onChange={() => handleToggleApprovalEnabled(tree)}
                                   disabled={isPending || !canManageTreeAccess}
                                 />
-                                <span>Approval enabled</span>
+                                <span>{t("ApprovalEnabled")}</span>
                               </label>
                               {approvalEnabled ? (
                                 <>
                                   <span className={`${styles.reviewStatusBadge} ${getReviewStatusClassName(reviewStatus, styles)}`}>
-                                    {formatReviewStatusLabel(reviewStatus)}
+                                    {formatReviewStatusLabel(reviewStatus, t)}
                                   </span>
-                                  <span className={styles.reviewMeta}>{formatReviewAuditLabel(tree)}</span>
+                                  <span className={styles.reviewMeta}>{formatReviewAuditLabel(tree, t, locale)}</span>
                                 </>
                               ) : null}
                             </div>
@@ -1747,7 +1716,7 @@ function TreesPageContent() {
                                     disabled={isPending || !canReviewTree}
                                     className="appCompactActionButton appCompactActionButtonNeutral"
                                   >
-                                    {rowPendingState["review:submit"] ? "Submitting..." : "Submit"}
+                                    {t(rowPendingState["review:submit"] ? "Submitting" : "Submit")}
                                   </button>
                                 ) : null}
                                 {canUnsubmitTree ? (
@@ -1757,7 +1726,7 @@ function TreesPageContent() {
                                     disabled={isPending || !canReviewTree}
                                     className="appCompactActionButton appCompactActionButtonNeutral"
                                   >
-                                    {rowPendingState["review:unsubmit"] ? "Unsubmitting..." : "Unsubmit"}
+                                    {t(rowPendingState["review:unsubmit"] ? "Unsubmitting" : "Unsubmit")}
                                   </button>
                                 ) : null}
                                 {canApproveOrRejectTree ? (
@@ -1768,7 +1737,7 @@ function TreesPageContent() {
                                       disabled={isPending || !canReviewTree}
                                       className="appCompactActionButton appCompactActionButtonPrimary"
                                     >
-                                      {rowPendingState["review:approve"] ? "Approving..." : "Approve"}
+                                      {t(rowPendingState["review:approve"] ? "Approving" : "Approve")}
                                     </button>
                                     <button
                                       type="button"
@@ -1776,7 +1745,7 @@ function TreesPageContent() {
                                       disabled={isPending || !canReviewTree}
                                       className="appCompactActionButton appCompactActionButtonDanger"
                                     >
-                                      {rowPendingState["review:reject"] ? "Rejecting..." : "Reject"}
+                                      {t(rowPendingState["review:reject"] ? "Rejecting" : "Reject")}
                                     </button>
                                   </>
                                 ) : null}
@@ -1784,10 +1753,10 @@ function TreesPageContent() {
                             ) : null}
                           </div>
                           {!approvalEnabled ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>Approval is disabled. This tree and its child content stay in draft and do not appear on the Review page.</p>
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("ApprovalDisabled")}</p>
                           ) : null}
                           {!canManageTreeAccess ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>Only the owner can enable or disable approvals for this tree.</p>
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("ApprovalOwnerOnly")}</p>
                           ) : null}
                           {feedback.reviewMessage ? (
                             <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.reviewMessage}</p>
@@ -1801,11 +1770,9 @@ function TreesPageContent() {
                       <div className={styles.transferRow}>
                         <div className={styles.transferBlock}>
                           <div className={styles.transferHeader}>
-                            <span className={`${styles.transferLabel} appFieldLabel`}>Owner</span>
+                            <span className={`${styles.transferLabel} appFieldLabel`}>{t("Owner")}</span>
                             <span className={styles.transferHint}>
-                              {canManageTreeAccess
-                                ? "Only the owner can transfer ownership or manage editors."
-                                : "Only the owner can transfer ownership."}
+                              {t(canManageTreeAccess ? "OwnerHint" : "OwnerTransferHint")}
                             </span>
                           </div>
                           <div className={styles.transferControls}>
@@ -1814,7 +1781,7 @@ function TreesPageContent() {
                               value={transferQuery}
                               onChange={(event) => handleTransferQueryChange(tree, event.target.value)}
                               disabled={isPending || !canManageTreeAccess}
-                              placeholder="Search by name or email"
+                              placeholder={t("SearchPlaceholder")}
                               className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
                             />
                             <button
@@ -1823,7 +1790,7 @@ function TreesPageContent() {
                               disabled={isPending || !canManageTreeAccess || transferQuery.trim().length < 2}
                               className="appCompactActionButton appCompactActionButtonNeutral"
                             >
-                              {rowPendingState.transferSearch ? "Searching..." : "Search"}
+                              {t(rowPendingState.transferSearch ? "Searching" : "Search")}
                             </button>
                             <button
                               type="button"
@@ -1831,11 +1798,11 @@ function TreesPageContent() {
                               disabled={isPending || !canManageTreeAccess || !isTransferChanged}
                               className="appCompactActionButton appCompactActionButtonNeutral"
                             >
-                              {rowPendingState.transfer ? "Transferring..." : "Transfer owner"}
+                              {t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
                             </button>
                           </div>
                           {!canManageTreeAccess ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>You can view owner details, but only the owner can change ownership.</p>
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("OwnerReadOnly")}</p>
                           ) : null}
                           {matches.length > 0 ? (
                             <div className={styles.transferResults}>
@@ -1864,7 +1831,7 @@ function TreesPageContent() {
                                     <span className={styles.transferOptionText}>
                                       <span className={styles.transferOptionTitle}>
                                         {match.displayName}
-                                        {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>Current owner</span> : null}
+                                        {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>{t("CurrentOwner")}</span> : null}
                                       </span>
                                       <span className={styles.transferOptionMeta}>{match.userDetails}</span>
                                     </span>
@@ -1885,11 +1852,9 @@ function TreesPageContent() {
                       <div className={styles.transferRow}>
                         <div className={styles.transferBlock}>
                           <div className={styles.transferHeader}>
-                            <span className={`${styles.transferLabel} appFieldLabel`}>Editors</span>
+                            <span className={`${styles.transferLabel} appFieldLabel`}>{t("Editors")}</span>
                             <span className={styles.transferHint}>
-                              {tree.isPrivate
-                                ? "Editors can open and change this private tree."
-                                : "Editors can change this tree even when it is publicly visible."}
+                              {t(tree.isPrivate ? "PrivateEditorHint" : "PublicEditorHint")}
                             </span>
                           </div>
                           <div className={styles.editorList}>
@@ -1909,12 +1874,12 @@ function TreesPageContent() {
                                     disabled={isPending || !canManageTreeAccess || Boolean(rowPendingState[removePendingKey])}
                                     className="appCompactActionButton appCompactActionButtonNeutral"
                                   >
-                                    {rowPendingState[removePendingKey] ? "Removing..." : "Remove"}
+                                    {t(rowPendingState[removePendingKey] ? "Removing" : "Remove")}
                                   </button>
                                 </div>
                               );
                             }) : (
-                              <p className={styles.emptyEditors}>No editors have been assigned yet.</p>
+                              <p className={styles.emptyEditors}>{t("NoEditors")}</p>
                             )}
                           </div>
                           <div className={styles.transferControls}>
@@ -1923,7 +1888,7 @@ function TreesPageContent() {
                               value={editorQuery}
                               onChange={(event) => handleEditorQueryChange(treeId, event.target.value)}
                               disabled={isPending || !canManageTreeAccess}
-                              placeholder="Search by name or email"
+                              placeholder={t("SearchPlaceholder")}
                               className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
                             />
                             <button
@@ -1932,7 +1897,7 @@ function TreesPageContent() {
                               disabled={isPending || !canManageTreeAccess || editorQuery.trim().length < 2}
                               className="appCompactActionButton appCompactActionButtonNeutral"
                             >
-                              {rowPendingState.editorSearch ? "Searching..." : "Search"}
+                              {t(rowPendingState.editorSearch ? "Searching" : "Search")}
                             </button>
                             <button
                               type="button"
@@ -1940,11 +1905,11 @@ function TreesPageContent() {
                               disabled={isPending || !canManageTreeAccess || !selectedEditorTarget?.objectId || selectedEditorTarget?.isCurrentOwner || selectedEditorTarget?.isAssignedEditor}
                               className="appCompactActionButton appCompactActionButtonNeutral"
                             >
-                              {rowPendingState.editorAdd ? "Adding..." : "Add editor"}
+                              {t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
                             </button>
                           </div>
                           {!canManageTreeAccess ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>You can see who can edit this tree, but only the owner can change the editor list.</p>
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("EditorsReadOnly")}</p>
                           ) : null}
                           {editorOptions.length > 0 ? (
                             <div className={styles.transferResults}>
@@ -1973,8 +1938,8 @@ function TreesPageContent() {
                                     <span className={styles.transferOptionText}>
                                       <span className={styles.transferOptionTitle}>
                                         {match.displayName}
-                                        {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>Owner</span> : null}
-                                        {match.isAssignedEditor ? <span className={styles.transferCurrentBadge}>Editor</span> : null}
+                                        {match.isCurrentOwner ? <span className={styles.transferCurrentBadge}>{t("Owner")}</span> : null}
+                                        {match.isAssignedEditor ? <span className={styles.transferCurrentBadge}>{t("EditorBadge")}</span> : null}
                                       </span>
                                       <span className={styles.transferOptionMeta}>{match.userDetails}</span>
                                     </span>
@@ -2004,8 +1969,9 @@ function TreesPageContent() {
 }
 
 export default function TreesPage() {
+  const t = useTranslations("Pages.Trees");
   return (
-    <Suspense fallback={<main className="appPageShell">Loading...</main>}>
+    <Suspense fallback={<main className="appPageShell">{t("LoadingPage")}</main>}>
       <TreesPageContent />
     </Suspense>
   );

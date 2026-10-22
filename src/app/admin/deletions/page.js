@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import styles from "../page.module.css";
 import { buildAuditLabel, formatTimestamp, getErrorMessage } from "../adminShared";
 
 export default function AdminDeletionsPage() {
+  const t = useTranslations("Pages.Admin.Deletions");
   const [deletedTrees, setDeletedTrees] = useState([]);
   const [deletedNodes, setDeletedNodes] = useState([]);
   const [deletedAttachments, setDeletedAttachments] = useState([]);
@@ -53,7 +55,7 @@ export default function AdminDeletionsPage() {
 
   const handlePurgeTree = async (tree) => {
     const treeId = String(tree.id);
-    const confirmed = window.confirm(`Purge tree "${tree.name}" permanently? This cannot be undone.`);
+    const confirmed = window.confirm(t("ConfirmTree", { name: tree.name }));
 
     if (!confirmed) {
       return;
@@ -77,7 +79,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Tree could not be purged");
       }
 
-      setStatusMessage(`Tree ${treeId} was purged.`);
+      setStatusMessage(t("TreePurged", { id: treeId }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree could not be purged"));
@@ -107,7 +109,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Tree could not be undeleted");
       }
 
-      setStatusMessage(`Tree ${treeId} was undeleted.`);
+      setStatusMessage(t("TreeUndeleted", { id: treeId }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree could not be undeleted"));
@@ -121,7 +123,7 @@ export default function AdminDeletionsPage() {
       return;
     }
 
-    const confirmed = window.confirm("Purge all deleted trees permanently? This will also remove all remaining nodes and attachments under those trees.");
+    const confirmed = window.confirm(t("ConfirmTrees"));
 
     if (!confirmed) {
       return;
@@ -145,7 +147,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Deleted trees could not be purged");
       }
 
-      setStatusMessage(`Purged ${data?.purgedTreeCount ?? 0} deleted tree${Number(data?.purgedTreeCount ?? 0) === 1 ? "" : "s"}.`);
+      setStatusMessage(t("TreesPurged", { count: Number(data?.purgedTreeCount ?? 0) }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Deleted trees could not be purged"));
@@ -157,7 +159,7 @@ export default function AdminDeletionsPage() {
   const handlePurgeNode = async (node) => {
     const treeId = String(node.treeId);
     const nodeId = String(node.nodeId);
-    const confirmed = window.confirm(`Purge node "${node.title}" from tree "${node.treeDisplayName}" permanently? This cannot be undone.`);
+    const confirmed = window.confirm(t("ConfirmNode", { name: node.title, tree: node.treeDisplayName }));
 
     if (!confirmed) {
       return;
@@ -181,7 +183,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Node could not be purged");
       }
 
-      setStatusMessage(`Node ${nodeId} in tree ${treeId} was purged.`);
+      setStatusMessage(t("NodePurged", { id: nodeId, treeId }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Node could not be purged"));
@@ -212,7 +214,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Node could not be undeleted");
       }
 
-      setStatusMessage(`Node ${nodeId} in tree ${treeId} was undeleted.`);
+      setStatusMessage(t("NodeUndeleted", { id: nodeId, treeId }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Node could not be undeleted"));
@@ -226,7 +228,7 @@ export default function AdminDeletionsPage() {
       return;
     }
 
-    const confirmed = window.confirm("Purge all deleted nodes permanently? This cannot be undone.");
+    const confirmed = window.confirm(t("ConfirmNodes"));
 
     if (!confirmed) {
       return;
@@ -250,7 +252,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Deleted nodes could not be purged");
       }
 
-      setStatusMessage(`Purged ${data?.purgedNodeCount ?? 0} deleted node${Number(data?.purgedNodeCount ?? 0) === 1 ? "" : "s"}.`);
+      setStatusMessage(t("NodesPurged", { count: Number(data?.purgedNodeCount ?? 0) }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Deleted nodes could not be purged"));
@@ -281,7 +283,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Attachment could not be undeleted");
       }
 
-      setStatusMessage(`Attachment ${attachmentId} in tree ${treeId} was undeleted.`);
+      setStatusMessage(t("AttachmentUndeleted", { id: attachmentId, treeId }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Attachment could not be undeleted"));
@@ -293,7 +295,7 @@ export default function AdminDeletionsPage() {
   const handlePurgeAttachment = async (attachment) => {
     const treeId = String(attachment.treeId);
     const attachmentId = String(attachment.id);
-    const confirmed = window.confirm(`Purge attachment "${attachment.fileName}" from tree "${attachment.treeDisplayName}" permanently? This cannot be undone.`);
+    const confirmed = window.confirm(t("ConfirmAttachment", { name: attachment.fileName, tree: attachment.treeDisplayName }));
 
     if (!confirmed) {
       return;
@@ -317,7 +319,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Attachment could not be purged");
       }
 
-      setStatusMessage(`Attachment ${attachmentId} in tree ${treeId} was purged.`);
+      setStatusMessage(t("AttachmentPurged", { id: attachmentId, treeId }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Attachment could not be purged"));
@@ -331,7 +333,7 @@ export default function AdminDeletionsPage() {
       return;
     }
 
-    const confirmed = window.confirm("Purge all deleted attachments permanently? This cannot be undone.");
+    const confirmed = window.confirm(t("ConfirmAttachments"));
 
     if (!confirmed) {
       return;
@@ -355,7 +357,7 @@ export default function AdminDeletionsPage() {
         throw new Error(data?.error || "Deleted attachments could not be purged");
       }
 
-      setStatusMessage(`Purged ${data?.purgedAttachmentCount ?? 0} deleted attachment${Number(data?.purgedAttachmentCount ?? 0) === 1 ? "" : "s"}.`);
+      setStatusMessage(t("AttachmentsPurged", { count: Number(data?.purgedAttachmentCount ?? 0) }));
       await loadDeletedItems();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Deleted attachments could not be purged"));
@@ -369,10 +371,10 @@ export default function AdminDeletionsPage() {
       <section className={`appTopLevelPanel ${styles.heroCard}`}>
         <div className={styles.heroHeader}>
           <div className="appHeroCopy">
-            <p className="appEyebrow">Deleted items</p>
-            <h2 className="appPageTitle">Retention and recovery</h2>
+            <p className="appEyebrow">{t("Title")}</p>
+            <h2 className="appPageTitle">{t("Heading")}</h2>
             <div className={styles.heroDescriptionStack}>
-              <p className="appPageDescription">Review soft-deleted trees, nodes, and attachments, then undelete or purge them when retention is no longer needed.</p>
+              <p className="appPageDescription">{t("Intro")}</p>
             </div>
           </div>
           <button
@@ -381,7 +383,7 @@ export default function AdminDeletionsPage() {
             disabled={isLoading}
             className="appPrimaryFormButton"
           >
-            {isLoading ? "Refreshing..." : "Refresh"}
+            {t(isLoading ? "Refreshing" : "Refresh")}
           </button>
         </div>
         {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}
@@ -393,7 +395,7 @@ export default function AdminDeletionsPage() {
           <article className={`appTopLevelPanel ${styles.panel}`}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
               <div className={styles.panelHeaderGroup}>
-                <span className={styles.panelHeading}>Deleted Trees</span>
+                <span className={styles.panelHeading}>{t("Trees")}</span>
                 <span className={styles.countLabel}>{deletedTrees.length}</span>
               </div>
               <button
@@ -402,14 +404,14 @@ export default function AdminDeletionsPage() {
                 disabled={isLoading || deletedTrees.length === 0 || Boolean(pendingItems["bulk:trees"])}
                 className="appCompactActionButton appCompactActionButtonDanger"
               >
-                {pendingItems["bulk:trees"] ? "Purging..." : "Purge All"}
+                {t(pendingItems["bulk:trees"] ? "Purging" : "PurgeAll")}
               </button>
             </div>
             <div className={styles.panelBody}>
               {isLoading ? (
-                <div className={styles.emptyState}>Loading deleted trees...</div>
+                <div className={styles.emptyState}>{t("LoadingTrees")}</div>
               ) : deletedTrees.length === 0 ? (
-                <div className={styles.emptyState}>No deleted trees are waiting for undelete or purge.</div>
+                <div className={styles.emptyState}>{t("EmptyTrees")}</div>
               ) : (
                 <div className={styles.list}>
                   {deletedTrees.map((tree) => {
@@ -420,13 +422,13 @@ export default function AdminDeletionsPage() {
                       <article key={tree.id} className={styles.listItem}>
                         <div className={styles.itemMeta}>
                           <div className={styles.itemHeader}>
-                            <span className={styles.badge}>Tree {tree.id}</span>
-                            <span className={styles.badgeMuted}>{tree.isPrivate ? "Private" : "Public"}</span>
+                            <span className={styles.badge}>{t("TreeId", { id: tree.id })}</span>
+                            <span className={styles.badgeMuted}>{t(tree.isPrivate ? "Private" : "Public")}</span>
                           </div>
                           <h2 className={styles.itemTitle}>{tree.name}</h2>
-                          <p className={styles.itemDetail}>Deleted at: {formatTimestamp(tree.deletedAt)}</p>
+                          <p className={styles.itemDetail}>{t("DeletedAt", { date: formatTimestamp(tree.deletedAt) })}</p>
                           {tree.ownerDisplayName || tree.ownerUserDetails ? (
-                            <p className={styles.itemDetail}>Owner: {tree.ownerDisplayName || tree.ownerUserDetails}</p>
+                            <p className={styles.itemDetail}>{t("Owner", { name: tree.ownerDisplayName || tree.ownerUserDetails })}</p>
                           ) : null}
                         </div>
                         <div className={styles.actionGroup}>
@@ -436,7 +438,7 @@ export default function AdminDeletionsPage() {
                             disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[pendingKey])}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
-                            {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
+                            {t(pendingItems[undeletePendingKey] ? "Undeleting" : "Undelete")}
                           </button>
                           <button
                             type="button"
@@ -444,7 +446,7 @@ export default function AdminDeletionsPage() {
                             disabled={Boolean(pendingItems[pendingKey]) || Boolean(pendingItems[undeletePendingKey])}
                             className="appCompactActionButton appCompactActionButtonDanger"
                           >
-                            {pendingItems[pendingKey] ? "Purging..." : "Purge"}
+                            {t(pendingItems[pendingKey] ? "Purging" : "Purge")}
                           </button>
                         </div>
                       </article>
@@ -458,7 +460,7 @@ export default function AdminDeletionsPage() {
           <article className={`appTopLevelPanel ${styles.panel}`}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
               <div className={styles.panelHeaderGroup}>
-                <span className={styles.panelHeading}>Deleted Attachments</span>
+                <span className={styles.panelHeading}>{t("Attachments")}</span>
                 <span className={styles.countLabel}>{deletedAttachments.length}</span>
               </div>
               <button
@@ -467,14 +469,14 @@ export default function AdminDeletionsPage() {
                 disabled={isLoading || deletedAttachments.length === 0 || Boolean(pendingItems["bulk:attachments"])}
                 className="appCompactActionButton appCompactActionButtonDanger"
               >
-                {pendingItems["bulk:attachments"] ? "Purging..." : "Purge All"}
+                {t(pendingItems["bulk:attachments"] ? "Purging" : "PurgeAll")}
               </button>
             </div>
             <div className={styles.panelBody}>
               {isLoading ? (
-                <div className={styles.emptyState}>Loading deleted attachments...</div>
+                <div className={styles.emptyState}>{t("LoadingAttachments")}</div>
               ) : deletedAttachments.length === 0 ? (
-                <div className={styles.emptyState}>No individually deleted attachments are currently waiting for undelete or purge.</div>
+                <div className={styles.emptyState}>{t("EmptyAttachments")}</div>
               ) : (
                 <div className={styles.list}>
                   {deletedAttachments.map((attachment) => {
@@ -485,15 +487,15 @@ export default function AdminDeletionsPage() {
                       <article key={attachment.id} className={styles.listItem}>
                         <div className={styles.itemMeta}>
                           <div className={styles.itemHeader}>
-                            <span className={styles.badge}>Tree {attachment.treeId}</span>
-                            <span className={styles.badge}>Node {attachment.nodeId}</span>
-                            <span className={styles.badgeMuted}>Attachment {attachment.id}</span>
+                            <span className={styles.badge}>{t("TreeId", { id: attachment.treeId })}</span>
+                            <span className={styles.badge}>{t("NodeId", { id: attachment.nodeId })}</span>
+                            <span className={styles.badgeMuted}>{t("AttachmentId", { id: attachment.id })}</span>
                           </div>
                           <h2 className={styles.itemTitle}>{attachment.fileName}</h2>
-                          <p className={styles.itemDetail}>Tree: {attachment.treeDisplayName}</p>
-                          <p className={styles.itemDetail}>Node: {attachment.nodeTitle}</p>
-                          <p className={styles.itemDetail}>{attachment.breadcrumb || "No breadcrumb available."}</p>
-                          <p className={styles.itemDetail}>Deleted at: {formatTimestamp(attachment.deletedAt)}</p>
+                          <p className={styles.itemDetail}>{t("TreeName", { name: attachment.treeDisplayName })}</p>
+                          <p className={styles.itemDetail}>{t("NodeName", { name: attachment.nodeTitle })}</p>
+                          <p className={styles.itemDetail}>{attachment.breadcrumb || t("NoBreadcrumb")}</p>
+                          <p className={styles.itemDetail}>{t("DeletedAt", { date: formatTimestamp(attachment.deletedAt) })}</p>
                         </div>
                         <div className={styles.actionGroup}>
                           <button
@@ -502,7 +504,7 @@ export default function AdminDeletionsPage() {
                             disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[purgePendingKey])}
                             className="appCompactActionButton appCompactActionButtonNeutral"
                           >
-                            {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
+                            {t(pendingItems[undeletePendingKey] ? "Undeleting" : "Undelete")}
                           </button>
                           <button
                             type="button"
@@ -510,7 +512,7 @@ export default function AdminDeletionsPage() {
                             disabled={Boolean(pendingItems[purgePendingKey]) || Boolean(pendingItems[undeletePendingKey])}
                             className="appCompactActionButton appCompactActionButtonDanger"
                           >
-                            {pendingItems[purgePendingKey] ? "Purging..." : "Purge"}
+                            {t(pendingItems[purgePendingKey] ? "Purging" : "Purge")}
                           </button>
                         </div>
                       </article>
@@ -526,7 +528,7 @@ export default function AdminDeletionsPage() {
           <article className={`appTopLevelPanel ${styles.panel}`}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
               <div className={styles.panelHeaderGroup}>
-                <span className={styles.panelHeading}>Deleted Nodes</span>
+                <span className={styles.panelHeading}>{t("Nodes")}</span>
                 <span className={styles.countLabel}>{deletedNodes.length}</span>
               </div>
               <button
@@ -535,14 +537,14 @@ export default function AdminDeletionsPage() {
                 disabled={isLoading || deletedNodes.length === 0 || Boolean(pendingItems["bulk:nodes"])}
                 className="appCompactActionButton appCompactActionButtonDanger"
               >
-                {pendingItems["bulk:nodes"] ? "Purging..." : "Purge All"}
+                {t(pendingItems["bulk:nodes"] ? "Purging" : "PurgeAll")}
               </button>
             </div>
             <div className={styles.panelBody}>
               {isLoading ? (
-                <div className={styles.emptyState}>Loading deleted nodes...</div>
+                <div className={styles.emptyState}>{t("LoadingNodes")}</div>
               ) : deletedNodes.length === 0 ? (
-                <div className={styles.emptyState}>No deleted nodes are currently exposed by the search view.</div>
+                <div className={styles.emptyState}>{t("EmptyNodes")}</div>
               ) : (
                 <div className={styles.list}>
                   {deletedNodes.map((node) => {
@@ -553,17 +555,17 @@ export default function AdminDeletionsPage() {
                       <article key={node.id} className={styles.listItem}>
                         <div className={styles.itemMeta}>
                           <div className={styles.itemHeader}>
-                            <span className={styles.badge}>Tree {node.treeId}</span>
-                            <span className={styles.badge}>Node {node.nodeId}</span>
-                            {node.hasAttachments ? <span className={styles.badgeMuted}>{node.attachmentCount} attachment{node.attachmentCount === 1 ? "" : "s"}</span> : null}
+                            <span className={styles.badge}>{t("TreeId", { id: node.treeId })}</span>
+                            <span className={styles.badge}>{t("NodeId", { id: node.nodeId })}</span>
+                            {node.hasAttachments ? <span className={styles.badgeMuted}>{t("AttachmentCount", { count: node.attachmentCount })}</span> : null}
                           </div>
                           <h2 className={styles.itemTitle}>{node.title}</h2>
-                          <p className={styles.itemDetail}>Tree: {node.treeDisplayName}</p>
-                          <p className={styles.itemDetail}>{node.breadcrumb || "No breadcrumb available."}</p>
+                          <p className={styles.itemDetail}>{t("TreeName", { name: node.treeDisplayName })}</p>
+                          <p className={styles.itemDetail}>{node.breadcrumb || t("NoBreadcrumb")}</p>
                           {buildAuditLabel(node.updatedByUserDetails, node.updatedAt) ? (
                             <p className={styles.itemDetail}>{buildAuditLabel(node.updatedByUserDetails, node.updatedAt)}</p>
                           ) : null}
-                          {!node.canUndelete ? <p className={styles.itemDetail}>Undelete is unavailable while the parent tree is still deleted.</p> : null}
+                          {!node.canUndelete ? <p className={styles.itemDetail}>{t("Unavailable")}</p> : null}
                         </div>
                         <div className={styles.actionGroup}>
                           {node.canUndelete ? (
@@ -573,7 +575,7 @@ export default function AdminDeletionsPage() {
                               disabled={Boolean(pendingItems[undeletePendingKey]) || Boolean(pendingItems[pendingKey])}
                               className="appCompactActionButton appCompactActionButtonNeutral"
                             >
-                              {pendingItems[undeletePendingKey] ? "Undeleting..." : "Undelete"}
+                              {t(pendingItems[undeletePendingKey] ? "Undeleting" : "Undelete")}
                             </button>
                           ) : null}
                           <button
@@ -582,7 +584,7 @@ export default function AdminDeletionsPage() {
                             disabled={Boolean(pendingItems[pendingKey]) || Boolean(pendingItems[undeletePendingKey])}
                             className="appCompactActionButton appCompactActionButtonDanger"
                           >
-                            {pendingItems[pendingKey] ? "Purging..." : "Purge"}
+                            {t(pendingItems[pendingKey] ? "Purging" : "Purge")}
                           </button>
                         </div>
                       </article>
