@@ -489,6 +489,23 @@ body {
   font-weight: 600;
 }
 
+.appLanguageSelect {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.appLanguageFlagDanish {
+  position: absolute;
+  left: 0.55rem;
+  width: 18px;
+  height: 13px;
+  border-radius: 1px;
+  background: linear-gradient(to right, transparent 33%, #fff 33% 46%, transparent 46%),
+    linear-gradient(to bottom, transparent 40%, #fff 40% 57%, transparent 57%), #c8102e;
+  pointer-events: none;
+}
+
 .appLanguageControl select {
   max-width: 100%;
   padding: 0.4rem 0.55rem;
@@ -497,6 +514,10 @@ body {
   background: #ffffff;
   color: #0f172a;
   font: inherit;
+}
+
+.appLanguageFlagDanish + select {
+  padding-left: 2.1rem;
 }
 
 .appLanguageControl select:focus-visible {

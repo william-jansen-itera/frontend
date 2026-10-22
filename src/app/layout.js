@@ -136,10 +136,13 @@ function HeaderAuthControls({
     <div className={authGroupClassName}>
       <label className="appLanguageControl">
         <span>{t("LanguageLabel")}</span>
-        <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-          <option value="en">English</option>
-          <option value="da">Dansk</option>
-        </select>
+        <span className="appLanguageSelect">
+          {language === "da" ? <span className="appLanguageFlagDanish" aria-hidden="true" /> : null}
+          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+            <option value="en">English</option>
+            <option value="da">Dansk</option>
+          </select>
+        </span>
       </label>
       {!user ? (
         <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">{t("SignIn")}</button>
