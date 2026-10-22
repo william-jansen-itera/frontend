@@ -297,15 +297,6 @@ function NotesPage() {
     ? ""
     : `&visibility=${encodeURIComponent(visibilityParam)}`;
 
-  const navigateToSelectionHref = (nextHref, { replace = false } = {}) => {
-    if (replace) {
-      window.location.replace(nextHref);
-      return;
-    }
-
-    window.location.assign(nextHref);
-  };
-
   const applyTreeResponse = (flatData, targetSelectedNodeId = null) => {
     if (!Array.isArray(flatData)) {
       return;
@@ -365,11 +356,8 @@ function NotesPage() {
       return;
     }
 
-    navigateToSelectionHref(
-      getTreeSelectionHref(pathname, searchParams.toString(), treeIdParam, visibilityParam),
-      { replace: true },
-    );
-  }, [isVisibilityReady, pathname, requestedVisibilityParam, searchParams, treeIdParam, visibilityParam]);
+    router.replace(getTreeSelectionHref(pathname, searchParams.toString(), treeIdParam, visibilityParam));
+  }, [isVisibilityReady, pathname, requestedVisibilityParam, router, searchParams, treeIdParam, visibilityParam]);
 
   // Fetch the list of available trees on mount
   useEffect(() => {
@@ -444,7 +432,7 @@ function NotesPage() {
 
     if (availableTrees.length === 0) {
       if (treeIdParam) {
-        navigateToSelectionHref(getTreeSelectionHref(pathname, searchParams.toString(), null, visibilityParam), { replace: true });
+        router.replace(getTreeSelectionHref(pathname, searchParams.toString(), null, visibilityParam));
       }
 
       return;
@@ -456,9 +444,9 @@ function NotesPage() {
     const nextTreeId = requestedTreeExists ? String(treeIdParam) : String(availableTrees[0].id);
 
     if (String(treeIdParam) !== nextTreeId) {
-      navigateToSelectionHref(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam), { replace: true });
+      router.replace(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam));
     }
-  }, [availableTrees, isLoadingTrees, treeIdParam, pathname, searchParams, visibilityParam]);
+  }, [availableTrees, isLoadingTrees, treeIdParam, pathname, router, searchParams, visibilityParam]);
 
   // Fetch the tree data when the selected treeId changes
   useEffect(() => {
@@ -1219,7 +1207,7 @@ function NotesPage() {
                   onChange={(event) => {
                     const nextTreeId = event.target.value || null;
                     resetTreeSelectionState();
-                    navigateToSelectionHref(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam));
+                    router.push(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam));
                   }}
                   disabled={availableTrees.length === 0}
                 >
@@ -1241,7 +1229,7 @@ function NotesPage() {
                     setError(null);
                     resetTreeSelectionState();
                     const nextVisibility = setVisibility(event.target.value);
-                    navigateToSelectionHref(getTreeSelectionHref(pathname, searchParams.toString(), null, nextVisibility));
+                    router.push(getTreeSelectionHref(pathname, searchParams.toString(), null, nextVisibility));
                   }}
                 >
                   <option value="public">{t("Visibility.Public")}</option>

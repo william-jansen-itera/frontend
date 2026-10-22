@@ -167,7 +167,8 @@
     "Me": {
       "Title": "Me", "Loading": "Loading your profile.", "Fetching": "Fetching the current authenticated principal.",
       "SignedOut": "You are not signed in.", "SignInHint": "Sign in to inspect your basic identity details and current roles.", "SignIn": "Sign In",
-      "DisplayName": "Display name", "UserDetails": "User details", "ObjectId": "Object ID", "Roles": "Roles", "NotAvailable": "Not available", "NoRoles": "No roles assigned"
+      "DisplayName": "Display name", "UserDetails": "User details", "ObjectId": "Object ID", "Roles": "Roles", "NotAvailable": "Not available", "NoRoles": "No roles assigned",
+      "Preferences": { "Title": "Preferences", "Language": "Language", "Loading": "Loading preference...", "Saving": "Saving preference...", "LoadError": "Your saved language could not be loaded.", "SaveError": "Your language could not be saved. Please try again." }
     },
     "Trees": {
       "Description": "Create new trees, manage visibility, maintain editor access, and submit entire trees for review. Only the owner can transfer ownership, change the editor list, or enable approvals, and only the owner or assigned editors can change tree content.",

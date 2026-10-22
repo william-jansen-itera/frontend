@@ -26,6 +26,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
     <div
       style={{ ...style, paddingLeft: 0, height: TREE_ROW_HEIGHT, minHeight: TREE_ROW_HEIGHT, overflow: "visible" }}
       ref={dragHandle}
+      onClick={node.handleClick}
       className={[
         styles.treeRow,
         isSelected ? styles.treeRowSelected : "",
@@ -115,7 +116,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
       ) : (
         <span
           className={styles.treeMarker}
-          style={{ marginLeft: level === 0 ? ROOT_OFFSET + 16 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET - (isLeaf ? 10 : 0) }}
+          style={{ marginLeft: level === 0 ? ROOT_OFFSET + 16 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET - (isLeaf ? 10 : 0), visibility: isLeaf ? undefined : "hidden" }}
           aria-hidden="true"
         >
           {isLeaf ? "\uD83C\uDF43" : "\u25B8"}

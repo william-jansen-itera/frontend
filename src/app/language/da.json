@@ -167,7 +167,8 @@
     "Me": {
       "Title": "Mig", "Loading": "Indlæser din profil.", "Fetching": "Henter oplysninger om den aktuelle bruger.",
       "SignedOut": "Du er ikke logget ind.", "SignInHint": "Log ind for at se dine grundlæggende identitetsoplysninger og aktuelle roller.", "SignIn": "Log ind",
-      "DisplayName": "Vist navn", "UserDetails": "Brugeroplysninger", "ObjectId": "Objekt-id", "Roles": "Roller", "NotAvailable": "Ikke tilgængelig", "NoRoles": "Ingen roller tildelt"
+      "DisplayName": "Vist navn", "UserDetails": "Brugeroplysninger", "ObjectId": "Objekt-id", "Roles": "Roller", "NotAvailable": "Ikke tilgængelig", "NoRoles": "Ingen roller tildelt",
+      "Preferences": { "Title": "Indstillinger", "Language": "Sprog", "Loading": "Indlæser indstilling...", "Saving": "Gemmer indstilling...", "LoadError": "Dit gemte sprog kunne ikke indlæses.", "SaveError": "Dit sprog kunne ikke gemmes. Prøv igen." }
     },
     "Trees": {
       "Description": "Opret nye træer, administrer synlighed og redaktøradgang, og indsend hele træer til gennemgang. Kun ejeren kan overføre ejerskab, ændre redaktørlisten eller aktivere godkendelser. Kun ejeren eller tildelte redaktører kan ændre træets indhold.",

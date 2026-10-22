@@ -11,7 +11,7 @@ import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import { ADMIN_SECTIONS } from "./admin/adminShared";
 import enMessages from "./language/en.json";
 import daMessages from "./language/da.json";
-import { usePersistedLanguage } from "./usePersistedLanguage";
+import { LanguagePreferenceContext, useLanguagePreference, usePersistedLanguage } from "./usePersistedLanguage";
 import {
   ALL_VISIBILITY_VALUES,
   buildVisibilityHref,
@@ -114,12 +114,11 @@ function HeaderAuthControls({
   user,
   signIn,
   signOut,
-  language,
-  setLanguage,
   mobile = false,
   onAction = null,
 }) {
   const t = useTranslations("Menu");
+  const { language, setLanguage, isReady } = useLanguagePreference();
   const authGroupClassName = mobile ? "appAuthGroup appAuthGroupMobile" : "appAuthGroup";
 
   const handleSignIn = () => {
@@ -134,18 +133,20 @@ function HeaderAuthControls({
 
   return (
     <div className={authGroupClassName}>
-      <label className="appLanguageControl">
-        <span>{t("LanguageLabel")}</span>
-        <span className="appLanguageSelect">
-          {language === "da" ? <span className="appLanguageFlagDanish" aria-hidden="true" /> : null}
-          <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-            <option value="en">English</option>
-            <option value="da">Dansk</option>
-          </select>
-        </span>
-      </label>
       {!user ? (
-        <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">{t("SignIn")}</button>
+        <>
+          <label className="appLanguageControl">
+            <span>{t("LanguageLabel")}</span>
+            <span className="appLanguageSelect">
+              {language === "da" ? <span className="appLanguageFlagDanish" aria-hidden="true" /> : null}
+              <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={!isReady}>
+                <option value="en">English</option>
+                <option value="da">Dansk</option>
+              </select>
+            </span>
+          </label>
+          <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">{t("SignIn")}</button>
+        </>
       ) : (
         <>
           <button onClick={handleSignOut} className="appAuthButton appAuthButtonSecondary">{t("SignOut")}</button>
@@ -155,7 +156,7 @@ function HeaderAuthControls({
   );
 }
 
-function LayoutContent({ children, pathname, user, signIn, signOut, language, setLanguage, visibility = "public" }) {
+function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "public" }) {
   const t = useTranslations("Menu");
   const [mobileMenuPathname, setMobileMenuPathname] = useState(null);
   const [openNavGroupHref, setOpenNavGroupHref] = useState(null);
@@ -294,8 +295,6 @@ function LayoutContent({ children, pathname, user, signIn, signOut, language, se
               user={user}
               signIn={signIn}
               signOut={signOut}
-              language={language}
-              setLanguage={setLanguage}
             />
 
             <button
@@ -319,8 +318,6 @@ function LayoutContent({ children, pathname, user, signIn, signOut, language, se
                 user={user}
                 signIn={signIn}
                 signOut={signOut}
-                language={language}
-                setLanguage={setLanguage}
                 mobile
                 onAction={() => setMobileMenuPathname(null)}
               />
@@ -333,7 +330,7 @@ function LayoutContent({ children, pathname, user, signIn, signOut, language, se
   );
 }
 
-function LayoutContentWithVisibility({ children, user, signIn, signOut, language, setLanguage }) {
+function LayoutContentWithVisibility({ children, user, signIn, signOut }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const requestedVisibilityParam = searchParams.get("visibility");
@@ -348,8 +345,6 @@ function LayoutContentWithVisibility({ children, user, signIn, signOut, language
       user={user}
       signIn={signIn}
       signOut={signOut}
-      language={language}
-      setLanguage={setLanguage}
       visibility={visibility}
     >
       {children}
@@ -358,9 +353,10 @@ function LayoutContentWithVisibility({ children, user, signIn, signOut, language
 }
 
 function RootLayoutShell({ children }) {
-  const { user, signIn, signOut } = useAuth();
+  const { user, signIn, signOut, isAuthResolved } = useAuth();
   const pathname = usePathname();
-  const { language, setLanguage } = usePersistedLanguage();
+  const preference = usePersistedLanguage(user, isAuthResolved);
+  const { language } = preference;
 
   useEffect(() => {
     document.title = "MDS";
@@ -370,15 +366,14 @@ function RootLayoutShell({ children }) {
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <NextIntlClientProvider locale={language} messages={language === "da" ? daMessages : enMessages} timeZone="UTC">
+        <LanguagePreferenceContext.Provider value={preference}>
+          <NextIntlClientProvider locale={language} messages={language === "da" ? daMessages : enMessages} timeZone="UTC">
           <Suspense fallback={(
             <LayoutContent
               pathname={pathname}
               user={user}
               signIn={signIn}
               signOut={signOut}
-              language={language}
-              setLanguage={setLanguage}
             >
               {children}
             </LayoutContent>
@@ -388,13 +383,12 @@ function RootLayoutShell({ children }) {
               user={user}
               signIn={signIn}
               signOut={signOut}
-              language={language}
-              setLanguage={setLanguage}
             >
               {children}
             </LayoutContentWithVisibility>
           </Suspense>
-        </NextIntlClientProvider>
+          </NextIntlClientProvider>
+        </LanguagePreferenceContext.Provider>
       </body>
     </html>
   );

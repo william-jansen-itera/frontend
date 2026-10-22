@@ -2,6 +2,7 @@
 
 import styles from "./page.module.css";
 import { useAuth } from "../useAuth";
+import { useLanguagePreference } from "../usePersistedLanguage";
 import { useTranslations } from "next-intl";
 
 function formatValue(value, fallback = "Not available") {
@@ -12,6 +13,7 @@ function formatValue(value, fallback = "Not available") {
 export default function MePage() {
   const t = useTranslations("Pages.Me");
   const { user, signIn, isAuthResolved } = useAuth();
+  const { language, setLanguage, isReady, isSaving, error } = useLanguagePreference();
 
   if (!isAuthResolved) {
     return (
@@ -64,6 +66,30 @@ export default function MePage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+      <section className={styles.claimsCard} aria-labelledby="me-preferences-title">
+        <h2 id="me-preferences-title" className="appEyebrow">{t("Preferences.Title")}</h2>
+        <div className={styles.fieldRow}>
+          <label className={styles.preferenceControl}>
+            <span className={styles.fieldLabel}>{t("Preferences.Language")}</span>
+            <span className="appLanguageSelect">
+              {language === "da" ? <span className="appLanguageFlagDanish" aria-hidden="true" /> : null}
+              <select
+                className={styles.languageSelect}
+                value={language}
+                onChange={(event) => setLanguage(event.target.value)}
+                disabled={!isReady || isSaving}
+              >
+                <option value="en">English</option>
+                <option value="da">Dansk</option>
+              </select>
+            </span>
+          </label>
+          {!isReady || isSaving ? (
+            <p className={styles.preferenceStatus}>{t(isSaving ? "Preferences.Saving" : "Preferences.Loading")}</p>
+          ) : null}
+          {error ? <p role="alert" className={styles.preferenceError}>{t(`Preferences.${error}`)}</p> : null}
         </div>
       </section>
     </main>
