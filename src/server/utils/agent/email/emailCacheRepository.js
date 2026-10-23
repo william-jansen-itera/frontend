@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   deletePersonalCachePath,
   findPersonalCacheLeafPathNode,
-  readPersonalCacheTextAttachmentByFileName,
+  listPersonalCacheChildLeaves,
   readPersonalCacheNotes,
   replacePersonalCacheNotes,
 } from '@/server/utils/agent/personalCacheTreeRepository';
@@ -116,22 +116,7 @@ async function readJsonAttachment({ treeId, principal, pathSegments, fileName })
     : [...pathSegments.slice(0, -1), `${pathSegments.at(-1)}-${fileName}`];
   const notes = await readPersonalCacheNotes({ treeId, principal, pathSegments: notesPath });
 
-  if (notes) {
-    return JSON.parse(notes);
-  }
-
-  const document = await readPersonalCacheTextAttachmentByFileName({
-    treeId,
-    principal,
-    pathSegments,
-    fileName,
-  });
-
-  if (!document?.text) {
-    return null;
-  }
-
-  return JSON.parse(document.text);
+  return notes ? JSON.parse(notes) : null;
 }
 
 async function writeJsonAttachment({ treeId, principal, pathSegments, fileName, value, updatedBy = null }) {
@@ -161,6 +146,10 @@ function buildStoredCachedMessage(message) {
   return message;
 }
 
+function isCachedEmailMessageAvailable(cachedDocument) {
+  return Boolean(cachedDocument?.message);
+}
+
 export async function storeLatestEmailRetrievalSnapshot({ treeId, principal, provider, folder = 'INBOX', messages, updatedBy = null, sourceWindowSize = null }) {
   const snapshot = {
     datasetKey: randomUUID(),
@@ -184,12 +173,14 @@ export async function storeLatestEmailRetrievalSnapshot({ treeId, principal, pro
 }
 
 export async function loadLatestEmailRetrievalSnapshot({ treeId, principal, provider, folder = 'INBOX' }) {
-  return readJsonAttachment({
+  const snapshot = await readJsonAttachment({
     treeId,
     principal,
     pathSegments: buildRetrievalSnapshotPath(provider),
     fileName: buildRetrievalSnapshotFileName(folder),
   });
+
+  return isEmailRetrievalSnapshotFresh(snapshot) ? snapshot : null;
 }
 
 export async function invalidateLatestEmailRetrievalSnapshot({ treeId, principal, provider, folder = 'INBOX', updatedBy = null }) {
@@ -393,11 +384,30 @@ export async function loadCachedEmailMessage({ treeId, principal, provider, fold
     fileName: buildCachedMessageFileName(uid),
   });
 
-  if (!cachedDocument?.message) {
+  if (!isCachedEmailMessageAvailable(cachedDocument)) {
     return null;
   }
 
   return cachedDocument.message;
+}
+
+export async function pruneCachedEmailMessagesOutsideRetrieval({ treeId, principal, provider, folder = 'INBOX', messages, updatedBy = null }) {
+  const folderPath = [...buildEmailAccountPath(provider), normalizeFolderLabel(folder)];
+  const retrievedUids = new Set(messages.map((message) => String(message?.uid ?? '').trim()).filter(Boolean));
+  const cachedUids = await listPersonalCacheChildLeaves({ treeId, principal, pathSegments: folderPath });
+  let deletedCount = 0;
+
+  for (const uid of cachedUids) {
+    if (!/^\d+$/.test(uid) || retrievedUids.has(uid)) {
+      continue;
+    }
+
+    if (await deleteCachedEmailMessageNode({ treeId, principal, provider, folder, uid, updatedBy })) {
+      deletedCount += 1;
+    }
+  }
+
+  return deletedCount;
 }
 
 export async function resolveCachedEmailMovedMessageAlias({ treeId, principal, provider, sourceFolder = 'INBOX', sourceUid }) {
@@ -538,7 +548,7 @@ export async function updateCachedEmailMessageFlags({ treeId, principal, provide
     fileName: buildCachedMessageFileName(uid),
   });
 
-  if (!cachedDocument?.message) {
+  if (!isCachedEmailMessageAvailable(cachedDocument)) {
     return false;
   }
 
@@ -549,7 +559,6 @@ export async function updateCachedEmailMessageFlags({ treeId, principal, provide
     fileName: buildCachedMessageFileName(uid),
     value: {
       ...cachedDocument,
-      cachedAt: new Date().toISOString(),
       message: {
         ...cachedDocument.message,
         flags: Array.isArray(flags) ? flags : [],

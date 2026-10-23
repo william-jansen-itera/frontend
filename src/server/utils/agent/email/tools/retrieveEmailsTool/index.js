@@ -4,6 +4,7 @@ import { loadEmailAccountConfig } from '@/server/utils/agent/email/emailAccountC
 import {
   isEmailRetrievalSnapshotFresh,
   loadLatestEmailRetrievalSnapshot,
+  pruneCachedEmailMessagesOutsideRetrieval,
   storeLatestEmailRetrievalSnapshot,
 } from '@/server/utils/agent/email/emailCacheRepository';
 import {
@@ -371,6 +372,19 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
           updatedBy: resolvedUpdatedBy,
           sourceWindowSize: retrievalResult.scanLimit ?? REFRESH_RETRIEVAL_SCAN_LIMIT,
         });
+        try {
+          const deletedCount = await pruneCachedEmailMessagesOutsideRetrieval({
+            treeId: resolvedTreeId,
+            principal: agentContext?.principal,
+            provider: args.provider,
+            folder: normalizedFolder,
+            messages: retrievalResult.messages,
+            updatedBy: resolvedUpdatedBy,
+          });
+          emitStep('tool retrieve_emails pruned cached uids outside IMAP fetch', { folder: normalizedFolder, deletedCount });
+        } catch (error) {
+          emitStep('tool retrieve_emails could not prune cached uids', { folder: normalizedFolder, error: error.message });
+        }
         snapshotMessages = cachedSnapshot.messages;
         snapshotSource = normalizedQuery.forceRefresh ? 'imap_forced_refresh' : 'imap';
       } else {

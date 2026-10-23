@@ -2,8 +2,6 @@ import {
   deleteTreePath,
   ensureTreePath,
   findTreePathNode,
-  readSingleTreeTextAttachmentByFileName,
-  replaceTreeLeafAttachment,
 } from '@/server/utils/tree/treePathRepository';
 import { ensurePersonalCacheTree, getAuditMetadata } from '@/server/utils/tree/treeCatalog';
 import { queryTreeNodeDetailRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
@@ -71,6 +69,28 @@ export async function findPersonalCacheLeafPathNode({ treeId, principal, pathSeg
   });
 }
 
+export async function listPersonalCacheChildLeaves({ treeId, principal, pathSegments }) {
+  const parentNode = await findPersonalCacheLeafPathNode({ treeId, principal, pathSegments });
+
+  if (!parentNode || parentNode.isLeafNode) {
+    return [];
+  }
+
+  const result = await withSqlConnection(async () => new sql.Request()
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('parent_id', sql.Int, Number(parentNode.id))
+    .query(`
+      SELECT [text]
+      FROM tree_nodes
+      WHERE tree_instance_id = @tree_instance_id
+        AND parent_id = @parent_id
+        AND deleted_at IS NULL
+        AND is_leaf_node = 1;
+    `));
+
+  return result.recordset.map((node) => node.text);
+}
+
 export async function readPersonalCacheNotes({ treeId, principal, pathSegments }) {
   const leafNode = await findPersonalCacheLeafPathNode({ treeId, principal, pathSegments });
 
@@ -85,37 +105,6 @@ export async function readPersonalCacheNotes({ treeId, principal, pathSegments }
 export async function replacePersonalCacheNotes({ treeId, principal, pathSegments, notes, updatedBy = null }) {
   const leafNode = await ensurePersonalCacheLeafPath({ treeId, principal, pathSegments });
   await withSqlConnection(async () => upsertTreeNodeDetails({ nodeId: leafNode.id, notes, updatedBy }));
-}
-
-export async function readPersonalCacheTextAttachmentByFileName({ treeId, principal, pathSegments, fileName }) {
-  await assertPersonalCacheOwner({ treeId, principal });
-  return readSingleTreeTextAttachmentByFileName({
-    treeId,
-    pathSegments,
-    fileName,
-    treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
-  });
-}
-
-export async function replacePersonalCacheTextAttachment({
-  treeId,
-  principal,
-  pathSegments,
-  fileName,
-  contentType,
-  content,
-  updatedBy = null,
-}) {
-  await assertPersonalCacheOwner({ treeId, principal });
-  return replaceTreeLeafAttachment({
-    treeId,
-    pathSegments,
-    fileName,
-    contentType,
-    content,
-    updatedBy,
-    treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
-  });
 }
 
 export async function deletePersonalCachePath({ treeId, principal, pathSegments, updatedBy = null }) {
