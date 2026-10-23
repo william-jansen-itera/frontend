@@ -731,6 +731,7 @@ function NotesPage() {
       return;
     }
 
+    setNodeDetailsError(null);
     try {
       const response = await fetch(`/api/notes?id=${selectedNode.id}&treeId=${treeIdParam}${visibilityQueryParam}`, {
         method: "DELETE",
@@ -743,6 +744,7 @@ function NotesPage() {
       applyTreeResponse(flatData, selectedNode.parent);
     } catch (err) {
       console.error("Failed to delete tree node:", err);
+      setNodeDetailsError(err.message);
     }
   };
 

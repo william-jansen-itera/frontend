@@ -518,6 +518,101 @@ export async function listActiveTreeSubtreeAttachments({ treeId, rootNodeId, tra
   });
 }
 
+export async function listPersonalCacheSubtreeAttachments({ treeId, rootNodeId, transaction }) {
+  const rootNode = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('root_node_id', sql.Int, Number(rootNodeId))
+    .query(`
+      SELECT TOP 1 id FROM dbo.tree_nodes
+      WHERE tree_instance_id = @tree_instance_id
+        AND id = @root_node_id
+        AND deleted_at IS NULL;
+    `);
+
+  if (!rootNode.recordset[0]) {
+    return null;
+  }
+
+  const attachments = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('root_node_id', sql.Int, Number(rootNodeId))
+    .query(`
+      WITH Subtree AS (
+        SELECT id FROM dbo.tree_nodes
+        WHERE tree_instance_id = @tree_instance_id AND id = @root_node_id
+        UNION ALL
+        SELECT child.id FROM dbo.tree_nodes child
+        INNER JOIN Subtree parent ON child.parent_id = parent.id
+        WHERE child.tree_instance_id = @tree_instance_id
+      )
+      SELECT files.blob_name AS blobName
+      FROM dbo.tree_node_detail_files files
+      INNER JOIN Subtree subtree ON subtree.id = files.tree_node_id;
+    `);
+
+  return attachments.recordset;
+}
+
+export async function permanentlyDeletePersonalCacheSubtree({ treeId, rootNodeId, ownerObjectId, transaction }) {
+  const result = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, Number(treeId))
+    .input('root_node_id', sql.Int, Number(rootNodeId))
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .input('owner_object_id', sql.NVarChar(100), ownerObjectId)
+    .query(`
+      DECLARE @subtree TABLE (id INT PRIMARY KEY, depth INT NOT NULL);
+
+      WITH Subtree AS (
+        SELECT node.id, 0 AS depth
+        FROM dbo.tree_nodes node
+        INNER JOIN dbo.tree_instance ti ON ti.id = node.tree_instance_id
+        INNER JOIN dbo.application_instance ai ON ai.id = ti.application_instance_id
+        WHERE node.id = @root_node_id
+          AND node.tree_instance_id = @tree_instance_id
+          AND node.deleted_at IS NULL
+          AND ti.deleted_at IS NULL
+          AND ti.is_private = 1
+          AND LOWER(LTRIM(RTRIM(ti.display_name))) = N'personal cache'
+          AND ti.owner_object_id = @owner_object_id
+          AND ai.app_identifier = @application_identifier
+        UNION ALL
+        SELECT child.id, parent.depth + 1
+        FROM dbo.tree_nodes child
+        INNER JOIN Subtree parent ON child.parent_id = parent.id
+        WHERE child.tree_instance_id = @tree_instance_id
+      )
+      INSERT INTO @subtree (id, depth)
+      SELECT id, depth FROM Subtree
+      OPTION (MAXRECURSION 0);
+
+      IF NOT EXISTS (SELECT 1 FROM @subtree)
+        THROW 50000, 'Personal cache node was not found for this user.', 1;
+
+      DELETE files
+      FROM dbo.tree_node_detail_files files
+      INNER JOIN @subtree subtree ON subtree.id = files.tree_node_id;
+
+      DELETE details
+      FROM dbo.tree_node_details details
+      INNER JOIN @subtree subtree ON subtree.id = details.tree_node_id;
+
+      DECLARE @depth INT = (SELECT MAX(depth) FROM @subtree);
+      WHILE @depth >= 0
+      BEGIN
+        DELETE node
+        FROM dbo.tree_nodes node
+        INNER JOIN @subtree subtree ON subtree.id = node.id
+        WHERE subtree.depth = @depth;
+
+        SET @depth = @depth - 1;
+      END;
+
+      SELECT 1 AS deleted;
+    `);
+
+  return Boolean(result.recordset[0]?.deleted);
+}
+
 async function markTreeNodesDeleted(transaction, { treeId, rootNodeId }) {
   const deletedAt = new Date();
 

@@ -8,8 +8,8 @@ import {
 } from '@/server/utils/agent/personalCacheTreeRepository';
 
 const RETRIEVAL_CACHE_TTL_MS = 30 * 60 * 1000;
-const CACHED_EMAIL_DOCUMENT_FILE_NAME = 'cached.json';
-const UID_MOVE_ALIAS_FILE_NAME = 'uid-move-aliases.json';
+const CACHED_EMAIL_DOCUMENT_FILE_NAME = 'cached';
+const UID_MOVE_ALIAS_FILE_NAME = 'uid-move-aliases';
 
 function normalizeProviderLabel(provider) {
   const normalizedProvider = String(provider ?? '').trim();
@@ -62,7 +62,7 @@ function buildRetrievalSnapshotFileName(folder) {
   const normalizedFolder = String(folder ?? 'INBOX').trim() || 'INBOX';
   const fileSafeFolder = normalizedFolder.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'INBOX';
 
-  return `${fileSafeFolder.toLowerCase()}-latest.json`;
+  return `${fileSafeFolder.toLowerCase()}-latest`;
 }
 
 function buildCachedMessageFileName(uid) {
