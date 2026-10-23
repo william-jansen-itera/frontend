@@ -17,6 +17,10 @@ const TREE_VISIBILITY_PUBLIC = 'public';
 const TREE_VISIBILITY_PRIVATE = 'private';
 const TREE_VISIBILITY_BOTH = 'both';
 export const PERSONAL_CACHE_TREE_NAME = 'personal cache';
+export function isPersonalCacheTree(tree) {
+  return Boolean(tree?.isPrivate)
+    && String(tree?.displayName ?? '').trim().toLowerCase() === PERSONAL_CACHE_TREE_NAME;
+}
 const REVIEW_STATUS_DRAFT = 'draft';
 const REVIEW_STATUS_SUBMITTED = 'submitted';
 const REVIEW_STATUS_APPROVED = 'approved';
@@ -621,7 +625,7 @@ export async function ensurePersonalCacheTree(principal) {
     principal,
     visibility: TREE_VISIBILITY_PRIVATE,
     enforceAccess: true,
-  })).find((tree) => String(tree?.displayName ?? '').trim().toLowerCase() === PERSONAL_CACHE_TREE_NAME);
+  })).find(isPersonalCacheTree);
 
   if (matchingTree) {
     return matchingTree;

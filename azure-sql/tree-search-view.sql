@@ -129,5 +129,6 @@ FROM TreeHierarchy th
 INNER JOIN dbo.tree_instance ti ON ti.id = th.tree_instance_id
 INNER JOIN dbo.application_instance ai ON ai.id = ti.application_instance_id
 LEFT JOIN dbo.tree_node_details details ON details.tree_node_id = th.id
-LEFT JOIN AttachmentSummary attachments ON attachments.tree_node_id = th.id;
+LEFT JOIN AttachmentSummary attachments ON attachments.tree_node_id = th.id
+WHERE NOT (ti.is_private = 1 AND LOWER(LTRIM(RTRIM(ti.display_name))) = N'personal cache');
 GO

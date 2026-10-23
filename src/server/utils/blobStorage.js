@@ -52,7 +52,7 @@ function buildBlobName({ treeId, nodeId, fileName }) {
   return `notes/${treeId}/${nodeId}/${randomUUID()}-${safeBaseName}${safeExtension}`;
 }
 
-function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName, updatedBy }) {
+function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName, updatedBy, skipSearchIndexing }) {
   const metadata = {
     treeid: sanitizeMetadataValue(treeId),
     nodeid: sanitizeMetadataValue(nodeId),
@@ -60,6 +60,10 @@ function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName, updated
     blobname: sanitizeMetadataValue(blobName),
     originalfilename: sanitizeMetadataValue(originalFileName),
   };
+
+  if (skipSearchIndexing) {
+    metadata.azuresearch_skip = 'true';
+  }
 
   if (updatedBy?.updatedByObjectId) {
     metadata.updatedbyobjectid = sanitizeMetadataValue(updatedBy.updatedByObjectId);
@@ -76,7 +80,7 @@ function buildBlobMetadata({ treeId, nodeId, blobName, originalFileName, updated
   return metadata;
 }
 
-export async function uploadNodeAttachment({ treeId, nodeId, file, updatedBy = null }) {
+export async function uploadNodeAttachment({ treeId, nodeId, file, updatedBy = null, skipSearchIndexing = false }) {
   const arrayBuffer = await file.arrayBuffer();
   const blobName = buildBlobName({ treeId, nodeId, fileName: file.name });
   const containerClient = getContainerClient();
@@ -86,7 +90,7 @@ export async function uploadNodeAttachment({ treeId, nodeId, file, updatedBy = n
     blobHTTPHeaders: {
       blobContentType: file.type || 'application/octet-stream',
     },
-    metadata: buildBlobMetadata({ treeId, nodeId, blobName, originalFileName: file.name, updatedBy }),
+    metadata: buildBlobMetadata({ treeId, nodeId, blobName, originalFileName: file.name, updatedBy, skipSearchIndexing }),
   });
 
   return {

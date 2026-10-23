@@ -4,6 +4,7 @@ import {
   uploadNodeAttachment,
 } from '@/server/utils/blobStorage';
 import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
+import { isPersonalCacheTree } from '@/server/utils/tree/treeCatalog';
 
 function createSqlRequest(transaction = null) {
   return transaction ? new sql.Request(transaction) : new sql.Request();
@@ -624,7 +625,7 @@ export async function replaceTreeLeafAttachment({
   treeOptions = null,
 }) {
   return withSqlConnection(async () => {
-    await assertConfiguredTree(treeId, treeOptions ?? undefined);
+    const configuredTree = await assertConfiguredTree(treeId, treeOptions ?? undefined);
     const leafNode = await ensureTreePath({ treeId, pathSegments, treeOptions });
     const attachments = await listActiveNodeAttachments({ treeId, nodeId: leafNode.id });
     const replacedAttachments = attachments.filter((attachment) => String(attachment.fileName ?? '').trim().toLowerCase() === String(fileName ?? '').trim().toLowerCase());
@@ -634,6 +635,7 @@ export async function replaceTreeLeafAttachment({
       nodeId: String(leafNode.id),
       file: replacementFile,
       updatedBy,
+      skipSearchIndexing: isPersonalCacheTree(configuredTree),
     });
     const transaction = new sql.Transaction();
 

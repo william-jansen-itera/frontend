@@ -14,7 +14,7 @@ import { requestTreeSqlIndexerRun } from '@/server/utils/azureSearch';
 import { logException, logTrace } from '@/server/utils/logging';
 import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
 import { sql, withSqlConnection } from '@/server/utils/sql';
-import { listActiveTreeSubtreeAttachments, softDeleteTreeSubtree } from '@/server/utils/tree/treePathRepository';
+import { assertConfiguredTree, listActiveTreeSubtreeAttachments, softDeleteTreeSubtree } from '@/server/utils/tree/treePathRepository';
 import {
   applyAttachmentReviewStatus,
   applyTreeNodeReviewStatus,
@@ -37,7 +37,7 @@ import {
   updateTreeNodeText,
   upsertTreeNodeDetails,
 } from '@/server/utils/tree/treeRecordRepository';
-import { assertTreeAccess, getAuditMetadata } from '@/server/utils/tree/treeCatalog';
+import { assertTreeAccess, getAuditMetadata, isPersonalCacheTree } from '@/server/utils/tree/treeCatalog';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const REVIEW_STATUS_DRAFT = 'draft';
@@ -947,6 +947,7 @@ export async function createLeafNodeFromChat({
 export async function createTreeNodeAttachment({ treeInstanceId, nodeId, files, updatedBy = null }) {
   return withSqlConnection(async () => {
     await assertLeafNode(treeInstanceId, nodeId);
+    const configuredTree = await assertConfiguredTree(treeInstanceId, { allowPrivate: true });
 
     await ensureTreeNodeDetailsRow(nodeId);
 
@@ -961,6 +962,7 @@ export async function createTreeNodeAttachment({ treeInstanceId, nodeId, files, 
           nodeId,
           file,
           updatedBy,
+          skipSearchIndexing: isPersonalCacheTree(configuredTree),
         });
 
         uploadedBlobNames.push(uploadedFile.blobName);
