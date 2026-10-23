@@ -625,7 +625,7 @@ export async function ensurePersonalCacheTree(principal) {
     principal,
     visibility: TREE_VISIBILITY_PRIVATE,
     enforceAccess: true,
-  })).find(isPersonalCacheTree);
+  })).find((tree) => isPersonalCacheTree(tree) && isOwnedByPrincipal(tree, principal));
 
   if (matchingTree) {
     return matchingTree;

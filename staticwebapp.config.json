@@ -41,6 +41,10 @@
       "allowedRoles": ["mdsusers"]
     },
     {
+      "route": "/api/me/*",
+      "allowedRoles": ["mdsusers"]
+    },
+    {
       "route": "/api/notes*",
       "allowedRoles": ["mdsusers"]
     },

@@ -5,7 +5,7 @@ import {
   resolveAgentFamilySelection,
 } from '@/server/utils/agent/agentFamilyInvoker';
 import { logException, logStructuredTrace, logTrace } from '@/server/utils/logging';
-import { parseClientPrincipal } from '@/server/utils/auth';
+import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 
 export const runtime = 'nodejs';
 
@@ -126,7 +126,7 @@ export async function POST(request) {
     }
 
     const history = normalizeHistory(payload?.history);
-    const principal = parseClientPrincipal(request);
+    const principal = requireAuthenticatedPrincipal(request);
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route invoking agent family', {
       historyCount: history.length,
       hasPrincipal: Boolean(principal),
@@ -230,7 +230,7 @@ export async function POST(request) {
         : {
           error: error instanceof Error ? error.message : 'Agent request failed',
         },
-      { status: 500, requestId, includeDebug },
+      { status: error?.status ?? 500, requestId, includeDebug },
     );
   }
 }

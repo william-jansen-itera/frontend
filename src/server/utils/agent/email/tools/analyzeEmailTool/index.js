@@ -406,6 +406,7 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
 
         snapshot = await loadLatestEmailRetrievalSnapshot({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: normalizedFolder,
         });
@@ -419,6 +420,7 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
         });
         let message = await loadCachedEmailMessage({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: normalizedFolder,
           uid,
@@ -443,6 +445,7 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
             });
             await storeCachedEmailMessage({
               treeId: resolvedTreeId,
+              principal: agentContext?.principal,
               provider: args.provider,
               folder: normalizedFolder,
               uid: message.uid,
@@ -487,6 +490,7 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
       await Promise.all(
         analyses.map((analysis, index) => storeCachedEmailMessage({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: normalizedFolder,
           uid: analysis.uid,

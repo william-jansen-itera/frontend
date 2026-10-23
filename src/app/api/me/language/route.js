@@ -3,8 +3,8 @@ import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import {
   ensurePersonalCacheLeafPath,
   findPersonalCacheLeafPathNode,
+  getPersonalCacheContext,
 } from '@/server/utils/agent/personalCacheTreeRepository';
-import { ensurePersonalCacheTree, getAuditMetadata } from '@/server/utils/tree/treeCatalog';
 import { updateTreeNodeDetails } from '@/server/utils/tree/treeMutationService';
 import { getNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 
@@ -17,8 +17,8 @@ function errorResponse(error) {
 export async function GET(request) {
   try {
     const principal = requireAuthenticatedPrincipal(request);
-    const tree = await ensurePersonalCacheTree(principal);
-    const node = await findPersonalCacheLeafPathNode({ treeId: tree.id, pathSegments: LANGUAGE_PATH });
+    const { personalCacheTree: tree } = await getPersonalCacheContext(principal);
+    const node = await findPersonalCacheLeafPathNode({ treeId: tree.id, principal, pathSegments: LANGUAGE_PATH });
     if (!node) {
       return NextResponse.json({ language: null });
     }
@@ -48,12 +48,12 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Invalid language' }, { status: 400 });
     }
 
-    const tree = await ensurePersonalCacheTree(principal);
-    const node = await ensurePersonalCacheLeafPath({ treeId: tree.id, pathSegments: LANGUAGE_PATH });
+    const { personalCacheTree: tree, updatedBy } = await getPersonalCacheContext(principal);
+    const node = await ensurePersonalCacheLeafPath({ treeId: tree.id, principal, pathSegments: LANGUAGE_PATH });
     await updateTreeNodeDetails(tree.id, node.id, {
       name: 'Language',
       notes: JSON.stringify({ language }),
-      updatedBy: getAuditMetadata(principal),
+      updatedBy,
     });
 
     return NextResponse.json({ language });

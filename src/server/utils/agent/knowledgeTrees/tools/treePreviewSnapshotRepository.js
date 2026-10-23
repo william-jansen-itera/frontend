@@ -22,9 +22,10 @@ function pruneSnapshots(previews, now = Date.now()) {
   );
 }
 
-async function readSnapshotDocument({ treeId }) {
+async function readSnapshotDocument({ treeId, principal }) {
   const document = await readPersonalCacheTextAttachmentByFileName({
     treeId,
+    principal,
     pathSegments: buildPreviewSnapshotPath(),
     fileName: PREVIEW_SNAPSHOT_FILE_NAME,
   });
@@ -36,20 +37,22 @@ async function readSnapshotDocument({ treeId }) {
   return JSON.parse(document.text);
 }
 
-async function deleteSnapshotDocument({ treeId, updatedBy = null }) {
+async function deleteSnapshotDocument({ treeId, principal, updatedBy = null }) {
   await deletePersonalCachePath({
     treeId,
+    principal,
     pathSegments: buildPreviewSnapshotPath(),
     updatedBy,
   });
 }
 
-async function writeSnapshotDocument({ treeId, snapshots, updatedBy = null }) {
+async function writeSnapshotDocument({ treeId, principal, snapshots, updatedBy = null }) {
   const prunedSnapshots = pruneSnapshots(snapshots);
 
   if (Object.keys(prunedSnapshots).length === 0) {
     await deleteSnapshotDocument({
       treeId,
+      principal,
       updatedBy,
     });
     return;
@@ -57,6 +60,7 @@ async function writeSnapshotDocument({ treeId, snapshots, updatedBy = null }) {
 
   await replacePersonalCacheTextAttachment({
     treeId,
+    principal,
     pathSegments: buildPreviewSnapshotPath(),
     fileName: PREVIEW_SNAPSHOT_FILE_NAME,
     contentType: JSON_CONTENT_TYPE,
@@ -72,6 +76,7 @@ export async function storeTreePreviewSnapshot({ previewId, preview, principal }
   const cacheContext = await buildAgentPersonalCacheContext(principal);
   const snapshotDocument = await readSnapshotDocument({
     treeId: cacheContext.personalCacheTreeId,
+    principal,
   });
   const snapshots = pruneSnapshots(snapshotDocument?.previews);
 
@@ -83,6 +88,7 @@ export async function storeTreePreviewSnapshot({ previewId, preview, principal }
 
   await writeSnapshotDocument({
     treeId: cacheContext.personalCacheTreeId,
+    principal,
     snapshots,
     updatedBy: cacheContext.updatedBy,
   });
@@ -92,6 +98,7 @@ export async function consumeTreePreviewSnapshot({ previewId, principal }) {
   const cacheContext = await buildAgentPersonalCacheContext(principal);
   const snapshotDocument = await readSnapshotDocument({
     treeId: cacheContext.personalCacheTreeId,
+    principal,
   });
   const snapshots = pruneSnapshots(snapshotDocument?.previews);
   const normalizedPreviewId = String(previewId ?? '').trim();
@@ -100,6 +107,7 @@ export async function consumeTreePreviewSnapshot({ previewId, principal }) {
   if (!snapshot?.preview) {
     await writeSnapshotDocument({
       treeId: cacheContext.personalCacheTreeId,
+      principal,
       snapshots,
       updatedBy: cacheContext.updatedBy,
     });
@@ -110,6 +118,7 @@ export async function consumeTreePreviewSnapshot({ previewId, principal }) {
 
   await writeSnapshotDocument({
     treeId: cacheContext.personalCacheTreeId,
+    principal,
     snapshots,
     updatedBy: cacheContext.updatedBy,
   });

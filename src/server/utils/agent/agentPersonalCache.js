@@ -1,15 +1,5 @@
-import {
-  ensurePersonalCacheTree,
-  getAuditMetadata,
-} from '@/server/utils/tree/treeCatalog';
+import { getPersonalCacheContext } from '@/server/utils/agent/personalCacheTreeRepository';
 
 export async function buildAgentPersonalCacheContext(principal) {
-  const personalCacheTree = await ensurePersonalCacheTree(principal);
-
-  return {
-    principal,
-    updatedBy: getAuditMetadata(principal),
-    personalCacheTree,
-    personalCacheTreeId: personalCacheTree?.id ?? null,
-  };
+  return getPersonalCacheContext(principal);
 }

@@ -60,6 +60,7 @@ export function buildFlagEmailHandler({ includeDebug = false, updatedBy = null, 
 
       const { accountConfig } = await loadEmailAccountConfig({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
       });
       const targetUids = normalizeFlagTargetUids(args);
@@ -81,6 +82,7 @@ export function buildFlagEmailHandler({ includeDebug = false, updatedBy = null, 
         for (const uid of targetUids) {
           const cachedMessage = await loadCachedEmailMessage({
             treeId: resolvedTreeId,
+            principal: agentContext?.principal,
             provider: args.provider,
             folder: args.folder,
             uid,
@@ -98,6 +100,7 @@ export function buildFlagEmailHandler({ includeDebug = false, updatedBy = null, 
 
           const cacheUpdated = await updateCachedEmailMessageFlags({
             treeId: resolvedTreeId,
+            principal: agentContext?.principal,
             provider: args.provider,
             folder: args.folder,
             uid,
@@ -116,6 +119,7 @@ export function buildFlagEmailHandler({ includeDebug = false, updatedBy = null, 
       try {
         snapshotUpdated = await updateLatestEmailRetrievalSnapshotFlags({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: args.folder,
           uids: targetUids,

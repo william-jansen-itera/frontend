@@ -93,6 +93,7 @@ export function buildSendEmailHandler({ includeDebug = false, personalCacheTreeI
 
       const { accountConfig } = await loadEmailAccountConfig({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
       });
       const draftsMailboxPath = await getDraftsMailboxPath(accountConfig);

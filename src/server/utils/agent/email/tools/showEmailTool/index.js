@@ -127,6 +127,7 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
 
       const snapshot = await loadLatestEmailRetrievalSnapshot({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
         folder: normalizedFolder,
       });
@@ -139,6 +140,7 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
         });
         let message = await loadCachedEmailMessage({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: normalizedFolder,
           uid: normalizedUid,
@@ -160,6 +162,7 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
             });
             await storeCachedEmailMessage({
               treeId: resolvedTreeId,
+              principal: agentContext?.principal,
               provider: args.provider,
               folder: normalizedFolder,
               uid: message.uid,

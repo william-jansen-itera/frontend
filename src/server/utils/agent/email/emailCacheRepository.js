@@ -73,9 +73,10 @@ function buildMoveAliasKey(folder, uid) {
   return `${normalizeFolderValue(folder)}::${String(uid ?? '').trim()}`;
 }
 
-async function loadUidMoveAliases({ treeId, provider }) {
+async function loadUidMoveAliases({ treeId, principal, provider }) {
   const aliasDocument = await readJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildMoveAliasPath(provider),
     fileName: UID_MOVE_ALIAS_FILE_NAME,
   });
@@ -95,9 +96,10 @@ async function loadUidMoveAliases({ treeId, provider }) {
   };
 }
 
-async function writeUidMoveAliases({ treeId, provider, aliases, updatedBy = null }) {
+async function writeUidMoveAliases({ treeId, principal, provider, aliases, updatedBy = null }) {
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildMoveAliasPath(provider),
     fileName: UID_MOVE_ALIAS_FILE_NAME,
     value: {
@@ -108,9 +110,10 @@ async function writeUidMoveAliases({ treeId, provider, aliases, updatedBy = null
   });
 }
 
-async function readJsonAttachment({ treeId, pathSegments, fileName }) {
+async function readJsonAttachment({ treeId, principal, pathSegments, fileName }) {
   const document = await readPersonalCacheTextAttachmentByFileName({
     treeId,
+    principal,
     pathSegments,
     fileName,
   });
@@ -122,11 +125,12 @@ async function readJsonAttachment({ treeId, pathSegments, fileName }) {
   return JSON.parse(document.text);
 }
 
-async function writeJsonAttachment({ treeId, pathSegments, fileName, value, updatedBy = null }) {
+async function writeJsonAttachment({ treeId, principal, pathSegments, fileName, value, updatedBy = null }) {
   const content = JSON.stringify(value, null, 2);
 
   await replacePersonalCacheTextAttachment({
     treeId,
+    principal,
     pathSegments,
     fileName,
     contentType: JSON_CONTENT_TYPE,
@@ -148,7 +152,7 @@ function buildStoredCachedMessage(message) {
   return message;
 }
 
-export async function storeLatestEmailRetrievalSnapshot({ treeId, provider, folder = 'INBOX', messages, updatedBy = null, sourceWindowSize = null }) {
+export async function storeLatestEmailRetrievalSnapshot({ treeId, principal, provider, folder = 'INBOX', messages, updatedBy = null, sourceWindowSize = null }) {
   const snapshot = {
     datasetKey: randomUUID(),
     provider: normalizeProviderLabel(provider),
@@ -160,6 +164,7 @@ export async function storeLatestEmailRetrievalSnapshot({ treeId, provider, fold
 
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildRetrievalSnapshotPath(provider),
     fileName: buildRetrievalSnapshotFileName(folder),
     value: snapshot,
@@ -169,17 +174,19 @@ export async function storeLatestEmailRetrievalSnapshot({ treeId, provider, fold
   return snapshot;
 }
 
-export async function loadLatestEmailRetrievalSnapshot({ treeId, provider, folder = 'INBOX' }) {
+export async function loadLatestEmailRetrievalSnapshot({ treeId, principal, provider, folder = 'INBOX' }) {
   return readJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildRetrievalSnapshotPath(provider),
     fileName: buildRetrievalSnapshotFileName(folder),
   });
 }
 
-export async function invalidateLatestEmailRetrievalSnapshot({ treeId, provider, folder = 'INBOX', updatedBy = null }) {
+export async function invalidateLatestEmailRetrievalSnapshot({ treeId, principal, provider, folder = 'INBOX', updatedBy = null }) {
   const snapshot = await loadLatestEmailRetrievalSnapshot({
     treeId,
+    principal,
     provider,
     folder,
   });
@@ -190,6 +197,7 @@ export async function invalidateLatestEmailRetrievalSnapshot({ treeId, provider,
 
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildRetrievalSnapshotPath(provider),
     fileName: buildRetrievalSnapshotFileName(folder),
     value: {
@@ -203,9 +211,10 @@ export async function invalidateLatestEmailRetrievalSnapshot({ treeId, provider,
   return true;
 }
 
-export async function updateLatestEmailRetrievalSnapshotFlags({ treeId, provider, folder = 'INBOX', uids, flags, updatedBy = null }) {
+export async function updateLatestEmailRetrievalSnapshotFlags({ treeId, principal, provider, folder = 'INBOX', uids, flags, updatedBy = null }) {
   const snapshot = await loadLatestEmailRetrievalSnapshot({
     treeId,
+    principal,
     provider,
     folder,
   });
@@ -243,6 +252,7 @@ export async function updateLatestEmailRetrievalSnapshotFlags({ treeId, provider
 
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildRetrievalSnapshotPath(provider),
     fileName: buildRetrievalSnapshotFileName(folder),
     value: {
@@ -256,9 +266,10 @@ export async function updateLatestEmailRetrievalSnapshotFlags({ treeId, provider
   return true;
 }
 
-export async function removeLatestEmailRetrievalSnapshotMessages({ treeId, provider, folder = 'INBOX', uids, updatedBy = null }) {
+export async function removeLatestEmailRetrievalSnapshotMessages({ treeId, principal, provider, folder = 'INBOX', uids, updatedBy = null }) {
   const snapshot = await loadLatestEmailRetrievalSnapshot({
     treeId,
+    principal,
     provider,
     folder,
   });
@@ -281,6 +292,7 @@ export async function removeLatestEmailRetrievalSnapshotMessages({ treeId, provi
 
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildRetrievalSnapshotPath(provider),
     fileName: buildRetrievalSnapshotFileName(folder),
     value: {
@@ -294,7 +306,7 @@ export async function removeLatestEmailRetrievalSnapshotMessages({ treeId, provi
   return true;
 }
 
-export async function upsertLatestEmailRetrievalSnapshotMessages({ treeId, provider, folder = 'INBOX', messages, updatedBy = null }) {
+export async function upsertLatestEmailRetrievalSnapshotMessages({ treeId, principal, provider, folder = 'INBOX', messages, updatedBy = null }) {
   const normalizedMessages = Array.isArray(messages)
     ? messages.filter((message) => String(message?.uid ?? '').trim())
     : [];
@@ -305,6 +317,7 @@ export async function upsertLatestEmailRetrievalSnapshotMessages({ treeId, provi
 
   const snapshot = await loadLatestEmailRetrievalSnapshot({
     treeId,
+    principal,
     provider,
     folder,
   });
@@ -323,6 +336,7 @@ export async function upsertLatestEmailRetrievalSnapshotMessages({ treeId, provi
 
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildRetrievalSnapshotPath(provider),
     fileName: buildRetrievalSnapshotFileName(folder),
     value: {
@@ -346,11 +360,12 @@ export function isEmailRetrievalSnapshotFresh(snapshot, now = Date.now()) {
   return now - createdAtMs <= RETRIEVAL_CACHE_TTL_MS;
 }
 
-export async function storeCachedEmailMessage({ treeId, provider, folder = null, uid, message, updatedBy = null }) {
+export async function storeCachedEmailMessage({ treeId, principal, provider, folder = null, uid, message, updatedBy = null }) {
   const resolvedFolder = folder ?? message?.folder ?? 'INBOX';
 
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildCachedMessagePath(provider, resolvedFolder, uid),
     fileName: buildCachedMessageFileName(uid),
     value: {
@@ -361,9 +376,10 @@ export async function storeCachedEmailMessage({ treeId, provider, folder = null,
   });
 }
 
-export async function loadCachedEmailMessage({ treeId, provider, folder = 'INBOX', uid }) {
+export async function loadCachedEmailMessage({ treeId, principal, provider, folder = 'INBOX', uid }) {
   const cachedDocument = await readJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildCachedMessagePath(provider, folder, uid),
     fileName: buildCachedMessageFileName(uid),
   });
@@ -375,14 +391,14 @@ export async function loadCachedEmailMessage({ treeId, provider, folder = 'INBOX
   return cachedDocument.message;
 }
 
-export async function resolveCachedEmailMovedMessageAlias({ treeId, provider, sourceFolder = 'INBOX', sourceUid }) {
+export async function resolveCachedEmailMovedMessageAlias({ treeId, principal, provider, sourceFolder = 'INBOX', sourceUid }) {
   const normalizedSourceUid = String(sourceUid ?? '').trim();
 
   if (!normalizedSourceUid) {
     return null;
   }
 
-  const aliasDocument = await loadUidMoveAliases({ treeId, provider });
+  const aliasDocument = await loadUidMoveAliases({ treeId, principal, provider });
   const aliasRecord = aliasDocument.aliases[buildMoveAliasKey(sourceFolder, normalizedSourceUid)] ?? null;
 
   if (!aliasRecord || typeof aliasRecord !== 'object') {
@@ -410,6 +426,7 @@ export async function resolveCachedEmailMovedMessageAlias({ treeId, provider, so
 
 export async function upsertCachedEmailMovedMessageAlias({
   treeId,
+  principal,
   provider,
   sourceFolder = 'INBOX',
   sourceUid,
@@ -426,7 +443,7 @@ export async function upsertCachedEmailMovedMessageAlias({
     return false;
   }
 
-  const aliasDocument = await loadUidMoveAliases({ treeId, provider });
+  const aliasDocument = await loadUidMoveAliases({ treeId, principal, provider });
   const nextAliases = {
     ...aliasDocument.aliases,
     [buildMoveAliasKey(sourceFolder, normalizedSourceUid)]: {
@@ -443,6 +460,7 @@ export async function upsertCachedEmailMovedMessageAlias({
 
   await writeUidMoveAliases({
     treeId,
+    principal,
     provider,
     aliases: nextAliases,
     updatedBy,
@@ -451,14 +469,14 @@ export async function upsertCachedEmailMovedMessageAlias({
   return true;
 }
 
-export async function deleteCachedEmailMovedMessageAlias({ treeId, provider, sourceFolder = 'INBOX', sourceUid, updatedBy = null }) {
+export async function deleteCachedEmailMovedMessageAlias({ treeId, principal, provider, sourceFolder = 'INBOX', sourceUid, updatedBy = null }) {
   const normalizedSourceUid = String(sourceUid ?? '').trim();
 
   if (!normalizedSourceUid) {
     return false;
   }
 
-  const aliasDocument = await loadUidMoveAliases({ treeId, provider });
+  const aliasDocument = await loadUidMoveAliases({ treeId, principal, provider });
   const aliasKey = buildMoveAliasKey(sourceFolder, normalizedSourceUid);
 
   if (!Object.prototype.hasOwnProperty.call(aliasDocument.aliases, aliasKey)) {
@@ -470,6 +488,7 @@ export async function deleteCachedEmailMovedMessageAlias({ treeId, provider, sou
 
   await writeUidMoveAliases({
     treeId,
+    principal,
     provider,
     aliases: nextAliases,
     updatedBy,
@@ -478,9 +497,10 @@ export async function deleteCachedEmailMovedMessageAlias({ treeId, provider, sou
   return true;
 }
 
-export async function invalidateCachedEmailMessage({ treeId, provider, uid, updatedBy = null }) {
+export async function invalidateCachedEmailMessage({ treeId, principal, provider, uid, updatedBy = null }) {
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildCachedMessagePath(provider, 'INBOX', uid),
     fileName: buildCachedMessageFileName(uid),
     value: {
@@ -492,17 +512,19 @@ export async function invalidateCachedEmailMessage({ treeId, provider, uid, upda
   });
 }
 
-export async function deleteCachedEmailMessageNode({ treeId, provider, folder = 'INBOX', uid, updatedBy = null }) {
+export async function deleteCachedEmailMessageNode({ treeId, principal, provider, folder = 'INBOX', uid, updatedBy = null }) {
   return deletePersonalCachePath({
     treeId,
+    principal,
     pathSegments: buildCachedMessagePath(provider, folder, uid),
     updatedBy,
   });
 }
 
-export async function updateCachedEmailMessageFlags({ treeId, provider, folder = 'INBOX', uid, flags, updatedBy = null }) {
+export async function updateCachedEmailMessageFlags({ treeId, principal, provider, folder = 'INBOX', uid, flags, updatedBy = null }) {
   const cachedDocument = await readJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildCachedMessagePath(provider, folder, uid),
     fileName: buildCachedMessageFileName(uid),
   });
@@ -513,6 +535,7 @@ export async function updateCachedEmailMessageFlags({ treeId, provider, folder =
 
   await writeJsonAttachment({
     treeId,
+    principal,
     pathSegments: buildCachedMessagePath(provider, folder, uid),
     fileName: buildCachedMessageFileName(uid),
     value: {
@@ -531,6 +554,7 @@ export async function updateCachedEmailMessageFlags({ treeId, provider, folder =
 
 export async function moveCachedEmailMessage({
   treeId,
+  principal,
   provider,
   sourceFolder,
   sourceUid,
@@ -541,6 +565,7 @@ export async function moveCachedEmailMessage({
 }) {
   const cachedMessage = await loadCachedEmailMessage({
     treeId,
+    principal,
     provider,
     folder: sourceFolder,
     uid: sourceUid,
@@ -565,6 +590,7 @@ export async function moveCachedEmailMessage({
 
   await storeCachedEmailMessage({
     treeId,
+    principal,
     provider,
     folder: destinationFolder,
     uid: nextMessage.uid,
@@ -574,6 +600,7 @@ export async function moveCachedEmailMessage({
 
   await upsertCachedEmailMovedMessageAlias({
     treeId,
+    principal,
     provider,
     sourceFolder: normalizedSourceFolder,
     sourceUid: normalizedSourceUid,
@@ -586,6 +613,7 @@ export async function moveCachedEmailMessage({
   if (normalizedSourceUid !== nextMessage.uid || normalizedSourceFolder !== nextMessage.folder) {
     await deleteCachedEmailMessageNode({
       treeId,
+      principal,
       provider,
       folder: normalizedSourceFolder,
       uid: normalizedSourceUid,
@@ -594,6 +622,7 @@ export async function moveCachedEmailMessage({
 
     const remainingSourceNode = await findPersonalCacheLeafPathNode({
       treeId,
+      principal,
       pathSegments: buildCachedMessagePath(provider, normalizedSourceFolder, normalizedSourceUid),
     });
 

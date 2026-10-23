@@ -309,6 +309,7 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
       emitStep('tool retrieve_emails loading account config');
       const { accountConfig } = await loadEmailAccountConfig({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
       });
       const normalizedFolder = String(args.folder ?? 'INBOX').trim() || 'INBOX';
@@ -333,6 +334,7 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
       };
       let cachedSnapshot = await loadLatestEmailRetrievalSnapshot({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
         folder: normalizedFolder,
       });
@@ -362,6 +364,7 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
           : [];
         cachedSnapshot = await storeLatestEmailRetrievalSnapshot({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: normalizedFolder,
           messages: cachedMessages,

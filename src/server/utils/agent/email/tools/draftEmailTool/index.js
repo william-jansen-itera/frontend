@@ -56,9 +56,10 @@ function buildReplySubject(subject) {
     : `Re: ${normalizedSubject}`;
 }
 
-async function resolveReplyDraftTarget({ treeId, provider, folder, uid, updatedBy = null }) {
+async function resolveReplyDraftTarget({ treeId, principal, provider, folder, uid, updatedBy = null }) {
   const cachedMessage = await loadCachedEmailMessage({
     treeId,
+    principal,
     provider,
     folder,
     uid,
@@ -70,6 +71,7 @@ async function resolveReplyDraftTarget({ treeId, provider, folder, uid, updatedB
 
   const snapshot = await loadLatestEmailRetrievalSnapshot({
     treeId,
+    principal,
     provider,
     folder,
   });
@@ -79,6 +81,7 @@ async function resolveReplyDraftTarget({ treeId, provider, folder, uid, updatedB
   if (snapshotMessage) {
     await storeCachedEmailMessage({
       treeId,
+      principal,
       provider,
       folder,
       uid,
@@ -129,6 +132,7 @@ export function buildDraftEmailHandler({ includeDebug = false, updatedBy = null,
 
       const { accountConfig } = await loadEmailAccountConfig({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
       });
 
@@ -143,6 +147,7 @@ export function buildDraftEmailHandler({ includeDebug = false, updatedBy = null,
         mode = 'reply';
         replyMessage = await resolveReplyDraftTarget({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: normalizedFolder,
           uid: normalizedUid,

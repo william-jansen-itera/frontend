@@ -38,9 +38,10 @@ export const unsubscribeEmailToolDefinition = {
   },
 };
 
-async function resolveUnsubscribeTarget({ treeId, provider, folder, uid, updatedBy = null }) {
+async function resolveUnsubscribeTarget({ treeId, principal, provider, folder, uid, updatedBy = null }) {
   const cachedMessage = await loadCachedEmailMessage({
     treeId,
+    principal,
     provider,
     folder,
     uid,
@@ -52,6 +53,7 @@ async function resolveUnsubscribeTarget({ treeId, provider, folder, uid, updated
 
   const snapshot = await loadLatestEmailRetrievalSnapshot({
     treeId,
+    principal,
     provider,
     folder,
   });
@@ -61,6 +63,7 @@ async function resolveUnsubscribeTarget({ treeId, provider, folder, uid, updated
   if (snapshotMessage) {
     await storeCachedEmailMessage({
       treeId,
+      principal,
       provider,
       folder,
       uid,
@@ -105,10 +108,12 @@ export function buildUnsubscribeEmailHandler({ includeDebug = false, updatedBy =
 
       const { accountConfig } = await loadEmailAccountConfig({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
       });
       const message = await resolveUnsubscribeTarget({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
         folder: normalizedFolder,
         uid: normalizedUid,

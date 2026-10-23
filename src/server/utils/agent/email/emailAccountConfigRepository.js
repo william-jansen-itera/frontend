@@ -120,16 +120,17 @@ export function normalizeEmailAccountConfig(value) {
   };
 }
 
-export async function ensureEmailAccountConfigLeaf({ treeId, provider = 'hover' }) {
+export async function ensureEmailAccountConfigLeaf({ treeId, principal, provider = 'hover' }) {
   return ensurePersonalCacheLeafPath({
     treeId,
+    principal,
     pathSegments: buildProviderSecretPath(provider),
   });
 }
 
-export async function storeEmailAccountConfig({ treeId, provider = 'hover', accountConfig, updatedBy = null }) {
+export async function storeEmailAccountConfig({ treeId, principal, provider = 'hover', accountConfig, updatedBy = null }) {
   return withSqlConnection(async () => {
-    const leafNode = await ensureEmailAccountConfigLeaf({ treeId, provider });
+    const leafNode = await ensureEmailAccountConfigLeaf({ treeId, principal, provider });
     const existingRecord = await queryTreeNodeDetailRecord(treeId, leafNode.id);
     const existingSecretMetadata = normalizeSecretMetadata(existingRecord?.secretMetadata);
     const normalizedConfig = normalizeEmailAccountConfig(accountConfig);
@@ -159,10 +160,11 @@ export async function storeEmailAccountConfig({ treeId, provider = 'hover', acco
   });
 }
 
-export async function loadEmailAccountConfig({ treeId, provider = 'hover' }) {
+export async function loadEmailAccountConfig({ treeId, principal, provider = 'hover' }) {
   return withSqlConnection(async () => {
     const leafNode = await findPersonalCacheLeafPathNode({
       treeId,
+      principal,
       pathSegments: buildProviderSecretPath(provider),
     });
 

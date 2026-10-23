@@ -76,6 +76,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
 
       const { accountConfig } = await loadEmailAccountConfig({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
       });
       const targetUids = normalizeDeleteTargetUids(args);
@@ -87,6 +88,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
 
       const sourceSnapshot = await loadLatestEmailRetrievalSnapshot({
         treeId: resolvedTreeId,
+        principal: agentContext?.principal,
         provider: args.provider,
         folder: normalizedFolder,
       });
@@ -99,6 +101,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
       for (const uid of targetUids) {
         const cachedMessage = await loadCachedEmailMessage({
           treeId: resolvedTreeId,
+          principal: agentContext?.principal,
           provider: args.provider,
           folder: normalizedFolder,
           uid,
@@ -131,6 +134,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
         if (args.expunge) {
           const movedMessageAlias = await resolveCachedEmailMovedMessageAlias({
             treeId: resolvedTreeId,
+            principal: agentContext?.principal,
             provider: args.provider,
             sourceFolder: normalizedFolder,
             sourceUid: uid,
@@ -139,6 +143,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
           if (movedMessageAlias?.destinationUid && movedMessageAlias?.destinationFolder) {
             const aliasedCachedMessage = await loadCachedEmailMessage({
               treeId: resolvedTreeId,
+              principal: agentContext?.principal,
               provider: args.provider,
               folder: movedMessageAlias.destinationFolder,
               uid: movedMessageAlias.destinationUid,
@@ -215,6 +220,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
         for (const target of resolvedDeleteTargets) {
           const cacheDeleted = await deleteCachedEmailMessageNode({
             treeId: resolvedTreeId,
+            principal: agentContext?.principal,
             provider: args.provider,
             folder: target.actualFolder,
             uid: target.actualUid,
@@ -232,6 +238,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
           if (aliasSourceUid && (target.movedMessageAlias || movedFrom)) {
             await deleteCachedEmailMovedMessageAlias({
               treeId: resolvedTreeId,
+              principal: agentContext?.principal,
               provider: args.provider,
               sourceFolder: aliasSourceFolder,
               sourceUid: aliasSourceUid,
@@ -251,6 +258,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
           const fallbackMessage = sourceSnapshotMessagesByUid.get(sourceUid)
             ?? await loadCachedEmailMessage({
               treeId: resolvedTreeId,
+              principal: agentContext?.principal,
               provider: args.provider,
               folder: normalizedFolder,
               uid: sourceUid,
@@ -258,6 +266,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
 
           const cacheMoved = await moveCachedEmailMessage({
             treeId: resolvedTreeId,
+            principal: agentContext?.principal,
             provider: args.provider,
             sourceFolder: normalizedFolder,
             sourceUid,
@@ -286,6 +295,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
           const snapshotDeleteResults = await Promise.all(
             snapshotDeleteTargets.map(([folder, uids]) => removeLatestEmailRetrievalSnapshotMessages({
               treeId: resolvedTreeId,
+              principal: agentContext?.principal,
               provider: args.provider,
               folder,
               uids,
@@ -297,6 +307,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
         } else {
           sourceSnapshotUpdated = await removeLatestEmailRetrievalSnapshotMessages({
             treeId: resolvedTreeId,
+            principal: agentContext?.principal,
             provider: args.provider,
             folder: normalizedFolder,
             uids: targetUids,
@@ -329,6 +340,7 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
 
           destinationSnapshotUpdated = await upsertLatestEmailRetrievalSnapshotMessages({
             treeId: resolvedTreeId,
+            principal: agentContext?.principal,
             provider: args.provider,
             folder: output.destinationFolder,
             messages: destinationSnapshotMessages,
