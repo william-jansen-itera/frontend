@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-import { DEFAULT_TOOL_TOP, searchTreeContent } from '@/server/utils/azureSearch';
 import {
   getTreeList,
   updateTreeDescriptionPublishedStates,
@@ -12,19 +10,22 @@ import {
   isNotFoundError,
 } from '@/server/utils/foundryAgentClient';
 import {
-  buildAgentSearchResult,
-  buildDebugSearchResultSnapshot,
-  buildTreeToolHandlerResult,
-} from '@/server/utils/agent/knowledgeTrees/treeToolSearchResults';
-import { buildAgentToolResult } from '@/server/utils/agent/agentToolResult';
-import { assertTreeAccess } from '@/server/utils/tree/treeCatalog';
-import { createLeafNodeFromChat, previewLeafFromChat } from '@/server/utils/tree/treeMutationService';
+  buildToolName,
+  buildTreeSearchToolDefinition,
+  buildTreeToolPreview,
+  createTreeSearchToolHandler,
+} from '@/server/utils/agent/knowledgeTrees/tools/treeSearchTools';
 import {
-  consumeTreePreviewSnapshot,
-  storeTreePreviewSnapshot,
-} from '@/server/utils/agent/knowledgeTrees/treePreviewSnapshotRepository';
+  createPreviewAddToTreeHandler,
+  previewAddToTreeToolDefinition,
+} from '@/server/utils/agent/knowledgeTrees/tools/previewAddToTreeTool';
+import {
+  confirmAddToTreeToolDefinition,
+  createConfirmAddToTreeHandler,
+} from '@/server/utils/agent/knowledgeTrees/tools/confirmAddToTreeTool';
+import { KNOWLEDGE_TREES_FAMILY } from '@/server/utils/agent/knowledgeTrees/tools/persistenceToolShared';
 
-export const KNOWLEDGE_TREES_FAMILY = 'knowledgeTrees';
+export { KNOWLEDGE_TREES_FAMILY };
 
 function normalizePromptAgentName(agent, fallbackAgentName = null) {
   return String(agent?.name ?? agent?.id ?? fallbackAgentName ?? '').trim() || null;
@@ -60,36 +61,6 @@ function normalizePromptAgentTimestamp(agent) {
 
 function normalizeWhitespace(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
-}
-
-function slugifyToolSegment(value, fallbackValue) {
-  const normalizedValue = String(value || fallbackValue || 'tree')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 32);
-
-  return normalizedValue || String(fallbackValue || 'tree');
-}
-
-function buildToolName(tree) {
-  const suffix = slugifyToolSegment(tree.name, tree.id);
-  return `search_tree_${suffix}_${tree.id}`;
-}
-
-function parseToolTreeId(toolName) {
-  const match = String(toolName ?? '').trim().match(/_(\d+)$/);
-  return match ? match[1] : '';
-}
-
-function normalizeToolTop(value) {
-  const parsedValue = Number.parseInt(value, 10);
-
-  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-    return DEFAULT_TOOL_TOP;
-  }
-
-  return Math.min(parsedValue, DEFAULT_TOOL_TOP);
 }
 
 function resetTreeToolDescriptionState(tree) {
@@ -250,71 +221,8 @@ export function buildVisibilityScopeInstruction(options = {}) {
   ].join('\n');
 }
 
-function buildToolDefinition(tree) {
-  return {
-    type: 'function',
-    name: buildToolName(tree),
-    description: tree.generatedToolDescription,
-    strict: true,
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: `Search phrase for the ${tree.name} tree.`,
-        },
-      },
-      required: ['query'],
-      additionalProperties: false,
-    },
-  };
-}
-
 function buildPersistenceToolDefinitions() {
-  return [
-    {
-      type: 'function',
-      name: 'preview_add_to_tree',
-      description: 'Preview where a broader answer would be saved in a writable tree. Use only after the prior user-facing answer visibly offered to save it and the user explicitly accepted that offer; isPersistenceOffer=true alone is not permission. Call it directly once the user confirms. The output includes previewId, and the server caches the preview for a later confirm_add_to_tree call.',
-      strict: true,
-      parameters: {
-        type: 'object',
-        properties: {
-          toolName: {
-            type: 'string',
-            description: 'The specific dynamic search_tree_* tool that identifies the target tree for the new note. Do not substitute a tree name or any other label.',
-          },
-          originalQuestion: {
-            type: 'string',
-            description: 'The user question that led to the broader answer. This value is stored in the cached preview snapshot and later used during confirm_add_to_tree.',
-          },
-          broaderAnswer: {
-            type: 'string',
-            description: 'The broader answer cleaned and normalized into saveable tree-note content for the previewed note, while preserving detail needed for placement and note generation. This value is stored in the cached preview snapshot and later used during confirm_add_to_tree.',
-          },
-        },
-        required: ['toolName', 'originalQuestion', 'broaderAnswer'],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'confirm_add_to_tree',
-      description: 'Create a new tree note after the user explicitly confirms the previewed save plan. The server uses the cached preview snapshot as the source of truth; if previewId is stale or missing, preview the save again. This is the only confirmation step after the preview. The output includes noteLink for the final reply.',
-      strict: true,
-      parameters: {
-        type: 'object',
-        properties: {
-          previewId: {
-            type: 'string',
-            description: 'The exact previewId returned by preview_add_to_tree. Pass only this id so the server can load the cached preview snapshot.',
-          },
-        },
-        required: ['previewId'],
-        additionalProperties: false,
-      },
-    },
-  ];
+  return [previewAddToTreeToolDefinition, confirmAddToTreeToolDefinition];
 }
 
 function buildPersistenceToolPreview() {
@@ -328,51 +236,6 @@ function buildPersistenceToolPreview() {
     treeId: null,
     treeName: null,
   }));
-}
-
-function buildPersistenceToolHandlerResult({ toolName, toolResultType, toolOutput, includeDebug = false }) {
-  const wrappedToolOutput = buildAgentToolResult({
-    sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
-    toolName,
-    toolResultType,
-    data: toolOutput,
-    meta: {
-      resultCount: 1,
-      supportsCitations: false,
-      generatedAt: new Date().toISOString(),
-    },
-  });
-
-  if (!includeDebug) {
-    return {
-      toolOutput: wrappedToolOutput,
-    };
-  }
-
-  return {
-    toolOutput: wrappedToolOutput,
-    debug: {
-      toolOutput: wrappedToolOutput,
-    },
-  };
-}
-
-async function assertWritableRuntimeTree({ treeId, principal }) {
-  return assertTreeAccess(treeId, {
-    principal,
-    visibility: 'both',
-    requireWriteAccess: true,
-  });
-}
-
-function resolveRuntimeTreeId({ toolName, includedTreeIds }) {
-  const treeId = parseToolTreeId(toolName);
-
-  if (!treeId || !includedTreeIds.has(treeId)) {
-    throw new Error('A valid writable tree tool context is required to save a broader answer.');
-  }
-
-  return treeId;
 }
 
 function buildExcludedTrees(availableTrees) {
@@ -390,139 +253,14 @@ function buildHandlerMap(includedTrees, { includeDebug = false, principal = null
 
   includedTrees.forEach((tree) => {
     const toolName = buildToolName(tree);
-
-    handlerMap.set(toolName, async ({ query, top }) => {
-      const normalizedQuery = String(query ?? '').trim();
-
-      if (!normalizedQuery) {
-        return buildTreeToolHandlerResult({
-          sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
-          toolName,
-          toolOutput: {
-            count: 0,
-            results: [],
-          },
-          searchResult: includeDebug
-            ? {
-              searches: [],
-            }
-            : null,
-          includeDebug,
-        });
-      }
-
-      const rawResult = await searchTreeContent({
-        searchText: normalizedQuery,
-        treeId: String(tree.id),
-        top: normalizeToolTop(top),
-        allowedTreeIds: [String(tree.id)],
-        defaultTop: DEFAULT_TOOL_TOP,
-        includeExecutedSearches: includeDebug,
-        searchMode: 'any',
-      });
-
-      return buildTreeToolHandlerResult({
-        sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
-        toolName,
-        toolOutput: buildAgentSearchResult(rawResult),
-        searchResult: includeDebug ? buildDebugSearchResultSnapshot(rawResult) : null,
-        includeDebug,
-      });
-    });
-  });
-
-  handlerMap.set('preview_add_to_tree', async ({ toolName, originalQuestion, broaderAnswer }) => {
-    const resolvedTreeId = resolveRuntimeTreeId({
-      toolName,
-      includedTreeIds,
-    });
-
-    await assertWritableRuntimeTree({
-      treeId: resolvedTreeId,
-      principal,
-    });
-
-    const preview = await previewLeafFromChat({
-      treeInstanceId: Number.parseInt(resolvedTreeId, 10),
-      originalQuestion,
-      broaderAnswer,
-    });
-
-    const previewId = randomUUID();
-    await storeTreePreviewSnapshot({
-      previewId,
-      preview,
-      principal,
-    });
-
-    const previewWithId = {
-      previewId,
-      ...preview,
-      toolName: 'preview_add_to_tree',
-    };
-
-    return buildPersistenceToolHandlerResult({
-      toolName: 'preview_add_to_tree',
-      toolResultType: 'tree_note_preview',
-      toolOutput: previewWithId,
+    handlerMap.set(toolName, createTreeSearchToolHandler(tree, {
+      sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
       includeDebug,
-    });
+    }));
   });
 
-  handlerMap.set('confirm_add_to_tree', async ({ previewId }) => {
-    if (!String(previewId ?? '').trim()) {
-      throw new Error('A previewId from preview_add_to_tree is required to confirm saving the broader answer.');
-    }
-
-    const preview = await consumeTreePreviewSnapshot({
-      previewId,
-      principal,
-    });
-    const resolvedTreeId = String(preview?.treeId ?? '').trim();
-
-    if (!includedTreeIds.has(resolvedTreeId)) {
-      throw new Error('A valid writable tree id is required to save a broader answer.');
-    }
-
-    const writableTree = await assertWritableRuntimeTree({
-      treeId: resolvedTreeId,
-      principal,
-    });
-
-    const createdLeaf = await createLeafNodeFromChat({
-      treeInstanceId: Number.parseInt(resolvedTreeId, 10),
-      principal,
-      toolName: 'confirm_add_to_tree',
-      originalQuestion: preview.originalQuestion,
-      broaderAnswer: preview.broaderAnswer,
-      placementMode: preview.placementMode,
-      selectedAnchorNodeId: preview.selectedAnchorNodeId,
-      selectedAnchorBreadcrumb: preview.selectedAnchorBreadcrumb,
-      generatedPathTitles: preview.generatedPathTitles,
-      plannedLeafParentBreadcrumb: preview.plannedLeafParentBreadcrumb,
-      generatedLeafTitle: preview.generatedLeafTitle,
-    });
-    const noteSearchParams = new URLSearchParams({
-      treeId: String(createdLeaf.treeId),
-      nodeId: String(createdLeaf.createdNodeId),
-    });
-    if (writableTree.isPrivate) {
-      noteSearchParams.set('visibility', 'private');
-    }
-
-    const toolOutput = {
-      ...createdLeaf,
-      noteLink: `[View note](/notes?${noteSearchParams.toString()})`,
-    };
-    delete toolOutput.flatData;
-
-    return buildPersistenceToolHandlerResult({
-      toolName: 'confirm_add_to_tree',
-      toolResultType: 'tree_note_created',
-      toolOutput,
-      includeDebug,
-    });
-  });
+  handlerMap.set(previewAddToTreeToolDefinition.name, createPreviewAddToTreeHandler({ includedTreeIds, principal, includeDebug }));
+  handlerMap.set(confirmAddToTreeToolDefinition.name, createConfirmAddToTreeHandler({ includedTreeIds, principal, includeDebug }));
 
   return handlerMap;
 }
@@ -562,7 +300,7 @@ async function buildPublishTreeToolContext(options = {}) {
   return {
     ...selection,
     tools: [
-      ...selection.includedTrees.map((tree) => buildToolDefinition(tree)),
+      ...selection.includedTrees.map((tree) => buildTreeSearchToolDefinition(tree)),
       ...buildPersistenceToolDefinitions(),
     ],
   };
@@ -578,22 +316,6 @@ export async function buildRuntimeTreeToolContext(options = {}) {
       principal: options.principal ?? null,
     }),
   };
-}
-
-function buildTreeToolPreview(availableTrees) {
-  return availableTrees.map((tree) => ({
-    name: buildToolName(tree),
-    description: tree.generatedToolDescription,
-    treeId: tree.id ?? null,
-    treeName: tree.name ?? null,
-    descriptionSource: tree.descriptionSource ?? 'pending',
-    includedInToolSet: Boolean(tree.includedInToolSet),
-    aiInput: tree.aiInput ?? null,
-    aiModelOutput: tree.aiModelOutput ?? null,
-    aiGeneratedSummary: tree.aiGeneratedSummary ?? null,
-    aiSelectedFocusTopics: tree.aiSelectedFocusTopics ?? [],
-    generationFailureReason: tree.generationFailureReason ?? null,
-  }));
 }
 
 export async function listDefinedKnowledgeTreesTools() {
