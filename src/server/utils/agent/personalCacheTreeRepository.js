@@ -1,8 +1,8 @@
 import {
-  deleteTreePath,
   ensureTreePath,
   findTreePathNode,
 } from '@/server/utils/tree/treePathRepository';
+import { deleteNodeAttachmentBlobIfExists, restoreNodeAttachmentBlobIfDeleted } from '@/server/utils/blobStorage';
 import { ensurePersonalCacheTree, getAuditMetadata } from '@/server/utils/tree/treeCatalog';
 import { queryTreeNodeDetailRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
@@ -109,10 +109,94 @@ export async function replacePersonalCacheNotes({ treeId, principal, pathSegment
 
 export async function deletePersonalCachePath({ treeId, principal, pathSegments, updatedBy = null }) {
   await assertPersonalCacheOwner({ treeId, principal });
-  return deleteTreePath({
-    treeId,
-    pathSegments,
-    updatedBy,
-    treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
+  const pathNode = await withSqlConnection(async () => findTreePathNode({ treeId, pathSegments }));
+
+  if (!pathNode) {
+    return false;
+  }
+
+  return permanentlyDeletePersonalCacheNode({ treeId, principal, nodeId: pathNode.id });
+}
+
+export async function permanentlyDeletePersonalCacheNode({ treeId, principal, nodeId }) {
+  await assertPersonalCacheOwner({ treeId, principal });
+  const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+  return withSqlConnection(async () => {
+    const transaction = new sql.Transaction();
+    const deletedBlobNames = [];
+    let deleted = false;
+
+    try {
+      await transaction.begin();
+      const rootNode = await new sql.Request(transaction)
+        .input('tree_instance_id', sql.Int, Number(treeId))
+        .input('root_node_id', sql.Int, Number(nodeId))
+        .query(`
+          SELECT TOP 1 id FROM dbo.tree_nodes
+          WHERE tree_instance_id = @tree_instance_id
+            AND id = @root_node_id
+            AND deleted_at IS NULL;
+        `);
+
+      if (rootNode.recordset[0]) {
+        const attachments = await new sql.Request(transaction)
+          .input('tree_instance_id', sql.Int, Number(treeId))
+          .input('root_node_id', sql.Int, Number(nodeId))
+          .query(`
+            WITH Subtree AS (
+              SELECT id FROM dbo.tree_nodes
+              WHERE tree_instance_id = @tree_instance_id AND id = @root_node_id
+              UNION ALL
+              SELECT child.id FROM dbo.tree_nodes child
+              INNER JOIN Subtree parent ON child.parent_id = parent.id
+              WHERE child.tree_instance_id = @tree_instance_id
+            )
+            SELECT files.blob_name AS blobName
+            FROM dbo.tree_node_detail_files files
+            INNER JOIN Subtree subtree ON subtree.id = files.tree_node_id;
+          `);
+        for (const attachment of attachments.recordset) {
+          if (await deleteNodeAttachmentBlobIfExists(attachment.blobName)) {
+            deletedBlobNames.push(attachment.blobName);
+          }
+        }
+
+        const result = await new sql.Request(transaction)
+          .input('tree_instance_id', sql.Int, Number(treeId))
+          .input('root_node_id', sql.Int, Number(nodeId))
+          .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+          .input('owner_object_id', sql.NVarChar(100), ownerObjectId)
+          .query(`
+            DELETE node
+            FROM dbo.tree_nodes node
+            INNER JOIN dbo.tree_instance ti ON ti.id = node.tree_instance_id
+            INNER JOIN dbo.application_instance ai ON ai.id = ti.application_instance_id
+            WHERE node.id = @root_node_id
+              AND node.tree_instance_id = @tree_instance_id
+              AND node.deleted_at IS NULL
+              AND ti.deleted_at IS NULL
+              AND ti.is_private = 1
+              AND LOWER(LTRIM(RTRIM(ti.display_name))) = N'personal cache'
+              AND ti.owner_object_id = @owner_object_id
+              AND ai.app_identifier = @application_identifier;
+          `);
+        deleted = result.rowsAffected[0] > 0;
+
+        if (!deleted) {
+          throw new Error('Personal cache node was not found for this user.');
+        }
+      }
+
+      await transaction.commit();
+    } catch (error) {
+      if (transaction._aborted !== true) {
+        await transaction.rollback();
+      }
+
+      await Promise.allSettled(deletedBlobNames.map((blobName) => restoreNodeAttachmentBlobIfDeleted(blobName)));
+      throw error;
+    }
+
+    return deleted;
   });
 }

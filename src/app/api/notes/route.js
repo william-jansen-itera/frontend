@@ -314,7 +314,7 @@ export async function DELETE(request) {
     const treeInstanceId = parseInt(treeIdParam, 10);
     const nodeId = parseInt(idParam, 10);
 
-    return NextResponse.json(await deleteTreeNode({ id: nodeId, treeInstanceId }));
+    return NextResponse.json(await deleteTreeNode({ id: nodeId, treeInstanceId, principal }));
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }

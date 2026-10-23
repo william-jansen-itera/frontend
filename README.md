@@ -72,7 +72,7 @@ Blob soft delete for attachments is implemented as a combination of SQL state, B
 
 Current setup:
 
-- The attachment metadata row in `tree_node_detail_files` is never hard-deleted during a normal attachment delete, node delete, or tree delete. Instead, the app sets `tree_node_detail_files.deleted_at` so the attachment can still be matched back to its blob and search document lifecycle.
+- For ordinary trees, the attachment metadata row in `tree_node_detail_files` is not hard-deleted during an attachment delete, node delete, or tree delete. Instead, the app sets `tree_node_detail_files.deleted_at` so the attachment can still be matched back to its blob and search document lifecycle.
 - The application still calls the normal Azure Blob delete API for attachments. When Blob Storage soft delete is enabled on the storage account, that delete moves the blob into the storage account's soft-delete retention state instead of physically erasing it immediately.
 - The blob datasource in `azure-search/tree-blob-datasource.json` uses `NativeBlobSoftDeleteDeletionDetectionPolicy`, so the blob indexer can remove attachment documents from Azure AI Search after the blob has been soft-deleted.
 - This setup assumes blob versioning is not enabled on the storage account. Native blob soft-delete deletion detection does not support versioned blobs.
@@ -81,7 +81,7 @@ Current setup:
 Current runtime behavior:
 
 - Deleting only an attachment sets `tree_node_detail_files.deleted_at` and soft-deletes the blob.
-- Deleting a node subtree sets `tree_nodes.deleted_at`, sets `tree_node_detail_files.deleted_at` for descendant attachments, and soft-deletes descendant blobs.
+- Deleting an ordinary node subtree sets `tree_nodes.deleted_at`, sets `tree_node_detail_files.deleted_at` for descendant attachments, and soft-deletes descendant blobs.
 - Deleting a whole tree sets `tree_instance.deleted_at`, sets `tree_node_detail_files.deleted_at` for the tree's attachments, and soft-deletes those blobs.
 - The Admin page exposes individually deleted attachments separately from deleted nodes and trees, with explicit `Undelete` and `Purge` actions when the parent node and tree are still active.
 - Undelete restores blobs by calling the Blob Storage undelete API, then rewrites the blob's existing metadata so Blob Storage updates `LastModified` and the blob indexer can reprocess the restored attachment. The app also clears matching `tree_node_detail_files.deleted_at` values when the attachment was deleted as part of that same node or tree delete lifecycle.
@@ -136,6 +136,8 @@ Use this checklist when validating attachment soft delete, restore, indexing, an
 8. Run the blob indexer and verify attachment search documents disappear.
 9. Undelete the node from Admin.
 10. Verify the subtree, attachments, and blobs return and matching attachment rows are cleared back to `deleted_at = NULL`.
+
+Personal Cache nodes are an exception: deleting one permanently removes its SQL subtree, notes, and attachment records, so it cannot be undeleted from Admin. The app deletes descendant blobs first; if a blob delete fails, SQL deletion is rolled back and any blobs already deleted in that attempt are restored on a best-effort basis. A blob that is already absent does not block SQL deletion. Blob Storage soft-delete retention applies only after a successful blob delete request; the scheduled SQL purge cannot retry a failed blob delete after the Personal Cache rows are gone.
 
 ### Tree Delete and Undelete
 

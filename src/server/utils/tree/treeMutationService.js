@@ -14,6 +14,7 @@ import { requestTreeSqlIndexerRun } from '@/server/utils/azureSearch';
 import { logException, logTrace } from '@/server/utils/logging';
 import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
 import { sql, withSqlConnection } from '@/server/utils/sql';
+import { permanentlyDeletePersonalCacheNode } from '@/server/utils/agent/personalCacheTreeRepository';
 import { assertConfiguredTree, listActiveTreeSubtreeAttachments, softDeleteTreeSubtree } from '@/server/utils/tree/treePathRepository';
 import {
   applyAttachmentReviewStatus,
@@ -588,7 +589,23 @@ export async function generateNotesForNode(treeInstanceId, nodeId) {
   });
 }
 
-export async function deleteTreeNode({ id, treeInstanceId }) {
+export async function deleteTreeNode({ id, treeInstanceId, principal }) {
+  const tree = await assertTreeAccess(treeInstanceId, {
+    principal,
+    visibility: 'both',
+    requireWriteAccess: true,
+  });
+
+  if (isPersonalCacheTree(tree)) {
+    const deleted = await permanentlyDeletePersonalCacheNode({ treeId: treeInstanceId, principal, nodeId: id });
+
+    if (!deleted) {
+      throw new Error('Node was not found for the selected tree');
+    }
+
+    return withSqlConnection(async () => queryTreeData(treeInstanceId));
+  }
+
   return withSqlConnection(async () => {
     const [attachments, secrets] = await Promise.all([
       listActiveTreeSubtreeAttachments({ treeId: treeInstanceId, rootNodeId: id }),
