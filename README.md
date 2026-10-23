@@ -273,6 +273,18 @@ Security is currently handled in three layers.
 
 The important distinction is that navigation trimming is not security by itself. Even if a link is hidden, the request still blocked by Static Web Apps route rules and/or server-side authorization checks.
 
+### Principal trust boundary
+
+In production, Entra authenticates the user and Azure Static Web Apps manages the signed-in session. At sign-in, `POST /api/get-roles` maps Entra group membership to app roles; the route rules in `staticwebapp.config.json` then require the appropriate role before forwarding protected API requests. Static Web Apps supplies the Base64-encoded `x-ms-client-principal` header. `src/server/utils/auth.js` decodes that header; the app does not independently verify a signature on it. The header is evidence of identity only because the request arrived through the trusted Static Web Apps gateway, not because Base64 makes its contents tamper-proof.
+
+For chat, `src/app/api/chat/route.js` passes the server-read principal to the agent. The email agent uses it to select the signed-in user's private personal-cache tree. `src/server/utils/agent/personalCacheTreeRepository.js` checks that the tree's stored owner ID matches the principal before cache reads and writes. Authentication identifies the caller; these ownership checks authorize access to a particular tree. The owner ID comes from the principal's object ID when present, otherwise its Static Web Apps `userId`, which is app-specific and should not be assumed to be an Entra object ID.
+
+### Private tree authorization
+
+The notes API checks `assertTreeAccess(...)` against the request principal before reading or changing a tree. An ordinary private tree can be shared with assigned editors: its owner and editors can read and write it. Public trees can be read by anyone, but only their owners and editors can write to them. Only the owner can manage tree access. The check uses the tree's stored owner and editor IDs, not a client-supplied claim of ownership. A client can submit a different tree ID or a direct mutation request, but that does not grant permission to modify the tree. Unlike a shared private tree, personal-cache operations are owner-only; being an editor is not sufficient.
+
+This trust model requires that production API requests cannot bypass Static Web Apps. A direct localhost request can supply a fabricated principal header and is not an authentication test. In a signed-in production check against `GET /api/hello`, a caller-supplied fake principal did not replace the identity returned by the API; that check verifies this route and deployment, not every possible ingress path.
+
 For Azure AI Search SQL indexing, soft-delete detection now depends on the string column `isDeletedMarker` in `dbo.vw_tree_search_nodes`, matched by the datasource policy value `true`. The older computed `bit` column `isDeleted` remains useful for querying and admin UI filtering, but it did not reliably trigger document deletion in the SQL indexer.
 
 The application only requests an on-demand SQL indexer run for the confirmed `create-leaf-from-chat` flow. Regular edits such as manual note text changes, rename operations, generated child nodes, tree population, expand/collapse state changes, and other routine updates do not trigger the indexer from application code. The scheduled indexer remains the general backstop. `AZURE_SEARCH_ADMIN_KEY` is also required in the Function App because purge deletes Azure AI Search documents before hard-deleting SQL records.
