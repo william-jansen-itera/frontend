@@ -6,6 +6,7 @@ import {
   replaceTreeLeafAttachment,
 } from '@/server/utils/tree/treePathRepository';
 import { ensurePersonalCacheTree, getAuditMetadata } from '@/server/utils/tree/treeCatalog';
+import { queryTreeNodeDetailRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
 
 export const PERSONAL_CACHE_TREE_OPTIONS = Object.freeze({
@@ -68,6 +69,22 @@ export async function findPersonalCacheLeafPathNode({ treeId, principal, pathSeg
     treeId,
     pathSegments,
   });
+}
+
+export async function readPersonalCacheNotes({ treeId, principal, pathSegments }) {
+  const leafNode = await findPersonalCacheLeafPathNode({ treeId, principal, pathSegments });
+
+  if (!leafNode) {
+    return null;
+  }
+
+  const record = await withSqlConnection(async () => queryTreeNodeDetailRecord(treeId, leafNode.id));
+  return record?.notes || null;
+}
+
+export async function replacePersonalCacheNotes({ treeId, principal, pathSegments, notes, updatedBy = null }) {
+  const leafNode = await ensurePersonalCacheLeafPath({ treeId, principal, pathSegments });
+  await withSqlConnection(async () => upsertTreeNodeDetails({ nodeId: leafNode.id, notes, updatedBy }));
 }
 
 export async function readPersonalCacheTextAttachmentByFileName({ treeId, principal, pathSegments, fileName }) {

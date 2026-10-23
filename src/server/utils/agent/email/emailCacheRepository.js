@@ -3,10 +3,10 @@ import {
   deletePersonalCachePath,
   findPersonalCacheLeafPathNode,
   readPersonalCacheTextAttachmentByFileName,
-  replacePersonalCacheTextAttachment,
+  readPersonalCacheNotes,
+  replacePersonalCacheNotes,
 } from '@/server/utils/agent/personalCacheTreeRepository';
 
-const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
 const RETRIEVAL_CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHED_EMAIL_DOCUMENT_FILE_NAME = 'cached.json';
 const UID_MOVE_ALIAS_FILE_NAME = 'uid-move-aliases.json';
@@ -111,6 +111,15 @@ async function writeUidMoveAliases({ treeId, principal, provider, aliases, updat
 }
 
 async function readJsonAttachment({ treeId, principal, pathSegments, fileName }) {
+  const notesPath = fileName === CACHED_EMAIL_DOCUMENT_FILE_NAME
+    ? pathSegments
+    : [...pathSegments.slice(0, -1), `${pathSegments.at(-1)}-${fileName}`];
+  const notes = await readPersonalCacheNotes({ treeId, principal, pathSegments: notesPath });
+
+  if (notes) {
+    return JSON.parse(notes);
+  }
+
   const document = await readPersonalCacheTextAttachmentByFileName({
     treeId,
     principal,
@@ -126,15 +135,15 @@ async function readJsonAttachment({ treeId, principal, pathSegments, fileName })
 }
 
 async function writeJsonAttachment({ treeId, principal, pathSegments, fileName, value, updatedBy = null }) {
-  const content = JSON.stringify(value, null, 2);
+  const notesPath = fileName === CACHED_EMAIL_DOCUMENT_FILE_NAME
+    ? pathSegments
+    : [...pathSegments.slice(0, -1), `${pathSegments.at(-1)}-${fileName}`];
 
-  await replacePersonalCacheTextAttachment({
+  await replacePersonalCacheNotes({
     treeId,
     principal,
-    pathSegments,
-    fileName,
-    contentType: JSON_CONTENT_TYPE,
-    content,
+    pathSegments: notesPath,
+    notes: JSON.stringify(value, null, 2),
     updatedBy,
   });
 }

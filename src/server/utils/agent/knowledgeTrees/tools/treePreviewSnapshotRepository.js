@@ -1,11 +1,11 @@
 import {
   deletePersonalCachePath,
   readPersonalCacheTextAttachmentByFileName,
-  replacePersonalCacheTextAttachment,
+  readPersonalCacheNotes,
+  replacePersonalCacheNotes,
 } from '@/server/utils/agent/personalCacheTreeRepository';
 import { buildAgentPersonalCacheContext } from '@/server/utils/agent/agentPersonalCache';
 
-const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
 const PREVIEW_SNAPSHOT_TTL_MS = 30 * 60 * 1000;
 const PREVIEW_SNAPSHOT_FILE_NAME = 'preview-snapshots.json';
 
@@ -23,6 +23,12 @@ function pruneSnapshots(previews, now = Date.now()) {
 }
 
 async function readSnapshotDocument({ treeId, principal }) {
+  const notes = await readPersonalCacheNotes({ treeId, principal, pathSegments: buildPreviewSnapshotPath() });
+
+  if (notes) {
+    return JSON.parse(notes);
+  }
+
   const document = await readPersonalCacheTextAttachmentByFileName({
     treeId,
     principal,
@@ -58,13 +64,11 @@ async function writeSnapshotDocument({ treeId, principal, snapshots, updatedBy =
     return;
   }
 
-  await replacePersonalCacheTextAttachment({
+  await replacePersonalCacheNotes({
     treeId,
     principal,
     pathSegments: buildPreviewSnapshotPath(),
-    fileName: PREVIEW_SNAPSHOT_FILE_NAME,
-    contentType: JSON_CONTENT_TYPE,
-    content: JSON.stringify({
+    notes: JSON.stringify({
       previews: prunedSnapshots,
       updatedAt: new Date().toISOString(),
     }, null, 2),
