@@ -178,6 +178,7 @@
       "PublicationHint": "Trees without a saved description are not published to the agent.",
       "Loading": "Loading trees...", "LoadingPage": "Loading...", "Empty": "No trees exist for this application instance yet.",
       "Save": "Save", "Saving": "Saving...", "Populate": "Populate", "Populating": "Populating...", "Open": "Open",
+      "CreatePrivateCopy": "Create private copy", "CopyingPrivate": "Copying...",
       "Delete": "Delete", "Working": "Working...", "DescriptionLabel": "Description", "DescriptionContext": "(used by agent)",
       "UnsavedDraft": "Unsaved draft", "Saved": "Saved", "Published": "Published to agent",
       "DescriptionPlaceholder": "Generate a draft or write a tree description manually", "NoSummary": "No summary saved yet.",
@@ -198,7 +199,7 @@
         "EditorAdded": "{name} can now edit this tree.", "EditorRemoved": "{name} can no longer edit this tree.",
         "DraftGenerated": "Draft description generated. Review or edit it, then click Save to publish.", "DescriptionSaved": "Description was saved.", "DescriptionSavedWithoutPublish": "Description was saved, but the hosted-agent publish step did not complete.",
         "DescriptionCleared": "Description was cleared and removed from the agent.", "DescriptionClearedWithoutPublish": "Description was cleared, but the hosted-agent publish step did not complete.",
-        "DescriptionRestored": "Saved description restored.", "DraftRemoved": "Draft removed. This tree has no saved description yet.", "TreePopulated": "Tree content was appended successfully.",
+        "DescriptionRestored": "Saved description restored.", "DraftRemoved": "Draft removed. This tree has no saved description yet.", "TreePopulated": "Tree content was appended successfully.", "PrivateCopyCreated": "Private tree {id} was created.",
         "DescriptionExcluded": "Description was empty and not published to the agent.", "DescriptionPublished": "Stored description was published to the agent."
       },
       "ApprovalEnabled": "Approval enabled", "Submit": "Submit", "Submitting": "Submitting...", "Unsubmit": "Unsubmit", "Unsubmitting": "Unsubmitting...",

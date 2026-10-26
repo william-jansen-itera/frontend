@@ -12,6 +12,157 @@ export function createSqlRequest(transaction = null) {
   return transaction ? new sql.Request(transaction) : new sql.Request();
 }
 
+export async function copyPublicTreeRecords({ sourceTreeId, owner, copyAttachment, transaction }) {
+  const sourceResult = await createSqlRequest(transaction)
+    .input('source_tree_id', sql.Int, sourceTreeId)
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .query(`
+      SELECT TOP 1 ti.application_instance_id AS applicationInstanceId,
+        ti.display_name AS name, ti.description
+      FROM tree_instance ti
+      INNER JOIN application_instance ai ON ai.id = ti.application_instance_id
+      WHERE ti.id = @source_tree_id AND ai.app_identifier = @application_identifier
+        AND ti.deleted_at IS NULL AND ti.is_private = 0;
+    `);
+  const source = sourceResult.recordset[0];
+
+  if (!source) {
+    throw new Error('Public tree was not found for the active application instance');
+  }
+
+  const nodesResult = await createSqlRequest(transaction)
+    .input('source_tree_id', sql.Int, sourceTreeId)
+    .query(`
+      WITH active_nodes AS (
+        SELECT id, parent_id, text, is_leaf_node, is_expanded, draggable, sort_order,
+          0 AS depth
+        FROM tree_nodes
+        WHERE tree_instance_id = @source_tree_id AND parent_id IS NULL AND deleted_at IS NULL
+        UNION ALL
+        SELECT child.id, child.parent_id, child.text, child.is_leaf_node,
+          child.is_expanded, child.draggable, child.sort_order, parent.depth + 1
+        FROM tree_nodes child
+        INNER JOIN active_nodes parent ON parent.id = child.parent_id
+        WHERE child.tree_instance_id = @source_tree_id AND child.deleted_at IS NULL
+      )
+      SELECT id, parent_id AS parentId, text, is_leaf_node AS isLeafNode,
+        is_expanded AS isExpanded, draggable, sort_order AS sortOrder
+      FROM active_nodes ORDER BY depth, sort_order, id OPTION (MAXRECURSION 32767);
+    `);
+  const detailsResult = await createSqlRequest(transaction)
+    .input('source_tree_id', sql.Int, sourceTreeId)
+    .query(`
+      SELECT details.tree_node_id AS nodeId, details.notes,
+        CAST(details.is_secret AS BIT) AS isSecret
+      FROM tree_node_details details
+      INNER JOIN tree_nodes nodes ON nodes.id = details.tree_node_id
+      WHERE nodes.tree_instance_id = @source_tree_id AND nodes.deleted_at IS NULL;
+    `);
+  const filesResult = await createSqlRequest(transaction)
+    .input('source_tree_id', sql.Int, sourceTreeId)
+    .query(`
+      SELECT files.tree_node_id AS nodeId, files.original_file_name AS fileName,
+        files.blob_name AS blobName
+      FROM tree_node_detail_files files
+      INNER JOIN tree_node_details details ON details.tree_node_id = files.tree_node_id
+      INNER JOIN tree_nodes nodes ON nodes.id = details.tree_node_id
+      WHERE nodes.tree_instance_id = @source_tree_id AND nodes.deleted_at IS NULL
+        AND files.deleted_at IS NULL AND details.is_secret = 0
+      ORDER BY files.id;
+    `);
+
+  const insertedTree = await createSqlRequest(transaction)
+    .input('application_instance_id', sql.Int, source.applicationInstanceId)
+    .input('tree_key', sql.NVarChar(100), owner.treeKey)
+    .input('display_name', sql.NVarChar(200), source.name)
+    .input('description', sql.NVarChar(sql.MAX), source.description)
+    .input('owner_object_id', sql.NVarChar(100), owner.ownerObjectId)
+    .input('owner_user_details', sql.NVarChar(320), owner.ownerUserDetails)
+    .input('owner_display_name', sql.NVarChar(200), owner.ownerDisplayName)
+    .query(`
+      INSERT INTO tree_instance (
+        application_instance_id, tree_key, display_name, description, is_private,
+        owner_object_id, owner_user_details, owner_display_name, is_active
+      ) OUTPUT INSERTED.id AS id
+      VALUES (
+        @application_instance_id, @tree_key, @display_name, @description, 1,
+        @owner_object_id, @owner_user_details, @owner_display_name, 1
+      );
+    `);
+  const newTreeId = insertedTree.recordset[0].id;
+
+  await createSqlRequest(transaction)
+    .input('source_tree_id', sql.Int, sourceTreeId)
+    .input('new_tree_id', sql.Int, newTreeId)
+    .query(`
+      INSERT INTO tree_setting (tree_instance_id, setting_key, setting_value)
+      SELECT @new_tree_id, setting_key, setting_value
+      FROM tree_setting WHERE tree_instance_id = @source_tree_id;
+      IF NOT EXISTS (SELECT 1 FROM tree_setting WHERE tree_instance_id = @new_tree_id AND setting_key = 'nodes.max_depth')
+        INSERT INTO tree_setting (tree_instance_id, setting_key, setting_value)
+        VALUES (@new_tree_id, 'nodes.max_depth', '3');
+    `);
+
+  const newNodeIds = new Map();
+  const sourceDetails = new Map(detailsResult.recordset.map((detail) => [detail.nodeId, detail]));
+
+  for (const node of nodesResult.recordset) {
+    const parentId = node.parentId == null ? null : newNodeIds.get(node.parentId);
+    if (node.parentId != null && !parentId) {
+      throw new Error('Source tree contains a node without an active parent');
+    }
+
+    const insertedNode = await createSqlRequest(transaction)
+      .input('tree_instance_id', sql.Int, newTreeId)
+      .input('parent_id', sql.Int, parentId)
+      .input('text', sql.NVarChar(255), node.text)
+      .input('is_leaf_node', sql.Bit, node.isLeafNode)
+      .input('is_expanded', sql.Bit, node.isExpanded)
+      .input('draggable', sql.Bit, node.draggable)
+      .input('sort_order', sql.Int, node.sortOrder)
+      .query(`
+        DECLARE @createdNodes TABLE (id INT);
+        INSERT INTO tree_nodes (
+          tree_instance_id, parent_id, text, is_leaf_node, is_expanded, draggable,
+          sort_order, review_status
+        ) OUTPUT INSERTED.id INTO @createdNodes (id)
+        VALUES (
+          @tree_instance_id, @parent_id, @text, @is_leaf_node, @is_expanded,
+          @draggable, @sort_order, 'draft'
+        );
+        SELECT id FROM @createdNodes;
+      `);
+    const newNodeId = insertedNode.recordset[0].id;
+    newNodeIds.set(node.id, newNodeId);
+
+    if (node.isLeafNode) {
+      const detail = sourceDetails.get(node.id);
+      await createSqlRequest(transaction)
+        .input('tree_node_id', sql.Int, newNodeId)
+        .input('notes', sql.NVarChar(sql.MAX), detail?.isSecret ? '' : (detail?.notes ?? ''))
+        .query(`
+          UPDATE tree_node_details SET notes = @notes, is_secret = 0
+          WHERE tree_node_id = @tree_node_id;
+          IF @@ROWCOUNT = 0
+            INSERT INTO tree_node_details (tree_node_id, notes, is_secret)
+            VALUES (@tree_node_id, @notes, 0);
+        `);
+    }
+  }
+
+  for (const file of filesResult.recordset) {
+    const newNodeId = newNodeIds.get(file.nodeId);
+    if (!newNodeId) {
+      continue;
+    }
+
+    const attachment = await copyAttachment({ file, newTreeId, newNodeId });
+    await createAttachmentMetadataRecord(newNodeId, attachment, transaction);
+  }
+
+  return newTreeId;
+}
+
 function normalizeReviewStatus(value, fallback = REVIEW_STATUS_DRAFT) {
   const normalizedValue = String(value ?? '').trim().toLowerCase();
 
@@ -622,8 +773,8 @@ export async function assertLeafNode(treeInstanceId, nodeId) {
   return node;
 }
 
-export async function createAttachmentMetadataRecord(treeNodeId, attachment) {
-  const insertResult = await new sql.Request()
+export async function createAttachmentMetadataRecord(treeNodeId, attachment, transaction = null) {
+  const insertResult = await createSqlRequest(transaction)
     .input('tree_node_id', sql.Int, treeNodeId)
     .input('original_file_name', sql.NVarChar(260), attachment.originalFileName)
     .input('content_type', sql.NVarChar(200), attachment.contentType)

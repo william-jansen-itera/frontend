@@ -1,12 +1,14 @@
 import { randomUUID } from 'crypto';
 import {
   deleteNodeAttachmentBlobIfExists,
+  downloadNodeAttachmentBlob,
   restoreNodeAttachmentBlobIfDeleted,
+  uploadNodeAttachment,
 } from '@/server/utils/blobStorage';
 import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
 import { hasClientPrincipalRole, normalizeClientPrincipal } from '@/shared/clientPrincipal';
 import { sql, withSqlConnection, getRequiredApplicationIdentifier } from '@/server/utils/sql';
-import { createTreeNodeRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
+import { copyPublicTreeRecords, createTreeNodeRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 
 const MAX_NON_LEAF_TITLES = 64;
 const MAX_LEAF_TITLE_EXEMPLARS = 48;
@@ -1840,5 +1842,84 @@ export async function removeTreeEditor({ treeId, editorObjectId, principal = nul
       principal,
       enforceAccess: false,
     });
+  });
+}
+
+export async function copyPublicTreeToPrivate({ treeId, principal }) {
+  const owner = getOwnerMetadata(principal);
+  if (!owner.ownerObjectId) {
+    throw createStatusError('An authenticated owner is required to copy a public tree', 401);
+  }
+
+  return withSqlConnection(async () => {
+    let source;
+    try {
+      source = await assertTreeAccess(treeId, { principal, visibility: TREE_VISIBILITY_PUBLIC });
+    } catch (error) {
+      if (error.message === 'Tree was not found for the active application instance') {
+        throw createStatusError(error.message, 404);
+      }
+      throw error;
+    }
+    if (source.isPrivate) {
+      throw createStatusError('Public tree was not found for the active application instance', 404);
+    }
+
+    const transaction = new sql.Transaction();
+    const uploadedBlobNames = [];
+
+    try {
+      await transaction.begin();
+      const createdTreeId = await copyPublicTreeRecords({
+        sourceTreeId: Number(treeId),
+        owner: { ...owner, treeKey: buildTreeKey(source.displayName) },
+        transaction,
+        copyAttachment: async ({ file, newTreeId, newNodeId }) => {
+          const downloaded = await downloadNodeAttachmentBlob(file.blobName);
+          const buffer = downloaded.content;
+          const uploaded = await uploadNodeAttachment({
+            treeId: newTreeId,
+            nodeId: newNodeId,
+            file: {
+              name: file.fileName,
+              type: downloaded.contentType,
+              size: buffer.byteLength,
+              async arrayBuffer() {
+                return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+              },
+            },
+          });
+          uploadedBlobNames.push(uploaded.blobName);
+
+          return {
+            originalFileName: file.fileName,
+            contentType: uploaded.contentType,
+            byteSize: uploaded.byteSize,
+            blobName: uploaded.blobName,
+            blobUrl: uploaded.blobUrl,
+          };
+        },
+      });
+      await transaction.commit();
+      return String(createdTreeId);
+    } catch (error) {
+      const failures = [error];
+      if (transaction._aborted !== true) {
+        try {
+          await transaction.rollback();
+        } catch (rollbackError) {
+          failures.push(rollbackError);
+        }
+      }
+
+      const cleanupResults = await Promise.allSettled(
+        uploadedBlobNames.map((blobName) => deleteNodeAttachmentBlobIfExists(blobName)),
+      );
+      const cleanupErrors = cleanupResults.filter((result) => result.status === 'rejected').map((result) => result.reason);
+      if (failures.length > 1 || cleanupErrors.length > 0) {
+        throw new AggregateError([...failures, ...cleanupErrors], 'Could not fully clean up the failed private tree copy');
+      }
+      throw error;
+    }
   });
 }

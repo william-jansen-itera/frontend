@@ -178,6 +178,7 @@
       "PublicationHint": "Træer uden en gemt beskrivelse offentliggøres ikke til agenten.",
       "Loading": "Indlæser træer...", "LoadingPage": "Indlæser...", "Empty": "Der findes endnu ingen træer for denne applikationsinstans.",
       "Save": "Gem", "Saving": "Gemmer...", "Populate": "Udfyld", "Populating": "Udfylder...", "Open": "Åbn",
+      "CreatePrivateCopy": "Opret privat kopi", "CopyingPrivate": "Kopierer...",
       "Delete": "Slet", "Working": "Arbejder...", "DescriptionLabel": "Beskrivelse", "DescriptionContext": "(bruges af agenten)",
       "UnsavedDraft": "Ikke gemt kladde", "Saved": "Gemt", "Published": "Offentliggjort til agenten",
       "DescriptionPlaceholder": "Generér en kladde, eller skriv selv en træbeskrivelse", "NoSummary": "Ingen beskrivelse gemt endnu.",
@@ -198,7 +199,7 @@
         "EditorAdded": "{name} kan nu redigere dette træ.", "EditorRemoved": "{name} kan ikke længere redigere dette træ.",
         "DraftGenerated": "Beskrivelseskladden er genereret. Gennemgå eller rediger den, og vælg Gem for at publicere.", "DescriptionSaved": "Beskrivelsen er gemt.", "DescriptionSavedWithoutPublish": "Beskrivelsen er gemt, men publiceringen til agenten blev ikke fuldført.",
         "DescriptionCleared": "Beskrivelsen er ryddet og fjernet fra agenten.", "DescriptionClearedWithoutPublish": "Beskrivelsen er ryddet, men publiceringen til agenten blev ikke fuldført.",
-        "DescriptionRestored": "Den gemte beskrivelse er gendannet.", "DraftRemoved": "Kladden er fjernet. Træet har endnu ingen gemt beskrivelse.", "TreePopulated": "Træets indhold er tilføjet.",
+        "DescriptionRestored": "Den gemte beskrivelse er gendannet.", "DraftRemoved": "Kladden er fjernet. Træet har endnu ingen gemt beskrivelse.", "TreePopulated": "Træets indhold er tilføjet.", "PrivateCopyCreated": "Privat træ {id} er oprettet.",
         "DescriptionExcluded": "Beskrivelsen var tom og blev ikke publiceret til agenten.", "DescriptionPublished": "Den gemte beskrivelse er publiceret til agenten."
       },
       "ApprovalEnabled": "Godkendelse aktiveret", "Submit": "Indsend", "Submitting": "Indsender...", "Unsubmit": "Træk tilbage", "Unsubmitting": "Trækker tilbage...",

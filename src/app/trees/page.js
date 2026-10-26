@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useAuth } from "../useAuth";
 import styles from "./page.module.css";
 import {
@@ -343,6 +343,7 @@ function TreesPageContent() {
   const [selectedEditorTargets, setSelectedEditorTargets] = useState({});
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
+  const copiedTreeMessage = useRef(null);
 
   const handleVisibilityFilterChange = (event) => {
     const nextVisibility = setPersistedVisibility(event.target.value);
@@ -854,7 +855,8 @@ function TreesPageContent() {
 
         applyTreeList(Array.isArray(data) ? data : []);
         setErrorMessage("");
-        setStatusMessage("");
+        setStatusMessage(copiedTreeMessage.current ?? "");
+        copiedTreeMessage.current = null;
       } catch (error) {
         if (isMounted) {
           setErrorMessage(getErrorMessage(error, "Trees could not be loaded"));
@@ -912,6 +914,35 @@ function TreesPageContent() {
       setErrorMessage(getErrorMessage(error, "Tree could not be created"));
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleCopyPrivateTree = async (tree) => {
+    const treeId = String(tree.id);
+    setTreePendingState(treeId, "copy", true);
+    setErrorMessage("");
+    setStatusMessage("");
+
+    try {
+      const response = await fetch("/api/trees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "copy-private", treeId }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data?.createdTree?.id) {
+        throw new Error(data?.error || "Tree could not be copied");
+      }
+
+      copiedTreeMessage.current = t("Feedback.PrivateCopyCreated", { id: data.createdTree.id });
+      setPersistedVisibility("private");
+      const nextSearchParams = new URLSearchParams(searchParams.toString());
+      setVisibilitySearchParam(nextSearchParams, "private", PUBLIC_PRIVATE_VISIBILITY_VALUES);
+      router.replace(`${pathname}?${nextSearchParams.toString()}`, { scroll: false });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Tree could not be copied"));
+    } finally {
+      setTreePendingState(treeId, "copy", false);
     }
   };
 
@@ -1539,6 +1570,16 @@ function TreesPageContent() {
                             </div>
                           </div>
                           <div className={styles.treeMetaActions}>
+                            {!tree.isPrivate && user ? (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyPrivateTree(tree)}
+                                disabled={isPending}
+                                className="appCompactActionButton appCompactActionButtonNeutral"
+                              >
+                                {t(rowPendingState.copy ? "CopyingPrivate" : "CreatePrivateCopy")}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               onClick={() => handlePopulateTree(tree)}

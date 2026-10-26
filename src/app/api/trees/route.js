@@ -5,6 +5,7 @@ import { parseClientPrincipal } from '@/server/utils/auth';
 import { getEntraUserByObjectId, searchEntraUsers } from '@/server/utils/swaRoleMapping';
 import {
   addTreeEditor,
+  copyPublicTreeToPrivate,
   createTree,
   deleteTree,
   getTreeList,
@@ -66,6 +67,20 @@ export async function POST(request) {
     const payload = await request.json();
     const principal = parseClientPrincipal(request);
     const action = String(payload?.action ?? '').trim();
+
+    if (action === 'copy-private') {
+      const treeId = parseTreeId(payload?.treeId);
+      if (!treeId || treeId < 1) {
+        return NextResponse.json({ error: 'Invalid request, treeId is required' }, { status: 400 });
+      }
+
+      const createdTreeId = await copyPublicTreeToPrivate({ treeId, principal });
+      const trees = await getTreeList({ principal, visibility: 'private', enforceAccess: true });
+      return NextResponse.json({
+        createdTree: trees.find((tree) => tree.id === createdTreeId),
+        trees,
+      });
+    }
 
     if (action === 'search-transfer-targets') {
       const query = String(payload?.query ?? '').trim();
@@ -247,7 +262,7 @@ export async function POST(request) {
       trees: await getTreeList({ principal, visibility: getPayloadVisibility(payload), enforceAccess: true }),
     });
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: getErrorStatus(err) });
   }
 }
 
