@@ -69,12 +69,20 @@
 
 .treeConnector {
   position: absolute;
-  background: #80756b;
+  background: #9e9387;
   pointer-events: none;
+  background: linear-gradient(
+      90deg,
+      #7c736a 0%,
+      #91877c 25%,
+      #7c736a 50%,
+      #6c645c 75%,
+      #7c736a 100%
+    );
 }
 
 .treeConnectorHorizontal {
-  border-radius: 0 2px 2px 2px;
+  border-radius: 0 2px 2px 0;
   transform: translateY(-50%);
 }
 
@@ -84,10 +92,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   position: relative;
-  z-index: 3;
-  padding: 0 4px;
+  z-index: 1001;
+  padding: 0 0px;
   border-radius: 4px;
-  color: #3f3534;
+  color: #282522;
   font-family: inherit;
   font-size: inherit;
   font-weight: 400;
@@ -97,6 +105,7 @@
   .treeRow:hover {
     background: rgba(219, 234, 254, 0.72);
   }
+
 }
 
 .treeRowSelected {
@@ -105,7 +114,7 @@
 }
 
 .treeLeafLabel {
-  color: #266247;
+  color: #282522;
 }
 
 .treeRowDropTarget {
@@ -115,11 +124,12 @@
 
 .treeToggle,
 .treeMarker {
-  margin-right: 6px;
+  margin-right: 0px;
   font-size: 1.1em;
   flex-shrink: 0;
   position: relative;
-  z-index: 3;
+  top: 1px;
+  z-index: 1001;
 }
 
 .treeToggle {
@@ -140,7 +150,7 @@
   font-weight: 600;
   white-space: nowrap;
   position: relative;
-  z-index: 3;
+  z-index: 1001;
 }
 
 .detailsContent {

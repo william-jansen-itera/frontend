@@ -2,11 +2,12 @@ import styles from "./page.module.css";
 import { useTranslations } from "next-intl";
 import { dataNodeHasChildren } from "./treeUtils";
 
-export const TREE_INDENT = 28;
+export const TREE_INDENT = 24;
 export const TREE_ROW_HEIGHT = 24;
 const LINE_X = 8;
-const CONTENT_OFFSET = 14;
-const ROOT_OFFSET = 16;
+const CONTENT_OFFSET = 10;
+const ROOT_OFFSET = 24;
+const ROOT_CONNECTOR_LAYER = 1000;
 
 export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
   const t = useTranslations("Pages.Notes.Tree");
@@ -14,12 +15,6 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
   const level = node.level;
   const isLeaf = Boolean(node.data.isLeafNode);
   const canToggle = !isLeaf && dataNodeHasChildren(node.data);
-  let root = node;
-
-  while (root.parent && root.level > 0) {
-    root = root.parent;
-  }
-  const isLastRoot = root.nextSibling == null;
   const isRootRow = level === 0;
 
   return (
@@ -38,19 +33,18 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
         className={styles.treeConnector}
         style={{
           left: 4,
-          top: isRootRow ? TREE_ROW_HEIGHT / 2 : -TREE_ROW_HEIGHT / 2,
-          height: isLastRoot
-            ? (isRootRow ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT * 2.5)
-            : (isRootRow ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT * 2),
-          width: 5,
-          borderRadius: "2.5px 2.5px 0 0",
+          top: TREE_ROW_HEIGHT / 2 - 3,
+          height: TREE_ROW_HEIGHT + 5,
+          width: 16,
+          borderRadius: isRootRow && node.childIndex === 0 ? "5px 0 0 0" : 0,
+          zIndex: ROOT_CONNECTOR_LAYER,
         }}
       />
       {level === 0 && (
         <span
           aria-hidden="true"
           className={`${styles.treeConnector} ${styles.treeConnectorHorizontal}`}
-          style={{ left: 4, top: TREE_ROW_HEIGHT / 2 + 1, width: 24, height: 4, borderTopLeftRadius: node.childIndex === 0 ? 2 : 0 }}
+          style={{ left: 4, top: TREE_ROW_HEIGHT / 2 + 1, width: 34, height: 8, borderTopLeftRadius: node.childIndex === 0 ? 5 : 0, zIndex: ROOT_CONNECTOR_LAYER - 1 }}
         />
       )}
       {Array.from({ length: level }, (_, depth) => {
@@ -78,11 +72,11 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
             className={styles.treeConnector}
             style={{
               left: ROOT_OFFSET + depth * TREE_INDENT + LINE_X,
-              top: -TREE_ROW_HEIGHT / 2,
-              height: useExact ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT * 2,
-              width: Math.max(1, 4 - depth * 2),
-              borderRadius: "2px 2px 0 0",
-              zIndex: 1,
+              top: (-TREE_ROW_HEIGHT / 2) - (level == 1 ? 2 : 0) - (level == 2 ? 1 : 0),
+              height: (useExact ? TREE_ROW_HEIGHT : TREE_ROW_HEIGHT * 2) + (level == 1 ? 4 : 0) + (level == 2 ? 2 : 0),
+              width: Math.max(1, 6 - depth * 2),
+              borderRadius: "2px 2px 0px 2px",
+              zIndex: ROOT_CONNECTOR_LAYER - 2 * depth - 2,
             }}
           />
         );
@@ -94,8 +88,9 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
           style={{
             left: ROOT_OFFSET + (level - 1) * TREE_INDENT + LINE_X,
             top: TREE_ROW_HEIGHT / 2,
-            width: TREE_INDENT - LINE_X + (level >= 2 ? 9 : 10),
-            height: Math.max(1, 3 - (level - 1) * 2),
+            width: TREE_INDENT - LINE_X + (level >= 2 ? 10 : 12),
+            height: Math.max(1, 6 - (level - 1) * 2),
+            zIndex: ROOT_CONNECTOR_LAYER - 2 * level - 1,
           }}
         />
       )}
@@ -103,7 +98,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
         <button
           type="button"
           className={styles.treeToggle}
-          style={{ marginLeft: level === 0 ? ROOT_OFFSET + 16 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET }}
+          style={{ marginLeft: level === 0 ? ROOT_OFFSET + 12 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET - (level >= 2 ? 2 : 0) }}
           aria-label={t(node.isOpen ? "Collapse" : "Expand", { name: node.data.name })}
           aria-expanded={node.isOpen}
           onClick={(event) => {
@@ -116,7 +111,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
       ) : (
         <span
           className={styles.treeMarker}
-          style={{ marginLeft: level === 0 ? ROOT_OFFSET + 16 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET - (isLeaf ? 10 : 0), visibility: isLeaf ? undefined : "hidden" }}
+          style={{ marginLeft: level === 0 ? ROOT_OFFSET + 12 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET - (isLeaf ? 2 : 0), visibility: isLeaf ? undefined : "hidden" }}
           aria-hidden="true"
         >
           {isLeaf ? "\uD83C\uDF43" : "\u25B8"}

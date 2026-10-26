@@ -1528,23 +1528,6 @@ function TreesPageContent() {
                         </div>
                         <div className={styles.treeMeta}>
                           <div className={styles.treeMetaEditor}>
-                            <div className={styles.treeVisibilityRow}>
-                              <select
-                                value={nextVisibility}
-                                onChange={(event) => {
-                                  const nextValue = event.target.value;
-                                  setDraftVisibility((currentDrafts) => ({
-                                    ...currentDrafts,
-                                    [treeId]: nextValue,
-                                  }));
-                                }}
-                                disabled={isPending || !canWriteTree}
-                                className={`appSelectControl ${styles.treeVisibilitySelect}`}
-                              >
-                                <option value="public">{t("Visibility.Public")}</option>
-                                <option value="private">{t("Visibility.Private")}</option>
-                              </select>
-                            </div>
                             <div className={styles.treeTitleRow}>
                               <input
                                 type="text"
@@ -1567,6 +1550,23 @@ function TreesPageContent() {
                               >
                                 {t(rowPendingState.meta ? "Saving" : "Save")}
                               </button>
+                            </div>
+                            <div className={styles.treeVisibilityRow}>
+                              <select
+                                value={nextVisibility}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value;
+                                  setDraftVisibility((currentDrafts) => ({
+                                    ...currentDrafts,
+                                    [treeId]: nextValue,
+                                  }));
+                                }}
+                                disabled={isPending || !canWriteTree}
+                                className={`appSelectControl ${styles.treeVisibilitySelect}`}
+                              >
+                                <option value="public">{t("Visibility.Public")}</option>
+                                <option value="private">{t("Visibility.Private")}</option>
+                              </select>
                             </div>
                           </div>
                           <div className={styles.treeMetaActions}>
