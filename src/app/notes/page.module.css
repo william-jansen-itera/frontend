@@ -69,15 +69,15 @@
 
 .treeConnector {
   position: absolute;
-  background: #9e9387;
+  background: #cbbfb3;
   pointer-events: none;
   background: linear-gradient(
       90deg,
-      #7c736a 0%,
-      #91877c 25%,
-      #7c736a 50%,
-      #6c645c 75%,
-      #7c736a 100%
+      #b0a79e 0%,
+      #c3b9ae 25%,
+      #b0a79e 50%,
+      #a0978f 75%,
+      #b0a79e 100%
     );
 }
 
