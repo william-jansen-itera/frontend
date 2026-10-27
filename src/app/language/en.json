@@ -62,9 +62,11 @@
       "Analytics": {
         "Title": "Analytics", "Heading": "Page visit aggregates", "Intro": "Live aggregates from the append-only visit event log.",
         "Refresh": "Refresh", "Refreshing": "Refreshing...", "LastAggregated": "Last aggregated: {date}", "Loading": "Loading analytics...",
-        "ByDevice": "By page, device class, and browser family", "ByPage": "By page", "BySource": "By page and source",
-        "Path": "page path", "Device": "device class", "Browser": "browser family", "Visits": "visits", "Source": "source",
-        "Empty": "No visit events recorded yet.", "EmptySource": "No source-tagged visit events recorded yet."
+        "ByDevice": "By page, device class, and browser family", "ByPage": "By page", "BySource": "By page and source", "ByIp": "Top 20 IP addresses", "BySubnetUserAgent": "Top 20 by user agent", "ByIpBrowserFamily": "Top 20 by browser family and device type", "ByBotIpBrowserFamily": "Top 20 bots and automated browsers by IP, browser family, and device type",
+        "Path": "page path", "Device": "device class", "DeviceType": "device type", "Browser": "browser family", "Visits": "visits", "Source": "source", "SourceDetail": "source detail", "IpAddress": "IP address", "UserAgent": "user agent", "DetectedBy": "detected by",
+        "DetectionUserAgent": "Bot user agent", "DetectionWebDriver": "WebDriver", "DetectionBoth": "Bot user agent + WebDriver", "DetectionUnspecified": "Not specified",
+        "SourceTagged": "Tagged link", "SourceExternalReferrer": "External referrer", "SourceSameSiteReferrer": "Same-site referrer", "SourceNoReferrer": "No referrer (typed, bookmark, or hidden)", "SourceInvalidReferrer": "Invalid referrer", "SourceReasonUnavailable": "Reason unavailable (older visit)",
+        "Empty": "No visit events recorded yet.", "EmptySource": "No source-tagged visit events recorded yet.", "EmptySubnetUserAgent": "No visits recorded yet.", "EmptyBots": "No identified bot or automated-browser visits recorded yet.", "UserAgentNotRecorded": "Not recorded (older visit)", "UserAgentHeaderMissing": "Header missing or empty"
       },
       "ContactRequests": {
         "Title": "Contact requests", "Heading": "Recent intake", "Intro": "Requests received in the last 30 days through the public contact form.",

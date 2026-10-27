@@ -7,13 +7,14 @@ export default function PageVisitTracker({ pagePath }) {
     const abortController = new AbortController();
     const pageUrl = window.location.href;
     const documentReferrer = document.referrer;
+    const isWebDriver = navigator.webdriver === true;
 
     fetch('/api/analytics/visits', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ pagePath, pageUrl, documentReferrer }),
+      body: JSON.stringify({ pagePath, pageUrl, documentReferrer, isWebDriver }),
       cache: 'no-store',
       keepalive: true,
       signal: abortController.signal,

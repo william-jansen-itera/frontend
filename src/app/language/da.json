@@ -62,9 +62,11 @@
       "Analytics": {
         "Title": "Analyse", "Heading": "Samlede sidebesøg", "Intro": "Aktuelle optællinger fra loggen over sidebesøg.",
         "Refresh": "Opdater", "Refreshing": "Opdaterer...", "LastAggregated": "Sidst samlet: {date}", "Loading": "Indlæser analyser...",
-        "ByDevice": "Efter side, enhedstype og browserfamilie", "ByPage": "Efter side", "BySource": "Efter side og kilde",
-        "Path": "sidesti", "Device": "enhedstype", "Browser": "browserfamilie", "Visits": "besøg", "Source": "kilde",
-        "Empty": "Ingen sidebesøg registreret endnu.", "EmptySource": "Ingen sidebesøg med kilde registreret endnu."
+        "ByDevice": "Efter side, enhedstype og browserfamilie", "ByPage": "Efter side", "BySource": "Efter side og kilde", "ByIp": "Top 20 IP-adresser", "BySubnetUserAgent": "Top 20 efter user agent", "ByIpBrowserFamily": "Top 20 efter browserfamilie og enhedstype", "ByBotIpBrowserFamily": "Top 20 bots og automatiserede browsere efter IP, browserfamilie og enhedstype",
+        "Path": "sidesti", "Device": "enhedstype", "DeviceType": "enhedstype", "Browser": "browserfamilie", "Visits": "besøg", "Source": "kilde", "SourceDetail": "kildedetalje", "IpAddress": "IP-adresse", "UserAgent": "user agent", "DetectedBy": "identificeret via",
+        "DetectionUserAgent": "Bot-user agent", "DetectionWebDriver": "WebDriver", "DetectionBoth": "Bot-user agent + WebDriver", "DetectionUnspecified": "Ikke angivet",
+        "SourceTagged": "Mærket link", "SourceExternalReferrer": "Ekstern henviser", "SourceSameSiteReferrer": "Henviser fra samme websted", "SourceNoReferrer": "Ingen henviser (indtastet, bogmærke eller skjult)", "SourceInvalidReferrer": "Ugyldig henviser", "SourceReasonUnavailable": "Årsag ikke tilgængelig (ældre besøg)",
+        "Empty": "Ingen sidebesøg registreret endnu.", "EmptySource": "Ingen sidebesøg med kilde registreret endnu.", "EmptySubnetUserAgent": "Ingen besøg registreret endnu.", "EmptyBots": "Ingen besøg fra bots eller automatiserede browsere registreret endnu.", "UserAgentNotRecorded": "Ikke registreret (ældre besøg)", "UserAgentHeaderMissing": "Header mangler eller er tom"
       },
       "ContactRequests": {
         "Title": "Kontaktforespørgsler", "Heading": "Seneste henvendelser", "Intro": "Forespørgsler modtaget via den offentlige kontaktformular inden for de seneste 30 dage.",

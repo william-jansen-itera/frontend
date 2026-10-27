@@ -1,3 +1,4 @@
+import { isbot } from 'isbot';
 import { parseClientPrincipal } from '@/server/utils/auth';
 import { getRequiredApplicationIdentifier } from '@/server/utils/applicationIdentifier';
 import { classifyBrowserFamily, classifyDeviceClass } from '@/server/utils/userAgent';
@@ -5,6 +6,7 @@ import { isLocalDevelopmentHost } from '@/shared/clientPrincipal';
 import { listPageVisitEvents, writePageVisitEvent } from '@/server/utils/pageVisitAnalyticsRepository';
 
 const ALLOWED_PAGE_PATHS = new Set(['/', '/about', '/contact']);
+const IP_ADDRESS_COLLATOR = new Intl.Collator('en', { numeric: true });
 const IGNORED_ANALYTICS_IPS = new Set(
   String(process.env.ANALYTICS_IGNORED_IPS ?? '')
     .split(',')
@@ -64,7 +66,7 @@ function getParsedUrl(value) {
   }
 }
 
-function getVisitSource(pageUrl, documentReferrer) {
+function getVisitSourceDetails(pageUrl, documentReferrer) {
   const parsedPageUrl = getParsedUrl(pageUrl);
   const parsedDocumentReferrer = getParsedUrl(documentReferrer);
 
@@ -77,7 +79,7 @@ function getVisitSource(pageUrl, documentReferrer) {
     ).trim().toLowerCase();
 
     if (source) {
-      return source;
+      return { source, sourceKind: 'tagged' };
     }
   }
 
@@ -85,12 +87,18 @@ function getVisitSource(pageUrl, documentReferrer) {
     const referrerHost = parsedDocumentReferrer.host.toLowerCase();
     const pageHost = parsedPageUrl?.host?.toLowerCase() ?? null;
 
-    if (referrerHost && referrerHost !== pageHost) {
-      return referrerHost;
+    if (!referrerHost) {
+      return { source: 'direct', sourceKind: 'invalidReferrer' };
     }
+
+    if (referrerHost !== pageHost) {
+      return { source: referrerHost, sourceKind: 'externalReferrer' };
+    }
+
+    return { source: 'direct', sourceKind: 'sameSiteReferrer' };
   }
 
-  return 'direct';
+  return { source: 'direct', sourceKind: String(documentReferrer ?? '').trim() ? 'invalidReferrer' : 'noReferrer' };
 }
 
 function normalizeIpAddress(value) {
@@ -190,9 +198,11 @@ export function getPageVisitCounterDimensions(request, payload) {
     isAuthenticated: parseClientPrincipal(request) ? 1 : 0,
     clientIp,
     referrerHost: getReferrerHost(payload?.documentReferrer),
-    source: getVisitSource(payload?.pageUrl, payload?.documentReferrer),
+    ...getVisitSourceDetails(payload?.pageUrl, payload?.documentReferrer),
     deviceClass: classifyDeviceClass(request.headers.get('user-agent')),
     browserFamily: classifyBrowserFamily(request.headers.get('user-agent')),
+    userAgent: String(request.headers.get('user-agent') ?? '').trim().slice(0, 512),
+    isWebDriver: payload?.isWebDriver === true,
   };
 }
 
@@ -239,6 +249,10 @@ export async function getPageVisitAnalyticsSummary() {
   const byPageDeviceBrowser = new Map();
   const byPage = new Map();
   const byPageSource = new Map();
+  const byIp = new Map();
+  const bySubnetUserAgent = new Map();
+  const byIpBrowserFamily = new Map();
+  const byBotIpBrowserFamily = new Map();
 
   for (const eventEntry of events) {
     if (!eventEntry) {
@@ -251,12 +265,34 @@ export async function getPageVisitAnalyticsSummary() {
       continue;
     }
 
+    const knownBot = isbot(String(eventEntry.userAgent ?? ''));
+    const isWebDriver = eventEntry.isWebDriver === true;
+
+    if (knownBot || isWebDriver) {
+      const clientIp = String(eventEntry.clientIp ?? '').trim() || 'unknown';
+      const browserFamily = String(eventEntry.browserFamily ?? '').trim() || 'unknown';
+      const deviceClass = String(eventEntry.deviceClass ?? '').trim() || 'unknown';
+      const detection = knownBot && isWebDriver ? 'both' : knownBot ? 'userAgent' : 'webDriver';
+      const botKey = `${clientIp}\u0000${browserFamily}\u0000${deviceClass}\u0000${detection}`;
+
+      byBotIpBrowserFamily.set(botKey, {
+        clientIp,
+        browserFamily,
+        deviceClass,
+        detection,
+        visitCount: Number(byBotIpBrowserFamily.get(botKey)?.visitCount ?? 0) + 1,
+      });
+      continue;
+    }
+
     const deviceClass = String(eventEntry.deviceClass ?? '').trim() || 'unknown';
     const browserFamily = String(eventEntry.browserFamily ?? '').trim() || 'unknown';
     const source = String(eventEntry.source ?? '').trim() || 'direct';
+    const sourceKind = String(eventEntry.sourceKind ?? '').trim() || 'notRecorded';
+    const clientIp = String(eventEntry.clientIp ?? '').trim() || 'unknown';
     const detailedKey = `${pagePath}\u0000${deviceClass}\u0000${browserFamily}`;
     const pageOnlyKey = pagePath;
-    const pageSourceKey = `${pagePath}\u0000${source}`;
+    const pageSourceKey = `${pagePath}\u0000${source}\u0000${sourceKind}`;
 
     byPageDeviceBrowser.set(detailedKey, {
       pagePath,
@@ -273,14 +309,73 @@ export async function getPageVisitAnalyticsSummary() {
     byPageSource.set(pageSourceKey, {
       pagePath,
       source,
+      sourceKind,
       visitCount: Number(byPageSource.get(pageSourceKey)?.visitCount ?? 0) + 1,
+    });
+
+    byIp.set(clientIp, {
+      clientIp,
+      visitCount: Number(byIp.get(clientIp)?.visitCount ?? 0) + 1,
+    });
+
+    const ipBrowserKey = `${clientIp}\u0000${browserFamily}\u0000${deviceClass}`;
+
+    byIpBrowserFamily.set(ipBrowserKey, {
+      clientIp,
+      browserFamily,
+      deviceClass,
+      visitCount: Number(byIpBrowserFamily.get(ipBrowserKey)?.visitCount ?? 0) + 1,
+    });
+
+    const userAgent = String(eventEntry.userAgent ?? '').trim();
+    const userAgentStatus = !Object.hasOwn(eventEntry, 'userAgent') ? 'notRecorded'
+      : !userAgent || userAgent === 'unknown' ? 'missing' : 'present';
+    const key = `${clientIp}\u0000${userAgentStatus}\u0000${userAgentStatus === 'present' ? userAgent : ''}`;
+
+    bySubnetUserAgent.set(key, {
+      clientIp,
+      userAgent: userAgentStatus === 'present' ? userAgent : '',
+      userAgentStatus,
+      visitCount: Number(bySubnetUserAgent.get(key)?.visitCount ?? 0) + 1,
     });
   }
 
   return {
     byPageDeviceBrowser: sortGroupedRows(Array.from(byPageDeviceBrowser.values()), ['pagePath', 'deviceClass', 'browserFamily']),
     byPage: sortGroupedRows(Array.from(byPage.values()), ['pagePath']),
-    byPageSource: sortGroupedRows(Array.from(byPageSource.values()), ['pagePath', 'source']),
+    byPageSource: sortGroupedRows(Array.from(byPageSource.values()), ['pagePath', 'source', 'sourceKind']),
+    byIp: Array.from(byIp.values())
+      .sort((left, right) => right.visitCount - left.visitCount || left.clientIp.localeCompare(right.clientIp))
+      .slice(0, 20)
+      .sort((left, right) => IP_ADDRESS_COLLATOR.compare(left.clientIp, right.clientIp)),
+    bySubnetUserAgent: Array.from(bySubnetUserAgent.values())
+      .sort((left, right) => right.visitCount - left.visitCount
+        || left.clientIp.localeCompare(right.clientIp)
+        || left.userAgent.localeCompare(right.userAgent))
+      .slice(0, 20)
+      .sort((left, right) => IP_ADDRESS_COLLATOR.compare(left.clientIp, right.clientIp)
+        || left.userAgentStatus.localeCompare(right.userAgentStatus)
+        || left.userAgent.localeCompare(right.userAgent)),
+    byIpBrowserFamily: Array.from(byIpBrowserFamily.values())
+      .sort((left, right) => right.visitCount - left.visitCount
+        || left.clientIp.localeCompare(right.clientIp)
+        || left.browserFamily.localeCompare(right.browserFamily)
+        || left.deviceClass.localeCompare(right.deviceClass))
+      .slice(0, 20)
+      .sort((left, right) => IP_ADDRESS_COLLATOR.compare(left.clientIp, right.clientIp)
+        || left.browserFamily.localeCompare(right.browserFamily)
+        || left.deviceClass.localeCompare(right.deviceClass)),
+    byBotIpBrowserFamily: Array.from(byBotIpBrowserFamily.values())
+      .sort((left, right) => right.visitCount - left.visitCount
+        || left.clientIp.localeCompare(right.clientIp)
+        || left.browserFamily.localeCompare(right.browserFamily)
+        || left.deviceClass.localeCompare(right.deviceClass)
+        || left.detection.localeCompare(right.detection))
+      .slice(0, 20)
+      .sort((left, right) => IP_ADDRESS_COLLATOR.compare(left.clientIp, right.clientIp)
+        || left.browserFamily.localeCompare(right.browserFamily)
+        || left.deviceClass.localeCompare(right.deviceClass)
+        || left.detection.localeCompare(right.detection)),
     generatedAt: new Date().toISOString(),
   };
 }

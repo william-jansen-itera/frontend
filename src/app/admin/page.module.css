@@ -138,6 +138,10 @@
   color: #475569;
 }
 
+.analyticsUserAgentCell {
+  overflow-wrap: anywhere;
+}
+
 .indexingTableWrapper {
   margin-top: 1rem;
   overflow-x: auto;

@@ -62,6 +62,11 @@ Optional analytics settings:
 
 - `ANALYTICS_IGNORED_IPS` is a comma-separated list of client IP addresses that should be ignored by page-visit logging, for example `203.0.113.10,198.51.100.7`
 
+Search engine metadata:
+
+- Set `SITE_URL` to the canonical production origin (for example `https://example.com`) so `robots.txt` and `sitemap.xml` always use that hostname. If unset, they use the incoming request's host.
+- The sitemap lists only `/`, `/about`, and `/contact`. Protected routes rely on authentication, not `robots.txt`, for access control.
+
 `APPLICATION_DEBUG` accepts common boolean values such as `true`, `false`, `1`, `0`, `yes`, `no`, `on`, and `off`. If the setting is missing or invalid, the default is `false`.
 
 For deployed environments, set the same variables in the Azure Static Web App under `Configuration` -> `Application settings` so runtime behavior matches local development.

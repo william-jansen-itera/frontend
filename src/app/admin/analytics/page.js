@@ -5,9 +5,23 @@ import { useTranslations } from "next-intl";
 import styles from "../page.module.css";
 import { formatTimestamp, formatVisitCount, getErrorMessage } from "../adminShared";
 
+const SOURCE_KIND_LABELS = {
+  tagged: "SourceTagged",
+  externalReferrer: "SourceExternalReferrer",
+  sameSiteReferrer: "SourceSameSiteReferrer",
+  noReferrer: "SourceNoReferrer",
+  invalidReferrer: "SourceInvalidReferrer",
+};
+
+const DETECTION_LABELS = {
+  userAgent: "DetectionUserAgent",
+  webDriver: "DetectionWebDriver",
+  both: "DetectionBoth",
+};
+
 export default function AdminAnalyticsPage() {
   const t = useTranslations("Pages.Admin.Analytics");
-  const [analyticsSummary, setAnalyticsSummary] = useState({ byPageDeviceBrowser: [], byPage: [], byPageSource: [], generatedAt: null });
+  const [analyticsSummary, setAnalyticsSummary] = useState({ byPageDeviceBrowser: [], byPage: [], byPageSource: [], byIp: [], bySubnetUserAgent: [], byIpBrowserFamily: [], byBotIpBrowserFamily: [], generatedAt: null });
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -28,11 +42,15 @@ export default function AdminAnalyticsPage() {
         byPageDeviceBrowser: Array.isArray(data?.byPageDeviceBrowser) ? data.byPageDeviceBrowser : [],
         byPage: Array.isArray(data?.byPage) ? data.byPage : [],
         byPageSource: Array.isArray(data?.byPageSource) ? data.byPageSource : [],
+        byIp: Array.isArray(data?.byIp) ? data.byIp : [],
+        bySubnetUserAgent: Array.isArray(data?.bySubnetUserAgent) ? data.bySubnetUserAgent : [],
+        byIpBrowserFamily: Array.isArray(data?.byIpBrowserFamily) ? data.byIpBrowserFamily : [],
+        byBotIpBrowserFamily: Array.isArray(data?.byBotIpBrowserFamily) ? data.byBotIpBrowserFamily : [],
         generatedAt: data?.generatedAt || null,
       });
       setErrorMessage("");
     } catch (error) {
-      setAnalyticsSummary({ byPageDeviceBrowser: [], byPage: [], byPageSource: [], generatedAt: null });
+      setAnalyticsSummary({ byPageDeviceBrowser: [], byPage: [], byPageSource: [], byIp: [], bySubnetUserAgent: [], byIpBrowserFamily: [], byBotIpBrowserFamily: [], generatedAt: null });
       setErrorMessage(getErrorMessage(error, "Analytics could not be loaded"));
     } finally {
       setIsLoading(false);
@@ -142,18 +160,136 @@ export default function AdminAnalyticsPage() {
                         <tr>
                           <th scope="col" className={styles.indexingColumnHeader}>{t("Path")}</th>
                           <th scope="col" className={styles.indexingColumnHeader}>{t("Source")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("SourceDetail")}</th>
                           <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {analyticsSummary.byPageSource.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className={styles.analyticsEmptyCell}>{t("EmptySource")}</td>
+                            <td colSpan={4} className={styles.analyticsEmptyCell}>{t("EmptySource")}</td>
                           </tr>
                         ) : analyticsSummary.byPageSource.map((row) => (
-                          <tr key={`${row.pagePath}:${row.source}`}>
+                          <tr key={`${row.pagePath}:${row.source}:${row.sourceKind}`}>
                             <td>{row.pagePath}</td>
                             <td>{row.source}</td>
+                            <td>{t(SOURCE_KIND_LABELS[row.sourceKind] ?? "SourceReasonUnavailable")}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>{t("ByIp")}</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("IpAddress")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byIp.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className={styles.analyticsEmptyCell}>{t("Empty")}</td>
+                          </tr>
+                        ) : analyticsSummary.byIp.map((row) => (
+                          <tr key={row.clientIp}>
+                            <td>{row.clientIp}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>{t("BySubnetUserAgent")}</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("IpAddress")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("UserAgent")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.bySubnetUserAgent.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className={styles.analyticsEmptyCell}>{t("EmptySubnetUserAgent")}</td>
+                          </tr>
+                        ) : analyticsSummary.bySubnetUserAgent.map((row) => (
+                          <tr key={`${row.clientIp}:${row.userAgentStatus}:${row.userAgent}`}>
+                            <td>{row.clientIp}</td>
+                            <td className={styles.analyticsUserAgentCell}>{row.userAgentStatus === 'notRecorded' ? t('UserAgentNotRecorded') : row.userAgentStatus === 'missing' ? t('UserAgentHeaderMissing') : row.userAgent}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>{t("ByIpBrowserFamily")}</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("IpAddress")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Browser")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("DeviceType")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byIpBrowserFamily.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className={styles.analyticsEmptyCell}>{t("Empty")}</td>
+                          </tr>
+                        ) : analyticsSummary.byIpBrowserFamily.map((row) => (
+                          <tr key={`${row.clientIp}:${row.browserFamily}:${row.deviceClass || 'unknown'}`}>
+                            <td>{row.clientIp}</td>
+                            <td>{row.browserFamily}</td>
+                            <td>{row.deviceClass || 'unknown'}</td>
+                            <td>{formatVisitCount(row.visitCount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className={styles.analyticsSection}>
+                  <h2 className={styles.analyticsHeading}>{t("ByBotIpBrowserFamily")}</h2>
+                  <div className={styles.indexingTableWrapper}>
+                    <table className={styles.indexingTable}>
+                      <thead>
+                        <tr>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("IpAddress")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Browser")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("DeviceType")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("DetectedBy")}</th>
+                          <th scope="col" className={styles.indexingColumnHeader}>{t("Visits")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analyticsSummary.byBotIpBrowserFamily.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className={styles.analyticsEmptyCell}>{t("EmptyBots")}</td>
+                          </tr>
+                        ) : analyticsSummary.byBotIpBrowserFamily.map((row) => (
+                          <tr key={`${row.clientIp}:${row.browserFamily}:${row.deviceClass || 'unknown'}:${row.detection}`}>
+                            <td>{row.clientIp}</td>
+                            <td>{row.browserFamily}</td>
+                            <td>{row.deviceClass || 'unknown'}</td>
+                            <td>{t(DETECTION_LABELS[row.detection] ?? "DetectionUnspecified")}</td>
                             <td>{formatVisitCount(row.visitCount)}</td>
                           </tr>
                         ))}

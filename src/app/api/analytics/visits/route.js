@@ -21,6 +21,7 @@ export async function POST(request) {
       pagePath,
       pageUrl: payload?.pageUrl,
       documentReferrer: payload?.documentReferrer,
+      isWebDriver: payload?.isWebDriver === true,
     });
 
     if (!dimensions) {
