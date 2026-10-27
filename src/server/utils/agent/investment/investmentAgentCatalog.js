@@ -23,7 +23,7 @@ import {
 import {
   buildUpdatePortfolioHoldingsHandler,
   updatePortfolioHoldingsToolDefinition,
-  UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL,
+  PORTFOLIO_STOCK_HOLDINGS_TOOL,
 } from '@/server/utils/agent/investment/tools/updatePortfolioHoldingsTool';
 export const INVESTMENT_FAMILY = 'investment';
 
@@ -195,7 +195,7 @@ function buildInvestmentHandlerMap({ includeDebug = false, updatedBy = null, per
   handlerMap.set(GET_STOCK_PRICE_TOOL, buildGetStockPriceHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL, buildGetBuySellVolatilityRecommendationHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   handlerMap.set(GET_VOLATILITY_EVENTS_TOOL, buildReviewVolatilityEventsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
-  handlerMap.set(UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL, buildUpdatePortfolioHoldingsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
+  handlerMap.set(PORTFOLIO_STOCK_HOLDINGS_TOOL, buildUpdatePortfolioHoldingsHandler({ includeDebug, updatedBy, personalCacheTreeId }));
   return handlerMap;
 }
 
@@ -254,9 +254,9 @@ If an event detail is a single pipe-delimited summary string, preserve the impor
 If returned events is empty, say no matching volatility events were found.
 When you answer an event request, end by asking whether the user wants to see events using a different filter, mentioning filter options.
 
-## update_portfolio_stock_holdings tool
-Use this tool when the user wants to create, add, refresh, or summarize personal portfolio holdings stored in personal cache.
-This tool operates on the fixed CSV file at Investment > Portfolio > Stocks > List in the user personal cache.
+## portfolio_stock_holdings tool
+Use this tool when the user wants to create, add, refresh, summarize, or export personal portfolio holdings stored in personal cache.
+This tool stores JSON in the notes of Investment > Portfolio > Stocks > List in the user personal cache.
 Never calculate, estimate, infer, or derive average purchase price or return from unrelated fields or tool outputs.
 
 ### operation: update_holdings
@@ -266,17 +266,17 @@ If the user asked to add average purchase prices but did not provide purchase pr
 If the user asked to add return but did not provide return, ask for both ticker and return before using update_holdings.
 Any of the stored fields may be collected independently per ticker.
 Average purchase price must be an explicitly provided USD amount per share. If its currency is unclear, ask the user to confirm it is USD before storing it.
-Never say that a ticker or CSV row was added, updated, saved, or changed unless you actually called update_holdings in this turn and the tool returned that result.
+Never say that a ticker or holdings row was added, updated, saved, or changed unless you actually called update_holdings in this turn and the tool returned that result.
 When calling update_holdings, pass shareCount only when the user explicitly provided it; otherwise pass null.
 When calling update_holdings, pass averagePurchasePrice only when the user explicitly provided it; otherwise pass null.
-When the user provides returnSnapshot, treat it as a DKK amount for the full ticker position. The tool converts it to USD before storing it in the CSV return column.
+When the user provides returnSnapshot, treat it as a DKK amount for the full ticker position. The tool converts it to USD before storing it in the notes.
 When calling update_holdings, pass returnSnapshot only when the user explicitly provided it; otherwise pass null.
 Updating averagePurchasePrice clears the stored returnSnapshot; updating returnSnapshot without averagePurchasePrice clears the stored averagePurchasePrice. If both are explicitly provided, averagePurchasePrice wins and the returnSnapshot is not stored.
 update_holdings saves user-provided fields but does not recalculate current prices, values, or returns. If the user also wants current or recalculated figures, call refresh_calculations after a successful update_holdings call and answer from its result.
 Do not block an update on other fields that the user did not provide. Share count can be stored separately; offer to collect either average purchase price or return when needed for return (%) output.
 
 ### operation: remove_holdings
-Use operation remove_holdings when the user wants to remove one or more ticker rows from the holdings CSV.
+Use operation remove_holdings when the user wants to remove one or more ticker rows from the holdings notes.
 Only use remove_holdings after you have the user ticker or tickers to remove.
 When calling remove_holdings, pass entries with the ticker to remove and null for shareCount, averagePurchasePrice, and returnSnapshot.
 Never say that a ticker was removed unless you actually called remove_holdings in this turn and the tool returned that result.
@@ -288,10 +288,15 @@ When average purchase price is available, refresh_calculations recalculates both
 If refresh_calculations was used and both average purchase price and returnSnapshot are still missing for one or more tickers, offer to collect either of them when the user wants return (%) output, but do not block the operation on it.
 When providing a portfolio summary, state the total portfolio value in both USD from totalPortfolioValue and in DKK from totalPortfolioValueDkk.
 
+### operation: export_calculations
+Use export_calculations when the user asks for a CSV export of the stored holdings calculations. Pass entries as [].
+This operation writes the stored JSON rows in the original Portfolio stock holdings.csv format as an attachment to the same List node. It does not refresh prices or calculations; if the user requests current figures in the export, call refresh_calculations first, then export_calculations.
+Do not claim an export was created unless export_calculations returned a fileLink. Include that link when reporting the export.
+
 ### response requirements
-The tool returns the full current CSV dataset and a direct file link.
+The tool returns the full current JSON dataset and a direct note link. export_calculations also returns an attachment fileLink.
 Never describe a holdings update as completed, saved, or applied from reasoning alone. Only report updates, recalculations, or file changes that are present in the tool response from the current turn.
-When you answer from this tool, include the file link and summarize whether rows were added, updated, removed, or recalculated.
+When you answer from this tool, include the note link and summarize whether rows were added, updated, removed, recalculated, or exported.
 `.trim();
 }
 

@@ -12,20 +12,21 @@ import {
   PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER,
 } from '@/server/utils/agent/investment/investmentPersistenceConfig';
 import {
-  readSingleInvestmentTextAttachmentByFileName,
+  readInvestmentLeafNotes,
   replaceInvestmentLeafAttachment,
+  replaceInvestmentLeafNotes,
 } from '@/server/utils/agent/investment/investmentTreeRepository';
 import { getCachedOrFetchExchangeRate } from '@/server/utils/agent/investment/tools/exchangeRateRepository';
 import { normalizeTicker } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import { fetchHistoricalClosingPrices } from '@/server/utils/agent/investment/tools/getStockPriceTool/historicalPriceProvider';
 import { getCachedOrFetchPriceHistory } from '@/server/utils/agent/investment/tools/getStockPriceTool/stockPriceRepository';
 
-const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
 const TREE_OPTIONS = {
   allowPrivate: true,
   allowDescription: true,
   allowPublishedDescription: true,
 };
+const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
 const REQUIRED_HEADERS = [
   PORTFOLIO_HOLDINGS_TICKER_HEADER,
   PORTFOLIO_HOLDINGS_SHARE_COUNT_HEADER,
@@ -44,7 +45,6 @@ const PORTFOLIO_HOLDINGS_PRICE_LOOKUP_CONCURRENCY = 4;
 const CANONICAL_HEADER_LOOKUP = new Map(
   [...REQUIRED_HEADERS, ...DERIVED_HEADERS].map((header) => [header.toLowerCase(), header]),
 );
-CANONICAL_HEADER_LOOKUP.set('return snapshot', PORTFOLIO_HOLDINGS_RETURN_SNAPSHOT_HEADER);
 
 function escapeCsvCell(value) {
   const normalizedValue = String(value ?? '');
@@ -54,40 +54,6 @@ function escapeCsvCell(value) {
   }
 
   return `"${normalizedValue.replace(/"/g, '""')}"`;
-}
-
-function parseCsvLine(line) {
-  const cells = [];
-  let currentCell = '';
-  let isQuoted = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-    const nextCharacter = line[index + 1];
-
-    if (character === '"') {
-      if (isQuoted && nextCharacter === '"') {
-        currentCell += '"';
-        index += 1;
-        continue;
-      }
-
-      isQuoted = !isQuoted;
-      continue;
-    }
-
-    if (character === ',' && !isQuoted) {
-      cells.push(currentCell);
-      currentCell = '';
-      continue;
-    }
-
-    currentCell += character;
-  }
-
-  cells.push(currentCell);
-
-  return cells;
 }
 
 function canonicalizeColumnName(column) {
@@ -140,65 +106,6 @@ function normalizeColumns(columns) {
   });
 
   return normalizedColumns;
-}
-
-function parsePortfolioHoldingsCsv(text) {
-  const normalizedText = String(text ?? '').trim();
-  const lines = normalizedText ? normalizedText.split(/\r?\n/) : [];
-  const rawColumns = lines.length > 0
-    ? parseCsvLine(lines[0]).map((column) => String(column ?? '').trim())
-    : [PORTFOLIO_HOLDINGS_TICKER_HEADER, PORTFOLIO_HOLDINGS_SHARE_COUNT_HEADER];
-  const columns = normalizeColumns(rawColumns);
-  const rows = lines.slice(1)
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const values = parseCsvLine(line);
-      const row = {};
-      const rawValueByLookupKey = new Map();
-
-      rawColumns.forEach((column, index) => {
-        const lookupKey = String(column ?? '').trim().toLowerCase();
-
-        if (!lookupKey || rawValueByLookupKey.has(lookupKey)) {
-          return;
-        }
-
-        rawValueByLookupKey.set(lookupKey, String(values[index] ?? ''));
-      });
-
-      columns.forEach((column) => {
-        row[column] = rawValueByLookupKey.get(column.toLowerCase()) ?? '';
-      });
-
-      return row;
-    });
-
-  return {
-    columns,
-    rows,
-  };
-}
-
-function stringifyPortfolioHoldingsCsv({ columns, rows }) {
-  const normalizedColumns = normalizeColumns(columns);
-  const lines = [normalizedColumns.map((column) => escapeCsvCell(column)).join(',')];
-
-  rows.forEach((row) => {
-    const line = normalizedColumns
-      .map((column) => escapeCsvCell(row?.[column] ?? ''))
-      .join(',');
-
-    lines.push(line);
-  });
-
-  return `${lines.join('\n')}\n`;
-}
-
-function createEmptyPortfolioHoldingsDocument() {
-  return stringifyPortfolioHoldingsCsv({
-    columns: REQUIRED_HEADERS,
-    rows: [],
-  });
 }
 
 function normalizeOptionalShareCount(value) {
@@ -290,50 +197,54 @@ function buildTickerRowMap(rows) {
   return rowsByTicker;
 }
 
-async function ensurePortfolioHoldingsFile({ treeId, updatedBy }) {
-  const pathSegments = buildPortfolioHoldingsPath();
-  const existingDocument = await readSingleInvestmentTextAttachmentByFileName({
-    treeId,
-    pathSegments,
-    fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
-    treeOptions: TREE_OPTIONS,
-  });
+function buildPortfolioNoteLink(treeId, nodeId) {
+  const searchParams = new URLSearchParams({ treeId: String(treeId), nodeId: String(nodeId), visibility: 'private' });
+  return `/notes?${searchParams.toString()}`;
+}
 
-  if (existingDocument) {
+async function loadPortfolioHoldingsDocument({ treeId }) {
+  const pathSegments = buildPortfolioHoldingsPath();
+  const storedNotes = await readInvestmentLeafNotes({ treeId, pathSegments, treeOptions: TREE_OPTIONS });
+
+  if (storedNotes?.notes) {
+    let parsedNotes;
+
+    try {
+      parsedNotes = JSON.parse(storedNotes.notes);
+    } catch {
+      throw new Error('Portfolio holdings notes contain invalid JSON; no holdings were changed.');
+    }
+
+    if (!parsedNotes || !Array.isArray(parsedNotes.columns) || !Array.isArray(parsedNotes.rows)) {
+      throw new Error('Portfolio holdings notes have an unexpected format; no holdings were changed.');
+    }
+
+    const columns = normalizeColumns(parsedNotes.columns);
+    if (parsedNotes.rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row))) {
+      throw new Error('Portfolio holdings notes contain invalid rows; no holdings were changed.');
+    }
+
     return {
-      attachment: existingDocument.attachment,
-      fileLink: existingDocument.attachment?.blobUrl ?? null,
-      ...parsePortfolioHoldingsCsv(existingDocument.text),
+      columns,
+      rows: parsedNotes.rows,
+      noteLink: buildPortfolioNoteLink(treeId, storedNotes.nodeId),
+      hasStoredNotes: true,
     };
   }
 
-  const createdDocument = await replaceInvestmentLeafAttachment({
-    treeId,
-    pathSegments,
-    fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
-    contentType: CSV_CONTENT_TYPE,
-    content: createEmptyPortfolioHoldingsDocument(),
-    updatedBy,
-    treeOptions: TREE_OPTIONS,
-  });
-
   return {
-    attachment: createdDocument,
-    fileLink: createdDocument.blobUrl ?? null,
+    noteLink: storedNotes?.nodeId ? buildPortfolioNoteLink(treeId, storedNotes.nodeId) : null,
+    hasStoredNotes: false,
     columns: normalizeColumns(REQUIRED_HEADERS),
     rows: [],
   };
 }
 
 async function savePortfolioHoldingsDocument({ treeId, columns, rows, updatedBy }) {
-  const serializedCsv = stringifyPortfolioHoldingsCsv({ columns, rows });
-
-  const savedAttachment = await replaceInvestmentLeafAttachment({
+  const nodeId = await replaceInvestmentLeafNotes({
     treeId,
     pathSegments: buildPortfolioHoldingsPath(),
-    fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
-    contentType: CSV_CONTENT_TYPE,
-    content: serializedCsv,
+    notes: JSON.stringify({ columns: normalizeColumns(columns), rows }, null, 2),
     updatedBy,
     treeOptions: TREE_OPTIONS,
   });
@@ -341,7 +252,7 @@ async function savePortfolioHoldingsDocument({ treeId, columns, rows, updatedBy 
   return {
     columns: normalizeColumns(columns),
     rows,
-    fileLink: savedAttachment.blobUrl ?? null,
+    noteLink: buildPortfolioNoteLink(treeId, nodeId),
   };
 }
 
@@ -438,7 +349,7 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
   let usdToDkkRate = null;
 
   if (hasReturnSnapshotUpdates) {
-    onStep?.('tool update_portfolio_stock_holdings exchange rate started', {
+    onStep?.('tool portfolio_stock_holdings exchange rate started', {
       mode: 'update_holdings',
     });
     try {
@@ -447,24 +358,24 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
         quoteCurrency: 'DKK',
         updatedBy,
       });
-      onStep?.('tool update_portfolio_stock_holdings exchange rate completed', {
+      onStep?.('tool portfolio_stock_holdings exchange rate completed', {
         mode: 'update_holdings',
         rate: usdToDkkRate?.rate ?? null,
         cacheStatus: usdToDkkRate?.cacheStatus ?? null,
       });
     } catch (error) {
-      onStep?.('tool update_portfolio_stock_holdings exchange rate failed', {
+      onStep?.('tool portfolio_stock_holdings exchange rate failed', {
         mode: 'update_holdings',
       });
       throw new Error(`Return could not be stored because the USD to DKK exchange rate was unavailable: ${String(error?.message ?? error)}`);
     }
   }
 
-  onStep?.('tool update_portfolio_stock_holdings ensure file started', {
+  onStep?.('tool portfolio_stock_holdings load notes started', {
     mode: 'update_holdings',
   });
-  const document = await ensurePortfolioHoldingsFile({ treeId, updatedBy });
-  onStep?.('tool update_portfolio_stock_holdings ensure file completed', {
+  const document = await loadPortfolioHoldingsDocument({ treeId });
+  onStep?.('tool portfolio_stock_holdings load notes completed', {
     mode: 'update_holdings',
     existingRowCount: Array.isArray(document.rows) ? document.rows.length : 0,
   });
@@ -503,7 +414,7 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
     addedOrUpdatedTickers.push(entry.ticker);
   });
 
-  onStep?.('tool update_portfolio_stock_holdings save started', {
+  onStep?.('tool portfolio_stock_holdings save started', {
     mode: 'update_holdings',
     rowCount: rows.length,
   });
@@ -513,7 +424,7 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
     rows,
     updatedBy,
   });
-  onStep?.('tool update_portfolio_stock_holdings save completed', {
+  onStep?.('tool portfolio_stock_holdings save completed', {
     mode: 'update_holdings',
     rowCount: savedDocument.rows.length,
   });
@@ -523,7 +434,6 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
       treeId: String(treeId),
       operation: 'update_holdings',
       currency: 'USD',
-      fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
       pathSegments: buildPortfolioHoldingsPath(),
       columns: savedDocument.columns,
       rows: savedDocument.rows,
@@ -538,7 +448,8 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
         totalPortfolioValueDkk: 0,
         pricedTickerCount: 0,
       },
-      fileLink: savedDocument.fileLink,
+      noteLink: savedDocument.noteLink,
+      fileLink: null,
       warnings: [],
     },
     debug: {
@@ -562,11 +473,11 @@ export async function removePortfolioHoldings({ treeId, entries, updatedBy = nul
     throw new Error('At least one ticker is required for remove_holdings.');
   }
 
-  onStep?.('tool update_portfolio_stock_holdings ensure file started', {
+  onStep?.('tool portfolio_stock_holdings load notes started', {
     mode: 'remove_holdings',
   });
-  const document = await ensurePortfolioHoldingsFile({ treeId, updatedBy });
-  onStep?.('tool update_portfolio_stock_holdings ensure file completed', {
+  const document = await loadPortfolioHoldingsDocument({ treeId });
+  onStep?.('tool portfolio_stock_holdings load notes completed', {
     mode: 'remove_holdings',
     existingRowCount: Array.isArray(document.rows) ? document.rows.length : 0,
   });
@@ -584,7 +495,7 @@ export async function removePortfolioHoldings({ treeId, entries, updatedBy = nul
     return false;
   });
 
-  onStep?.('tool update_portfolio_stock_holdings save started', {
+  onStep?.('tool portfolio_stock_holdings save started', {
     mode: 'remove_holdings',
     rowCount: rows.length,
   });
@@ -594,7 +505,7 @@ export async function removePortfolioHoldings({ treeId, entries, updatedBy = nul
     rows,
     updatedBy,
   });
-  onStep?.('tool update_portfolio_stock_holdings save completed', {
+  onStep?.('tool portfolio_stock_holdings save completed', {
     mode: 'remove_holdings',
     rowCount: savedDocument.rows.length,
   });
@@ -603,7 +514,6 @@ export async function removePortfolioHoldings({ treeId, entries, updatedBy = nul
     treeId: String(treeId),
     operation: 'remove_holdings',
     currency: 'USD',
-    fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
     pathSegments: buildPortfolioHoldingsPath(),
     columns: savedDocument.columns,
     rows: savedDocument.rows,
@@ -618,11 +528,12 @@ export async function removePortfolioHoldings({ treeId, entries, updatedBy = nul
       totalPortfolioValueDkk: 0,
       pricedTickerCount: 0,
     },
-    fileLink: savedDocument.fileLink,
+    noteLink: savedDocument.noteLink,
+    fileLink: null,
     warnings: removedTickers.length === tickersToRemove.length
       ? []
       : [
-        `${tickersToRemove.length - removedTickers.length} requested ticker(s) were not present in the holdings CSV.`,
+        `${tickersToRemove.length - removedTickers.length} requested ticker(s) were not present in the holdings notes.`,
       ],
   };
 }
@@ -632,11 +543,11 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     throw new Error('A personal cache tree id is required to refresh portfolio holdings calculations.');
   }
 
-  onStep?.('tool update_portfolio_stock_holdings ensure file started', {
+  onStep?.('tool portfolio_stock_holdings load notes started', {
     mode: 'refresh_calculations',
   });
-  const document = await ensurePortfolioHoldingsFile({ treeId, updatedBy });
-  onStep?.('tool update_portfolio_stock_holdings ensure file completed', {
+  const document = await loadPortfolioHoldingsDocument({ treeId });
+  onStep?.('tool portfolio_stock_holdings load notes completed', {
     mode: 'refresh_calculations',
     existingRowCount: Array.isArray(document.rows) ? document.rows.length : 0,
   });
@@ -652,19 +563,19 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
   let totalPortfolioValueDkk = 0;
 
   try {
-    onStep?.('tool update_portfolio_stock_holdings exchange rate started');
+    onStep?.('tool portfolio_stock_holdings exchange rate started');
     usdToDkkRate = await getCachedOrFetchExchangeRate({
       baseCurrency: 'USD',
       quoteCurrency: 'DKK',
       updatedBy,
     });
-    onStep?.('tool update_portfolio_stock_holdings exchange rate completed', {
+    onStep?.('tool portfolio_stock_holdings exchange rate completed', {
       rate: usdToDkkRate?.rate ?? null,
       cacheStatus: usdToDkkRate?.cacheStatus ?? null,
     });
   } catch {
     warnings.push('USD to DKK exchange rate could not be loaded. The value DKK column was left blank.');
-    onStep?.('tool update_portfolio_stock_holdings exchange rate failed');
+    onStep?.('tool portfolio_stock_holdings exchange rate failed');
   }
 
   const validRows = [];
@@ -720,13 +631,13 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     PORTFOLIO_HOLDINGS_PRICE_LOOKUP_CONCURRENCY,
     async ({ row, rowIndex, normalizedTicker, shareCount, averagePurchasePrice, returnSnapshot }) => {
       try {
-        onStep?.('tool update_portfolio_stock_holdings price lookup started', {
+        onStep?.('tool portfolio_stock_holdings price lookup started', {
           ticker: normalizedTicker,
           rowNumber: rowIndex + 2,
         });
         const latestClose = await loadLatestClose({ ticker: normalizedTicker, updatedBy });
         const priceLookupSource = summarizePriceLookupSource(latestClose);
-        onStep?.('tool update_portfolio_stock_holdings price lookup completed', {
+        onStep?.('tool portfolio_stock_holdings price lookup completed', {
           ticker: normalizedTicker,
           rowNumber: rowIndex + 2,
           ...priceLookupSource,
@@ -744,7 +655,7 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
           failed: false,
         };
       } catch {
-        onStep?.('tool update_portfolio_stock_holdings price lookup failed', {
+        onStep?.('tool portfolio_stock_holdings price lookup failed', {
           ticker: normalizedTicker,
           rowNumber: rowIndex + 2,
         });
@@ -874,20 +785,12 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     warnings.push('No holdings rows are stored yet. Add ticker rows first, and include share count before refreshing calculations that require pricing.');
   }
 
-  const originalSerializedCsv = stringifyPortfolioHoldingsCsv({
-    columns,
-    rows: document.rows,
-  });
-  const refreshedSerializedCsv = stringifyPortfolioHoldingsCsv({
-    columns,
-    rows,
-  });
-  const didChangeFile = refreshedSerializedCsv !== originalSerializedCsv;
+  const didChangeNotes = !document.hasStoredNotes || JSON.stringify(rows) !== JSON.stringify(document.rows);
 
   let savedDocument;
 
-  if (didChangeFile) {
-    onStep?.('tool update_portfolio_stock_holdings save started', {
+  if (didChangeNotes) {
+    onStep?.('tool portfolio_stock_holdings save started', {
       mode: 'refresh_calculations',
       rowCount: rows.length,
     });
@@ -897,7 +800,7 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
       rows,
       updatedBy,
     });
-    onStep?.('tool update_portfolio_stock_holdings save completed', {
+    onStep?.('tool portfolio_stock_holdings save completed', {
       mode: 'refresh_calculations',
       rowCount: savedDocument.rows.length,
     });
@@ -905,11 +808,11 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
     savedDocument = {
       columns,
       rows,
-      fileLink: document.fileLink,
+      noteLink: document.noteLink,
     };
-    onStep?.('tool update_portfolio_stock_holdings save skipped', {
+    onStep?.('tool portfolio_stock_holdings save skipped', {
       mode: 'refresh_calculations',
-      reason: 'no_file_changes',
+      reason: 'no_notes_changes',
       rowCount: rows.length,
     });
   }
@@ -919,7 +822,6 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
       treeId: String(treeId),
       operation: 'refresh_calculations',
       currency: 'USD',
-      fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
       pathSegments: buildPortfolioHoldingsPath(),
       columns: savedDocument.columns,
       rows: savedDocument.rows,
@@ -934,14 +836,80 @@ export async function refreshPortfolioHoldingsCalculations({ treeId, updatedBy =
         totalPortfolioValueDkk: Number(totalPortfolioValueDkk.toFixed(2)),
         pricedTickerCount: pricedTickers.length,
       },
-      fileLink: savedDocument.fileLink,
+      noteLink: savedDocument.noteLink,
+      fileLink: null,
       warnings,
     },
     debug: {
-      didChangeFile,
+      didChangeNotes,
       priceLookups,
       providerRequests,
       exchangeRate: usdToDkkRate,
     },
+  };
+}
+
+function stringifyPortfolioHoldingsCsv({ columns, rows }) {
+  const normalizedColumns = normalizeColumns(columns);
+  const lines = [normalizedColumns.map((column) => escapeCsvCell(column)).join(',')];
+
+  rows.forEach((row) => {
+    lines.push(normalizedColumns.map((column) => escapeCsvCell(row?.[column] ?? '')).join(','));
+  });
+
+  return `${lines.join('\n')}\n`;
+}
+
+export async function exportPortfolioHoldingsCalculations({ treeId, updatedBy = null }) {
+  if (!treeId) {
+    throw new Error('A personal cache tree id is required to export portfolio holdings.');
+  }
+
+  const document = await loadPortfolioHoldingsDocument({ treeId });
+
+  if (!document.hasStoredNotes) {
+    throw new Error('Portfolio holdings JSON notes are missing. Save or refresh holdings before exporting calculations.');
+  }
+
+  const attachment = await replaceInvestmentLeafAttachment({
+    treeId,
+    pathSegments: buildPortfolioHoldingsPath(),
+    fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
+    contentType: CSV_CONTENT_TYPE,
+    content: stringifyPortfolioHoldingsCsv(document),
+    updatedBy,
+    treeOptions: TREE_OPTIONS,
+  });
+  const pricedRows = document.rows.filter((row) => {
+    const storedValue = String(row?.[PORTFOLIO_HOLDINGS_VALUE_HEADER] ?? '').trim();
+    return storedValue !== '' && Number.isFinite(Number(storedValue));
+  });
+  const totalPortfolioValue = pricedRows.reduce((total, row) => total + Number(row[PORTFOLIO_HOLDINGS_VALUE_HEADER]), 0);
+  const totalPortfolioValueDkk = pricedRows.reduce((total, row) => {
+    const storedValueDkk = Number(row[PORTFOLIO_HOLDINGS_VALUE_DKK_HEADER]);
+    return total + (Number.isFinite(storedValueDkk) ? storedValueDkk : 0);
+  }, 0);
+
+  return {
+    treeId: String(treeId),
+    operation: 'export_calculations',
+    currency: 'USD',
+    pathSegments: buildPortfolioHoldingsPath(),
+    columns: document.columns,
+    rows: document.rows,
+    addedOrUpdatedTickers: [],
+    removedTickers: [],
+    pricedTickers: pricedRows.map((row) => row[PORTFOLIO_HOLDINGS_TICKER_HEADER]),
+    skippedRows: [],
+    totals: {
+      pricedRowCount: pricedRows.length,
+      skippedRowCount: 0,
+      totalPortfolioValue: Number(totalPortfolioValue.toFixed(2)),
+      totalPortfolioValueDkk: Number(totalPortfolioValueDkk.toFixed(2)),
+      pricedTickerCount: pricedRows.length,
+    },
+    noteLink: document.noteLink,
+    fileLink: attachment.blobUrl ?? null,
+    warnings: [],
   };
 }

@@ -471,10 +471,11 @@ Investment family example:
 - `get_stock_price` retrieves price history for a ticker.
 - `get_buy_sell_volatility_recommendation` runs the rule-based buy/sell/hold analysis on price history.
 - `get_volatility_events` filters saved recommendation events, such as rotations and episode-low updates.
-- `update_portfolio_stock_holdings` manages the personal-cache holdings CSV at Investment > Portfolio > Stocks > List:
+- `portfolio_stock_holdings` stores holdings as JSON in the notes of Investment > Portfolio > Stocks > List in personal cache. The CSV attachment is written only by an explicit export:
 	- `update_holdings` saves user-provided share counts, average purchase prices, or returns by ticker. Returns entered in DKK are converted to USD. A new return clears the old average purchase price; a new average purchase price clears the old return. If both are supplied, average purchase price takes precedence.
-	- `remove_holdings` deletes requested ticker rows from the CSV.
+	- `remove_holdings` deletes requested ticker rows from the notes.
 	- `refresh_calculations` fetches latest closing prices and recalculates values, portfolio percentages, returns, and return percentages. If the average purchase price is missing, it can derive one from a stored return and share count. This recalculation is separate from `update_holdings`.
+	- `export_calculations` writes the current JSON holdings rows as a Portfolio stock holdings.csv attachment on the same node. It does not refresh calculations; refresh first when current values are needed.
 
 ### Email Tools
 

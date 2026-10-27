@@ -25,20 +25,15 @@ import {
   INVESTMENT_FAMILY,
 } from '@/server/utils/agent/investment/investmentAgentCatalog';
 import {
+  getInvestmentNotesCitation,
   getInvestmentRepositoryCitation,
 } from '@/server/utils/agent/investment/investmentTreeRepository';
 import {
   GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL,
 } from '@/server/utils/agent/investment/tools/getBuySellVolatilityRecommendationTool';
 import { GET_STOCK_PRICE_TOOL } from '@/server/utils/agent/investment/tools/getStockPriceTool';
-import { UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL } from '@/server/utils/agent/investment/tools/updatePortfolioHoldingsTool';
+import { PORTFOLIO_STOCK_HOLDINGS_TOOL } from '@/server/utils/agent/investment/tools/updatePortfolioHoldingsTool';
 import { GET_VOLATILITY_EVENTS_TOOL } from '@/server/utils/agent/investment/tools/reviewVolatilityEventsTool';
-
-const PERSONAL_CACHE_TREE_OPTIONS = {
-  allowPrivate: true,
-  allowDescription: true,
-  allowPublishedDescription: true,
-};
 
 function dedupeCitations(citations) {
   const citationsByKey = new Map();
@@ -62,7 +57,7 @@ async function buildRepositoryCitationEntry(toolName, result) {
   const normalizedResult = getAgentToolResultData(result);
   const normalizedTicker = String(normalizedResult?.ticker ?? '').trim().toUpperCase();
 
-  if (toolName === UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL) {
+  if (toolName === PORTFOLIO_STOCK_HOLDINGS_TOOL) {
     const treeId = Number.parseInt(String(normalizedResult?.treeId ?? ''), 10);
 
     if (!Number.isInteger(treeId) || treeId <= 0) {
@@ -70,12 +65,16 @@ async function buildRepositoryCitationEntry(toolName, result) {
     }
 
     try {
-      const citation = await getInvestmentRepositoryCitation({
-        treeId,
-        pathSegments: buildPortfolioHoldingsPath(),
-        fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
-        treeOptions: PERSONAL_CACHE_TREE_OPTIONS,
-      });
+      const citation = normalizedResult?.operation === 'export_calculations'
+        ? await getInvestmentRepositoryCitation({
+          treeId,
+          pathSegments: buildPortfolioHoldingsPath(),
+          fileName: PORTFOLIO_HOLDINGS_CSV_FILE_NAME,
+        })
+        : await getInvestmentNotesCitation({
+          treeId,
+          pathSegments: buildPortfolioHoldingsPath(),
+        });
 
       return citation
         ? {
@@ -153,24 +152,30 @@ function getLatestRecommendation(toolInvocations) {
   return getAgentToolResultData(latestRecommendation?.output) ?? null;
 }
 
-function appendPortfolioFileLink(answer, finalToolInvocations) {
+function appendPortfolioNoteLink(answer, finalToolInvocations) {
   const latestPortfolioUpdate = [...(finalToolInvocations ?? [])]
     .reverse()
-    .find((invocation) => invocation?.toolName === UPDATE_PORTFOLIO_STOCK_HOLDINGS_TOOL);
+    .find((invocation) => invocation?.toolName === PORTFOLIO_STOCK_HOLDINGS_TOOL);
   const latestPortfolioData = getAgentToolResultData(latestPortfolioUpdate?.output);
+  const noteLink = String(latestPortfolioData?.noteLink ?? '').trim();
   const fileLink = String(latestPortfolioData?.fileLink ?? '').trim();
-  const fileName = String(latestPortfolioData?.fileName ?? '').trim() || PORTFOLIO_HOLDINGS_CSV_FILE_NAME;
   const normalizedAnswer = String(answer ?? '').trim();
 
-  if (!fileLink) {
+  if (!noteLink && !fileLink) {
     return answer;
   }
 
-  const linkMarkdown = `[Open ${fileName}](${fileLink})`;
+  const links = [];
 
-  return normalizedAnswer.includes(fileLink) || normalizedAnswer.includes(linkMarkdown)
-    ? answer
-    : `${normalizedAnswer}\n\n${linkMarkdown}`.trim();
+  if (noteLink && !normalizedAnswer.includes(noteLink)) {
+    links.push(`[View holdings note](${noteLink})`);
+  }
+
+  if (fileLink && !normalizedAnswer.includes(fileLink)) {
+    links.push(`[Download ${PORTFOLIO_HOLDINGS_CSV_FILE_NAME}](${fileLink})`);
+  }
+
+  return links.length > 0 ? `${normalizedAnswer}\n\n${links.join('\n')}`.trim() : answer;
 }
 
 export async function buildInvestmentFamilyResult({
@@ -199,7 +204,7 @@ export async function buildInvestmentFamilyResult({
     responseToolInvocations,
   } = turnClassification;
   const recommendation = getLatestRecommendation(finalToolInvocations);
-  const answerWithFileLink = appendPortfolioFileLink(answer, finalToolInvocations);
+  const answerWithNoteLink = appendPortfolioNoteLink(answer, finalToolInvocations);
   const citations = await captureTimingEntry(
     debug?.timings?.phases?.citationAssembly ?? null,
     async () => buildInvestmentCitations(finalToolInvocations),
@@ -220,13 +225,13 @@ export async function buildInvestmentFamilyResult({
     debug.agentOutput = buildAgentOutputDebug({
       agent: buildInvestmentAgentDescriptor(),
       response: finalResponse,
-      answer: answerWithFileLink,
+      answer: answerWithNoteLink,
     });
   }
 
   const familyResult = buildAgentFamilyResult({
     sourceToolFamily: INVESTMENT_FAMILY,
-    answer: answerWithFileLink,
+    answer: answerWithNoteLink,
     toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
     citations,
     familyPayload: {

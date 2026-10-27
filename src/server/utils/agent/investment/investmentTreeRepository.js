@@ -2,6 +2,7 @@ import {
   downloadNodeAttachmentBlob,
 } from '@/server/utils/blobStorage';
 import { getRequiredApplicationIdentifier, sql, withSqlConnection } from '@/server/utils/sql';
+import { queryTreeNodeDetailRecord, upsertTreeNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 import {
   deleteTreePath,
   ensureTreePath,
@@ -129,6 +130,50 @@ async function findChildNode(treeId, parentId, text, transaction = null) {
 
 export async function findInvestmentTreePathNode({ treeId, pathSegments, transaction = null }) {
   return findTreePathNode({ treeId, pathSegments, transaction });
+}
+
+export async function readInvestmentLeafNotes({ treeId, pathSegments, treeOptions = null }) {
+  return withSqlConnection(async () => {
+    await assertConfiguredInvestmentTree(treeId, treeOptions ?? undefined);
+    const node = await findInvestmentTreePathNode({ treeId, pathSegments });
+
+    if (!node) {
+      return null;
+    }
+
+    const record = await queryTreeNodeDetailRecord(treeId, node.id);
+    return { nodeId: node.id, notes: record?.notes ?? null };
+  });
+}
+
+export async function replaceInvestmentLeafNotes({ treeId, pathSegments, notes, updatedBy = null, treeOptions = null }) {
+  const node = await ensureInvestmentTreePath({ treeId, pathSegments, treeOptions });
+  await withSqlConnection(async () => upsertTreeNodeDetails({ nodeId: node.id, notes, updatedBy }));
+  return node.id;
+}
+
+export async function getInvestmentNotesCitation({ treeId, pathSegments }) {
+  return withSqlConnection(async () => {
+    const configuredTree = await queryConfiguredTree(treeId);
+    const resolvedNodes = await resolveInvestmentTreePathNodes({ treeId, pathSegments });
+
+    if (!configuredTree || !resolvedNodes?.length) {
+      return null;
+    }
+
+    const leafNode = resolvedNodes[resolvedNodes.length - 1];
+    return {
+      treeId,
+      nodeId: leafNode.id,
+      title: leafNode.text,
+      breadcrumb: resolvedNodes.map((node) => String(node.text ?? '').trim()).filter(Boolean).join(' > '),
+      nodeIdPath: resolvedNodes.map((node) => String(node.id ?? '').trim()).filter(Boolean).join('/'),
+      visibility: configuredTree.isPrivate ? 'private' : 'public',
+      treeDisplayName: configuredTree.displayName ?? null,
+      matchSummary: 'Portfolio holdings notes',
+      attachmentFileNames: [],
+    };
+  });
 }
 
 export async function getInvestmentRepositoryCitation({ treeId, pathSegments, fileName, treeOptions = null }) {
