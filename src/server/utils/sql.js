@@ -16,6 +16,7 @@ const config = {
 };
 
 let sqlConnectionPromise;
+let sqlClosingPromise;
 let sqlIdleCloseTimer;
 let sqlActiveOperationCount = 0;
 let sqlConnectionGeneration = 0;
@@ -64,17 +65,18 @@ function scheduleSqlIdleClose() {
     sqlConnectionPromise = undefined;
     clearSqlIdleCloseTimer();
 
-    try {
-      await activeConnectionPromise;
-      await sql.close();
-    } catch {
-      sqlConnectionPromise = undefined;
-    }
+    sqlClosingPromise = activeConnectionPromise.then(() => sql.close()).catch(() => {});
+    await sqlClosingPromise;
+    sqlClosingPromise = undefined;
   }, idleCloseMs);
 }
 
-function getSqlConnection() {
+async function getSqlConnection() {
   clearSqlIdleCloseTimer();
+
+  if (sqlClosingPromise) {
+    await sqlClosingPromise;
+  }
 
   if (!sqlConnectionPromise) {
     sqlConnectionGeneration += 1;

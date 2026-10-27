@@ -1,14 +1,11 @@
-import { downloadNodeAttachmentBlob } from '@/server/utils/blobStorage';
 import {
   buildStockPricePath,
   getRequiredInvestmentPersistenceTreeId,
-  STOCK_PRICE_CSV_FILE_NAME,
 } from '@/server/utils/agent/investment/investmentPersistenceConfig';
 import {
   assertConfiguredInvestmentTree,
-  ensureInvestmentTreePath,
-  listInvestmentLeafAttachments,
-  replaceInvestmentLeafAttachment,
+  readInvestmentLeafNotes,
+  replaceInvestmentLeafNotes,
 } from '@/server/utils/agent/investment/investmentTreeRepository';
 import {
   formatDate,
@@ -27,41 +24,6 @@ function normalizeDays(days) {
   }
 
   return Math.min(parsedValue, 365);
-}
-
-function parseCsv(text) {
-  const trimmedText = String(text ?? '').trim();
-
-  if (!trimmedText) {
-    return [];
-  }
-
-  const lines = trimmedText.split(/\r?\n/).filter(Boolean);
-
-  return lines.slice(1)
-    .map((line) => {
-      const [datePart, closePart] = line.split(',');
-      const date = String(datePart ?? '').trim();
-      const close = Number(String(closePart ?? '').trim());
-
-      if (!date || !Number.isFinite(close)) {
-        return null;
-      }
-
-      return { date, close };
-    })
-    .filter(Boolean)
-    .sort((leftEntry, rightEntry) => leftEntry.date.localeCompare(rightEntry.date));
-}
-
-function stringifyCsv(priceHistory) {
-  const lines = ['Date,Close'];
-
-  priceHistory.forEach((entry) => {
-    lines.push(`${entry.date},${entry.close}`);
-  });
-
-  return `${lines.join('\n')}\n`;
 }
 
 function mergePriceHistory(existingHistory, incomingHistory) {
@@ -155,20 +117,30 @@ function isCacheFreshEnough(priceHistory, days) {
 }
 
 async function loadCachedPriceHistory(treeId, ticker) {
-  const attachments = await listInvestmentLeafAttachments({
+  const storedNotes = await readInvestmentLeafNotes({
     treeId,
     pathSegments: buildStockPricePath(ticker),
   });
-  const matchingAttachment = attachments.find((attachment) => String(attachment.fileName ?? '').trim().toLowerCase() === STOCK_PRICE_CSV_FILE_NAME);
 
-  if (!matchingAttachment) {
+  if (!storedNotes?.notes) {
     return [];
   }
 
-  const downloadedAttachment = await downloadNodeAttachmentBlob(matchingAttachment.blobName);
-  const primaryHistory = parseCsv(downloadedAttachment.content.toString('utf8'));
+  let priceHistory;
 
-  return primaryHistory ?? [];
+  try {
+    priceHistory = JSON.parse(storedNotes.notes);
+  } catch {
+    throw new Error('Closing price notes contain invalid JSON; no prices were changed.');
+  }
+
+  if (!Array.isArray(priceHistory) || priceHistory.some((entry) => !parseIsoDate(entry?.date) || !Number.isFinite(entry?.close))) {
+    throw new Error('Closing price notes have an unexpected format; no prices were changed.');
+  }
+
+  return priceHistory
+    .map((entry) => ({ date: entry.date, close: entry.close }))
+    .sort((leftEntry, rightEntry) => leftEntry.date.localeCompare(rightEntry.date));
 }
 
 export async function loadStoredPriceHistory(ticker) {
@@ -251,21 +223,13 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
     throw new Error(`No closing-price history is available for ${normalizedTicker}.`);
   }
 
-  const existingCsv = stringifyCsv(existingHistory);
-  const mergedCsv = stringifyCsv(mergedHistory);
-  const didUpdateStoredCsv = existingCsv !== mergedCsv;
+  const didUpdateStoredHistory = JSON.stringify(existingHistory) !== JSON.stringify(mergedHistory);
 
-  if (didUpdateStoredCsv) {
-    await ensureInvestmentTreePath({
+  if (didUpdateStoredHistory) {
+    await replaceInvestmentLeafNotes({
       treeId,
       pathSegments: buildStockPricePath(normalizedTicker),
-    });
-    await replaceInvestmentLeafAttachment({
-      treeId,
-      pathSegments: buildStockPricePath(normalizedTicker),
-      fileName: STOCK_PRICE_CSV_FILE_NAME,
-      contentType: 'text/csv; charset=utf-8',
-      content: mergedCsv,
+      notes: JSON.stringify(mergedHistory, null, 2),
       updatedBy,
     });
   }
@@ -276,7 +240,7 @@ export async function getCachedOrFetchPriceHistory({ ticker, days, fetcher, upda
     currency: 'USD',
     priceHistory: sliceRecentHistory(mergedHistory, normalizedDays),
     cacheStatus: existingHistory.length > 0
-      ? (didUpdateStoredCsv
+      ? (didUpdateStoredHistory
         ? 'refreshed'
         : 'validated')
       : 'created',

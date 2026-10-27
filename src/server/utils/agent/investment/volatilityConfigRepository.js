@@ -1,16 +1,12 @@
-import YAML from 'yaml';
 import {
   DEFAULT_MAX_HISTORY_DAYS,
-  VOLATILITY_CONFIG_EXTENSION,
-  VOLATILITY_GENERAL_ENGINE_FILE_NAME,
   VOLATILITY_GENERAL_ENGINE_PATH,
-  VOLATILITY_TICKER_ENGINE_FILE_NAME,
   buildVolatilityTickerConfigPath,
   getRequiredInvestmentPersistenceTreeId,
 } from '@/server/utils/agent/investment/investmentPersistenceConfig';
 import {
-  readSingleInvestmentTextAttachmentByExtension,
-  replaceInvestmentLeafAttachment,
+  readInvestmentLeafNotes,
+  replaceInvestmentLeafNotes,
 } from '@/server/utils/agent/investment/investmentTreeRepository';
 
 const DEFAULT_GENERAL_VOLATILITY_CONFIG = Object.freeze({
@@ -98,67 +94,44 @@ function normalizeBoolean(value, keyName, defaultValue = false) {
   throw new Error(`Configuration value ${keyName} must be a boolean.`);
 }
 
-function parseYamlDocument(text, label) {
+function parseJsonDocument(text, label) {
   try {
-    const parsedDocument = YAML.parse(text);
+    const parsedDocument = JSON.parse(text);
 
     if (!parsedDocument || typeof parsedDocument !== 'object' || Array.isArray(parsedDocument)) {
-      throw new Error(`${label} must contain a YAML object.`);
+      throw new Error(`${label} must contain a JSON object.`);
     }
 
     return parsedDocument;
   } catch (error) {
-    throw new Error(`${label} could not be parsed: ${error instanceof Error ? error.message : 'Unknown YAML parse error.'}`);
+    throw new Error(`${label} could not be parsed: ${error instanceof Error ? error.message : 'Unknown JSON parse error.'}`);
   }
-}
-
-function isMissingConfigError(error, requiredLabel) {
-  const message = String(error instanceof Error ? error.message : error);
-
-  return message === `${requiredLabel} path was not found in the configured investment tree.`
-    || message === `${requiredLabel} attachment was not found in the configured investment tree.`;
 }
 
 async function ensureVolatilityConfigDocument({
   treeId,
   pathSegments,
-  fileName,
   requiredLabel,
   defaultDocument,
 }) {
-  try {
-    const existingDocument = await readSingleInvestmentTextAttachmentByExtension({
-      treeId,
-      pathSegments,
-      extension: VOLATILITY_CONFIG_EXTENSION,
-      requiredLabel,
-    });
-
+  const storedNotes = await readInvestmentLeafNotes({ treeId, pathSegments });
+  if (storedNotes?.notes) {
     return {
-      text: existingDocument.text,
+      document: parseJsonDocument(storedNotes.notes, requiredLabel),
       source: 'existing',
     };
-  } catch (error) {
-    if (!isMissingConfigError(error, requiredLabel)) {
-      throw error;
-    }
-
-    const defaultText = YAML.stringify(defaultDocument);
-
-    await replaceInvestmentLeafAttachment({
-      treeId,
-      pathSegments,
-      fileName,
-      contentType: 'application/yaml; charset=utf-8',
-      content: defaultText,
-      updatedBy: null,
-    });
-
-    return {
-      text: defaultText,
-      source: 'created',
-    };
   }
+
+  await replaceInvestmentLeafNotes({
+    treeId,
+    pathSegments,
+    notes: JSON.stringify(defaultDocument, null, 2),
+  });
+
+  return {
+    document: defaultDocument,
+    source: 'created',
+  };
 }
 
 export async function loadVolatilityRuntimeConfig(ticker) {
@@ -169,22 +142,20 @@ export async function loadVolatilityRuntimeConfig(ticker) {
   }
 
   const treeId = getRequiredInvestmentPersistenceTreeId();
-  const generalYaml = await ensureVolatilityConfigDocument({
+  const generalDocument = await ensureVolatilityConfigDocument({
     treeId,
     pathSegments: VOLATILITY_GENERAL_ENGINE_PATH,
-    fileName: VOLATILITY_GENERAL_ENGINE_FILE_NAME,
     requiredLabel: 'General engine configuration',
     defaultDocument: DEFAULT_GENERAL_VOLATILITY_CONFIG,
   });
-  const tickerYaml = await ensureVolatilityConfigDocument({
+  const tickerDocument = await ensureVolatilityConfigDocument({
     treeId,
     pathSegments: buildVolatilityTickerConfigPath(normalizedTicker),
-    fileName: VOLATILITY_TICKER_ENGINE_FILE_NAME,
     requiredLabel: `${normalizedTicker} ticker configuration`,
     defaultDocument: DEFAULT_TICKER_VOLATILITY_CONFIG,
   });
-  const generalConfig = parseYamlDocument(generalYaml.text, 'General engine configuration');
-  const tickerConfig = parseYamlDocument(tickerYaml.text, `${normalizedTicker} ticker configuration`);
+  const generalConfig = generalDocument.document;
+  const tickerConfig = tickerDocument.document;
   const effectiveConfig = {
     ...generalConfig,
     ...tickerConfig,
@@ -221,8 +192,8 @@ export async function loadVolatilityRuntimeConfig(ticker) {
     startShareCount,
     raw: {
       sources: {
-        general: generalYaml.source,
-        ticker: tickerYaml.source,
+        general: generalDocument.source,
+        ticker: tickerDocument.source,
       },
       general: generalConfig,
       ticker: tickerConfig,

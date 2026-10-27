@@ -1,16 +1,15 @@
 import {
   buildExchangeRatePath,
-  EXCHANGE_RATE_CSV_FILE_NAME,
   getRequiredInvestmentPersistenceTreeId,
 } from '@/server/utils/agent/investment/investmentPersistenceConfig';
 import {
   assertConfiguredInvestmentTree,
-  readSingleInvestmentTextAttachmentByFileName,
-  replaceInvestmentLeafAttachment,
+  readInvestmentLeafNotes,
+  replaceInvestmentLeafNotes,
 } from '@/server/utils/agent/investment/investmentTreeRepository';
 
-const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
 const EXCHANGE_RATE_CACHE_MAX_AGE_DAYS = 5;
+const EXCHANGE_RATE_PROVIDER = 'frankfurter';
 const EXCHANGE_RATE_PROVIDER_URL = 'https://api.frankfurter.dev/v2/rate/usd/dkk';
 
 function normalizeCurrencyCode(currencyCode, fallbackCurrencyCode) {
@@ -25,43 +24,6 @@ function subtractUtcDays(date, days) {
   const nextDate = new Date(date);
   nextDate.setUTCDate(nextDate.getUTCDate() - days);
   return nextDate;
-}
-
-function buildPairLabel(baseCurrency, quoteCurrency) {
-  return `${baseCurrency}/${quoteCurrency}`;
-}
-
-function parseExchangeRateCsv(text, pairLabel) {
-  const trimmedText = String(text ?? '').trim();
-
-  if (!trimmedText) {
-    return null;
-  }
-
-  const lines = trimmedText.split(/\r?\n/).filter(Boolean);
-  const lastRow = lines[lines.length - 1] ?? '';
-  const [datePart, ratePart] = lastRow.split(',');
-  const date = String(datePart ?? '').trim();
-  const rate = Number(String(ratePart ?? '').trim());
-
-  if (!date || !Number.isFinite(rate) || rate <= 0) {
-    return null;
-  }
-
-  const [baseCurrency = 'USD', quoteCurrency = 'DKK'] = pairLabel.split('/');
-
-  return {
-    base: baseCurrency,
-    quote: quoteCurrency,
-    date,
-    rate,
-    provider: 'frankfurter',
-    url: EXCHANGE_RATE_PROVIDER_URL,
-  };
-}
-
-function stringifyExchangeRateCsv(entry, pairLabel) {
-  return `Date,${pairLabel}\n${entry.date},${entry.rate}\n`;
 }
 
 function isExchangeRateFreshEnough(entry) {
@@ -94,24 +56,41 @@ async function fetchUsdToDkkRate() {
     quote: normalizeCurrencyCode(payload?.quote, 'DKK'),
     date: String(payload?.date ?? '').trim() || formatUtcDate(new Date()),
     rate,
-    provider: 'frankfurter',
+    provider: EXCHANGE_RATE_PROVIDER,
     url: EXCHANGE_RATE_PROVIDER_URL,
   };
 }
 
 async function loadCachedExchangeRate(treeId, baseCurrency, quoteCurrency) {
-  const pairLabel = buildPairLabel(baseCurrency, quoteCurrency);
-  const existingDocument = await readSingleInvestmentTextAttachmentByFileName({
+  const storedNotes = await readInvestmentLeafNotes({
     treeId,
     pathSegments: buildExchangeRatePath(baseCurrency, quoteCurrency),
-    fileName: EXCHANGE_RATE_CSV_FILE_NAME,
   });
 
-  if (!existingDocument) {
+  if (!storedNotes?.notes) {
     return null;
   }
 
-  return parseExchangeRateCsv(existingDocument.text, pairLabel);
+  let entry;
+
+  try {
+    entry = JSON.parse(storedNotes.notes);
+  } catch {
+    throw new Error('Exchange rate notes contain invalid JSON; no rate was changed.');
+  }
+
+  if (entry?.base !== baseCurrency || entry?.quote !== quoteCurrency || !entry.date || !Number.isFinite(entry.rate) || entry.rate <= 0) {
+    throw new Error('Exchange rate notes have an unexpected format; no rate was changed.');
+  }
+
+  return {
+    base: entry.base,
+    quote: entry.quote,
+    date: entry.date,
+    rate: entry.rate,
+    provider: EXCHANGE_RATE_PROVIDER,
+    url: EXCHANGE_RATE_PROVIDER_URL,
+  };
 }
 
 export async function getCachedOrFetchExchangeRate({ baseCurrency = 'USD', quoteCurrency = 'DKK', updatedBy = null } = {}) {
@@ -125,7 +104,6 @@ export async function getCachedOrFetchExchangeRate({ baseCurrency = 'USD', quote
   const treeId = getRequiredInvestmentPersistenceTreeId();
   await assertConfiguredInvestmentTree(treeId);
 
-  const pairLabel = buildPairLabel(normalizedBaseCurrency, normalizedQuoteCurrency);
   const existingEntry = await loadCachedExchangeRate(treeId, normalizedBaseCurrency, normalizedQuoteCurrency);
 
   if (isExchangeRateFreshEnough(existingEntry)) {
@@ -137,16 +115,14 @@ export async function getCachedOrFetchExchangeRate({ baseCurrency = 'USD', quote
   }
 
   const fetchedEntry = await fetchUsdToDkkRate();
-  const existingCsv = existingEntry ? stringifyExchangeRateCsv(existingEntry, pairLabel) : '';
-  const fetchedCsv = stringifyExchangeRateCsv(fetchedEntry, pairLabel);
+  const rateChanged = existingEntry?.date !== fetchedEntry.date || existingEntry?.rate !== fetchedEntry.rate;
 
-  if (existingCsv !== fetchedCsv) {
-    await replaceInvestmentLeafAttachment({
+  if (rateChanged) {
+    const { base, quote, date, rate } = fetchedEntry;
+    await replaceInvestmentLeafNotes({
       treeId,
       pathSegments: buildExchangeRatePath(normalizedBaseCurrency, normalizedQuoteCurrency),
-      fileName: EXCHANGE_RATE_CSV_FILE_NAME,
-      contentType: CSV_CONTENT_TYPE,
-      content: fetchedCsv,
+      notes: JSON.stringify({ base, quote, date, rate }, null, 2),
       updatedBy,
     });
   }
@@ -154,7 +130,7 @@ export async function getCachedOrFetchExchangeRate({ baseCurrency = 'USD', quote
   return {
     ...fetchedEntry,
     cacheStatus: existingEntry
-      ? (existingCsv !== fetchedCsv ? 'refreshed' : 'validated')
+      ? (rateChanged ? 'refreshed' : 'validated')
       : 'created',
     providerRequests: [
       {

@@ -444,10 +444,10 @@ async function assertScopedTree(treeId, options = {}) {
 }
 
 export async function assertTreeAccess(treeId, options = {}) {
-  return assertScopedTree(treeId, {
+  return withSqlConnection(async () => assertScopedTree(treeId, {
     ...options,
     enforceAccess: true,
-  });
+  }));
 }
 
 function normalizeGeneratedTreeText(value) {

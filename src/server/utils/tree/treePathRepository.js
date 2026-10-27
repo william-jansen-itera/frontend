@@ -304,6 +304,22 @@ export async function ensureTreePath({ treeId, pathSegments, treeOptions = null 
     try {
       await transaction.begin();
 
+      const lockResult = await createSqlRequest(transaction)
+        .input('lock_resource', sql.NVarChar(255), `tree-path:${treeId}`)
+        .query(`
+          DECLARE @lock_result INT;
+          EXEC @lock_result = sys.sp_getapplock
+            @Resource = @lock_resource,
+            @LockMode = 'Exclusive',
+            @LockOwner = 'Transaction',
+            @LockTimeout = 15000;
+          SELECT @lock_result AS lockResult;
+        `);
+
+      if (Number(lockResult.recordset[0]?.lockResult) < 0) {
+        throw new Error('Could not lock the tree while ensuring its path.');
+      }
+
       let parentId = null;
       let currentNode = null;
 

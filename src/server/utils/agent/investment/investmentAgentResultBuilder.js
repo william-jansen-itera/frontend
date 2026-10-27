@@ -18,7 +18,6 @@ import {
   buildStockPricePath,
   buildVolatilityAnalysisPath,
   getRequiredInvestmentPersistenceTreeId,
-  STOCK_PRICE_CSV_FILE_NAME,
   VOLATILITY_ANALYSIS_STATE_FILE_NAME,
 } from '@/server/utils/agent/investment/investmentPersistenceConfig';
 import {
@@ -92,17 +91,25 @@ async function buildRepositoryCitationEntry(toolName, result) {
   }
 
   const treeId = getRequiredInvestmentPersistenceTreeId();
-  const repositoryTarget = toolName === GET_STOCK_PRICE_TOOL
-    ? {
-      pathSegments: buildStockPricePath(normalizedTicker),
-      fileName: STOCK_PRICE_CSV_FILE_NAME,
+  if (toolName === GET_STOCK_PRICE_TOOL) {
+    try {
+      const citation = await getInvestmentNotesCitation({
+        treeId,
+        pathSegments: buildStockPricePath(normalizedTicker),
+      });
+
+      return citation ? { toolName, ...citation } : null;
+    } catch {
+      return null;
     }
-    : toolName === GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL || toolName === GET_VOLATILITY_EVENTS_TOOL
-      ? {
-        pathSegments: buildVolatilityAnalysisPath(normalizedTicker),
-        fileName: VOLATILITY_ANALYSIS_STATE_FILE_NAME,
-      }
-      : null;
+  }
+
+  const repositoryTarget = toolName === GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL || toolName === GET_VOLATILITY_EVENTS_TOOL
+    ? {
+      pathSegments: buildVolatilityAnalysisPath(normalizedTicker),
+      fileName: VOLATILITY_ANALYSIS_STATE_FILE_NAME,
+    }
+    : null;
 
   if (!repositoryTarget) {
     return null;
