@@ -20,6 +20,7 @@ import { getCachedOrFetchExchangeRate } from '@/server/utils/agent/investment/to
 import { normalizeTicker } from '@/server/utils/agent/investment/tools/investmentToolShared';
 import { fetchHistoricalClosingPrices } from '@/server/utils/agent/investment/tools/getStockPriceTool/historicalPriceProvider';
 import { getCachedOrFetchPriceHistory } from '@/server/utils/agent/investment/tools/getStockPriceTool/stockPriceRepository';
+import { getSiteOrigin } from '@/server/utils/siteOrigin';
 
 const TREE_OPTIONS = {
   allowPrivate: true,
@@ -197,9 +198,9 @@ function buildTickerRowMap(rows) {
   return rowsByTicker;
 }
 
-function buildPortfolioNoteLink(treeId, nodeId) {
+async function buildPortfolioNoteLink(treeId, nodeId) {
   const searchParams = new URLSearchParams({ treeId: String(treeId), nodeId: String(nodeId), visibility: 'private' });
-  return `/notes?${searchParams.toString()}`;
+  return new URL(`/notes?${searchParams.toString()}`, await getSiteOrigin()).toString();
 }
 
 async function loadPortfolioHoldingsDocument({ treeId }) {
@@ -227,13 +228,13 @@ async function loadPortfolioHoldingsDocument({ treeId }) {
     return {
       columns,
       rows: parsedNotes.rows,
-      noteLink: buildPortfolioNoteLink(treeId, storedNotes.nodeId),
+      noteLink: await buildPortfolioNoteLink(treeId, storedNotes.nodeId),
       hasStoredNotes: true,
     };
   }
 
   return {
-    noteLink: storedNotes?.nodeId ? buildPortfolioNoteLink(treeId, storedNotes.nodeId) : null,
+    noteLink: storedNotes?.nodeId ? await buildPortfolioNoteLink(treeId, storedNotes.nodeId) : null,
     hasStoredNotes: false,
     columns: normalizeColumns(REQUIRED_HEADERS),
     rows: [],
@@ -252,7 +253,7 @@ async function savePortfolioHoldingsDocument({ treeId, columns, rows, updatedBy 
   return {
     columns: normalizeColumns(columns),
     rows,
-    noteLink: buildPortfolioNoteLink(treeId, nodeId),
+    noteLink: await buildPortfolioNoteLink(treeId, nodeId),
   };
 }
 
