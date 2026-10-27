@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-const VISIBILITY_STORAGE_KEY = "knowledge-app.visibility";
+const VISIBILITY_STORAGE_KEY = "knowledge-app.visibility.v2";
 const VISIBILITY_CHANGE_EVENT = "knowledge-app-visibility-change";
 
 export const ALL_VISIBILITY_VALUES = ["public", "private", "both"];
@@ -54,7 +54,7 @@ function normalizeAllowedValues(allowedValues) {
     : ALL_VISIBILITY_VALUES;
 }
 
-export function normalizeVisibilityValue(value, allowedValues = ALL_VISIBILITY_VALUES, defaultValue = "public") {
+export function normalizeVisibilityValue(value, allowedValues = ALL_VISIBILITY_VALUES, defaultValue = "private") {
   const resolvedAllowedValues = normalizeAllowedValues(allowedValues);
   const normalizedValue = String(value ?? "").trim().toLowerCase();
 
@@ -70,16 +70,11 @@ export function normalizeVisibilityValue(value, allowedValues = ALL_VISIBILITY_V
     return defaultValue;
   }
 
-  return resolvedAllowedValues[0] ?? "public";
+  return resolvedAllowedValues[0] ?? "private";
 }
 
 export function setVisibilitySearchParam(searchParams, visibility, allowedValues = ALL_VISIBILITY_VALUES) {
   const normalizedVisibility = normalizeVisibilityValue(visibility, allowedValues);
-
-  if (normalizedVisibility === "public") {
-    searchParams.delete("visibility");
-    return normalizedVisibility;
-  }
 
   searchParams.set("visibility", normalizedVisibility);
   return normalizedVisibility;
@@ -95,7 +90,7 @@ export function buildVisibilityHref(pathname, searchParamsString, visibility, al
 export function usePersistedVisibility({
   requestedVisibility,
   allowedValues = ALL_VISIBILITY_VALUES,
-  defaultValue = "public",
+  defaultValue = "private",
 }) {
   const resolvedAllowedValues = normalizeAllowedValues(allowedValues);
   const hasRequestedVisibility = requestedVisibility !== null && requestedVisibility !== undefined && String(requestedVisibility).trim() !== "";

@@ -6,7 +6,7 @@ import PageVisitTracker from "../PageVisitTracker";
 import styles from "./page.module.css";
 
 const SECTIONS = [
-  "Grow", "Generate", "Extend", "Review", "Inspect", "Talk",
+  "Grow", "Generate", "Extend", "StartFromTree", "Review", "Inspect", "Talk",
   "Ground", "Broader", "Capture", "Memory", "Restore", "Access",
 ];
 

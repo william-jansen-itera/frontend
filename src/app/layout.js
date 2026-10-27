@@ -156,7 +156,7 @@ function HeaderAuthControls({
   );
 }
 
-function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "public" }) {
+function LayoutContent({ children, pathname, user, signIn, signOut, visibility = "private" }) {
   const t = useTranslations("Menu");
   const [mobileMenuPathname, setMobileMenuPathname] = useState(null);
   const [openNavGroupHref, setOpenNavGroupHref] = useState(null);

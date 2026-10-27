@@ -291,6 +291,8 @@ For chat, `src/app/api/chat/route.js` passes the server-read principal to the ag
 
 The notes API checks `assertTreeAccess(...)` against the request principal before reading or changing a tree. An ordinary private tree can be shared with assigned editors: its owner and editors can read and write it. Public trees can be read by anyone, but only their owners and editors can write to them. Only the owner can manage tree access. The check uses the tree's stored owner and editor IDs, not a client-supplied claim of ownership. A client can submit a different tree ID or a direct mutation request, but that does not grant permission to modify the tree. Unlike a shared private tree, personal-cache operations are owner-only; being an editor is not sufficient.
 
+On the Notes page, a viewer without write access can expand and collapse nodes in a public tree. These toggles change only that viewer's current page state: the client does not send an update request, and reloading restores the stored expansion state. A direct update request still requires owner or editor access on the server.
+
 This trust model requires that production API requests cannot bypass Static Web Apps. A direct localhost request can supply a fabricated principal header and is not an authentication test. In a signed-in production check against `GET /api/hello`, a caller-supplied fake principal did not replace the identity returned by the API; that check verifies this route and deployment, not every possible ingress path.
 
 For Azure AI Search SQL indexing, soft-delete detection now depends on the string column `isDeletedMarker` in `dbo.vw_tree_search_nodes`, matched by the datasource policy value `true`. The older computed `bit` column `isDeleted` remains useful for querying and admin UI filtering, but it did not reliably trigger document deletion in the SQL indexer.
@@ -477,6 +479,8 @@ Investment family example:
 	- `refresh_calculations` fetches latest closing prices and recalculates values, portfolio percentages, returns, and return percentages. If the average purchase price is missing, it can derive one from a stored return and share count. This recalculation is separate from `update_holdings`.
 	- `export_calculations` writes the current JSON holdings rows as a Portfolio stock holdings.csv attachment on the same node. It does not refresh calculations; refresh first when current values are needed.
 
+The investment family's shared persistence uses the public tree selected by `INVESTMENT_PERSISTENCE_TREE_ID`, not the caller's tree owner/editor permissions. An authenticated user who can invoke the investment agent can trigger its server-side tools to write to that configured tree, but can edit the tree directly through Notes or the tree API only if they are its owner or an editor. The portfolio holdings tool instead stores user-specific data in personal cache.
+
 ### Email Tools
 
 - `retrieve_emails` finds and filters a bounded set of messages from a mailbox folder, using a cached snapshot when fresh or IMAP when a refresh is needed.
@@ -484,6 +488,10 @@ Investment family example:
 - `flag_email` adds or removes the flagged/starred state; `delete_email` moves messages to Trash by default or permanently deletes them when requested.
 - `draft_email` saves a new or reply draft without sending, after explicit confirmation; `send_email` delivers a new message, reply, or saved draft through SMTP.
 - `unsubscribe_email` acts on a parsed, actionable unsubscribe link after explicit confirmation. An HTTP response alone does not confirm that the unsubscribe completed.
+
+When `retrieve_emails` refreshes a folder from IMAP (for example, Inbox), it replaces that folder's `-latest` retrieval snapshot with the fetched messages and attempts to prune numeric UID nodes from that folder's personal cache if their UIDs are not in the fetched set. Setting `forceRefresh: true` bypasses even a fresh cached snapshot and runs this same refresh and pruning path; without it, a fresh snapshot is reused and no pruning occurs. The fetch is bounded, so this is cache cleanup relative to the fetched window, not a check of the entire mailbox or a deletion of mail on the server. Pruning is best-effort and does not fail the retrieval if it errors.
+
+When `delete_email` moves a message from Inbox to Trash, IMAP assigns it a Trash UID that may differ from its Inbox UID. The tool records the mapping from the original Inbox UID to the Trash folder and UID, so a later confirmed permanent delete using that original UID can target the correct message in Trash. UIDs come from `retrieve_emails`, not a message's position in the result list. If the mapping is unavailable, retrieve Trash and use the message's Trash UID instead; do not guess a UID.
 
 ### Knowledge Trees Tools
 
@@ -541,6 +549,7 @@ In practice, this is why dynamic request facts such as knowledge-tree visibility
 Visibility in the chat UI is primarily a request-scoping input for the `knowledgeTrees` family.
 
 - The selected visibility value is a UI preference stored in browser `localStorage` and reflected in the chat page URL.
+- With no saved preference or URL override, visibility defaults to `private`. Changing the visibility dropdown immediately saves the selection to browser `localStorage`, so a choice such as `public` persists across full page loads and browser sessions until changed or the browser's site data is cleared. An explicit `?visibility=...` in the URL takes precedence over the saved selection.
 - On each knowledge-tree chat request, the client sends the current visibility value to `src/app/api/chat/route.js`.
 - The knowledge-tree service uses that value when loading the runtime tree set, so the available search tools are already filtered to the selected scope before the model starts the turn.
 - In practice this means `public`, `private`, and `both` do not just change post-processing labels. They change which trees are available to the grounded tool set for that request.

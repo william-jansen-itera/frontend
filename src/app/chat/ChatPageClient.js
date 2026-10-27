@@ -25,7 +25,7 @@ import {
 const KNOWLEDGE_MODE_GROUNDED = "grounded";
 const KNOWLEDGE_MODE_BROAD = "broad";
 const DEFAULT_CHAT_FAMILY = "knowledgeTrees";
-const DEFAULT_CHAT_VISIBILITY = "both";
+const DEFAULT_CHAT_VISIBILITY = "private";
 let fallbackTurnSequence = 0;
 let fallbackRequestSequence = 0;
 
