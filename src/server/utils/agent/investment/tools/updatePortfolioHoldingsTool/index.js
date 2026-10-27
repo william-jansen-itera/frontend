@@ -109,7 +109,7 @@ export const updatePortfolioHoldingsToolDefinition = {
             },
             averagePurchasePrice: {
               type: ['number', 'null'],
-              description: 'Average purchase price explicitly provided by the user for this ticker so return and return (%) can be calculated during refresh. Use null when it is not being updated or is not known. The system may derive this later only from an explicitly provided returnSnapshot stored in USD plus the latest closing price.',
+              description: 'Average purchase price per share in USD explicitly provided by the user for this ticker so return and return (%) can be calculated during refresh. Confirm the currency is USD if unclear. Use null when it is not being updated or is not known. The system may derive this later only from an explicitly provided returnSnapshot stored in USD plus the latest closing price.',
             },
             returnSnapshot: {
               type: ['number', 'null'],

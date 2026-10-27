@@ -434,7 +434,7 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
     throw new Error('At least one ticker and one stored field among share count, average purchase price, or return is required for update_holdings.');
   }
 
-  const hasReturnSnapshotUpdates = actionableEntries.some((entry) => entry.returnSnapshot);
+  const hasReturnSnapshotUpdates = actionableEntries.some((entry) => entry.returnSnapshot && !entry.averagePurchasePrice);
   let usdToDkkRate = null;
 
   if (hasReturnSnapshotUpdates) {
@@ -476,7 +476,7 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
   actionableEntries.forEach((entry) => {
     const existingRowIndex = rowsByTicker.get(entry.ticker);
     let targetRow;
-    const normalizedReturnSnapshot = entry.returnSnapshot
+    const normalizedReturnSnapshot = entry.returnSnapshot && !entry.averagePurchasePrice
       ? formatCollectedNumber(convertDkkToUsd(Number(entry.returnSnapshot), usdToDkkRate))
       : '';
 

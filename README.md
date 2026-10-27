@@ -466,6 +466,30 @@ Investment family example:
 15. `src/server/utils/agent/agentFamilyResult.js` builds the shared result envelope that all agent families return in a consistent shape.
 16. `src/server/utils/agent/investment/investmentAgentResultBuilder.js` also builds the investment agent descriptor used in the top-level response, so the catalog remains focused on registry and runtime setup.
 
+### Investment Tools
+
+- `get_stock_price` retrieves price history for a ticker.
+- `get_buy_sell_volatility_recommendation` runs the rule-based buy/sell/hold analysis on price history.
+- `get_volatility_events` filters saved recommendation events, such as rotations and episode-low updates.
+- `update_portfolio_stock_holdings` manages the personal-cache holdings CSV at Investment > Portfolio > Stocks > List:
+	- `update_holdings` saves user-provided share counts, average purchase prices, or returns by ticker. Returns entered in DKK are converted to USD. A new return clears the old average purchase price; a new average purchase price clears the old return. If both are supplied, average purchase price takes precedence.
+	- `remove_holdings` deletes requested ticker rows from the CSV.
+	- `refresh_calculations` fetches latest closing prices and recalculates values, portfolio percentages, returns, and return percentages. If the average purchase price is missing, it can derive one from a stored return and share count. This recalculation is separate from `update_holdings`.
+
+### Email Tools
+
+- `retrieve_emails` finds and filters a bounded set of messages from a mailbox folder, using a cached snapshot when fresh or IMAP when a refresh is needed.
+- `show_email` displays cached message headers and body text without model analysis; `analyze_email` provides a deeper interpretation of selected messages.
+- `flag_email` adds or removes the flagged/starred state; `delete_email` moves messages to Trash by default or permanently deletes them when requested.
+- `draft_email` saves a new or reply draft without sending, after explicit confirmation; `send_email` delivers a new message, reply, or saved draft through SMTP.
+- `unsubscribe_email` acts on a parsed, actionable unsubscribe link after explicit confirmation. An HTTP response alone does not confirm that the unsubscribe completed.
+
+### Knowledge Trees Tools
+
+- `search_tree_<name>_<id>` is generated for each accessible tree with a published description. It searches that tree's notes and attachments for evidence to answer grounded questions; available tools depend on the user's tree access and visibility scope.
+- `preview_add_to_tree` proposes a location for saving a broader answer and returns a preview ID. It is used only after the user accepts an offer to save that answer; previewing does not create a note.
+- `confirm_add_to_tree` creates the note from the saved preview after the user separately confirms the proposed location. A missing or stale preview ID requires a new preview.
+
 ### Chat history and tool history
 
 Chat history is for the agent. It contains the user and assistant messages that are replayed as conversational context on later turns.
