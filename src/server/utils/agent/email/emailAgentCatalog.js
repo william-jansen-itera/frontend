@@ -83,8 +83,9 @@ Do this even if an earlier answer did not mention the UID. The answer is not the
 Do not use the array index, data.resultCount, or meta.resultCount. Do not invent, shorten, or retype a UID.
 If this conversation has no retrieve_emails result, call retrieve_emails first, then copy data.emails[].uid from that result.
 If a call rejects a UID, look up data.emails[].uid in the latest retrieve_emails result again and retry once with those strings. Do not invent a replacement and do not ask the user for UIDs.
-Ask the user only if no retrieve_emails result exists and a retrieval cannot be made, or none of its rows match the request. Then show subject and data.emails[].uid from that result and stop.
+Ask the user only if no retrieve_emails result exists and a retrieval cannot be made, none of its rows match the request, or multiple rows match and the user must choose. When asking the user to select from matching emails, show each option as subject — uid <data.emails[].uid> with the exact UID visible, then stop. If no rows match, do not invent UIDs to offer as choices.
 For show_email, analyze_email, flag_email, and delete_email, pass a uids list even for one email. For unsubscribe_email, pass one uid string.
+For every email you identify in an answer, put its exact UID on its own line immediately after that email's subject in the form <!-- Email UID: <uid> -->. Replace <uid> with the value from the tool result, not a placeholder. Do not display UIDs in visible answer text unless you need the user to select an email from a UID list. These comments remain in conversation history but are hidden in the chat display; use the tool result, not the comment, when choosing tool arguments.
 
 ## retrieve_emails tool
 Use this tool for discovery and for any factual claim about which emails exist.
@@ -123,7 +124,7 @@ For broad topical requests, prefer more plausible anyTextQueries terms over fewe
 Example: for "show me emails about food", prefer anyTextQueries such as ["food", "nutrition", "meal", "dining", "restaurant", "cooking", "delivery", "breakfast", "lunch", "dinner"] rather than only textQuery: "food".
 Example: for "show me emails about clothing", prefer anyTextQueries such as ["clothing", "outfit", "clothes", "fashion", "apparel", "wear", "trousers", "shirts", "jackets", "shoes"] rather than only textQuery: "clothing".
 since and before only when the user gives a time window. Keep limit small.
-Every email included in an answer must be written as: subject — uid <data.emails[].uid>
+For every email included in an answer, write its subject and the standalone Email UID comment on the following line.
 
 ## analyze_email tool
 Use this tool only for a deeper read than the retrieve_emails heuristics and the initial cached information.
@@ -140,7 +141,7 @@ Use show_email for simple extraction from the email body or headers, for example
 When the user asks to open emails and extract concrete facts from each one, prefer show_email over analyze_email.
 Batch emails that need straightforward extraction into one call when they are in the same folder.
 Answer from data.emails[].subject, data.emails[].from, data.emails[].receivedAt, data.emails[].flags, data.emails[].preview, data.emails[].bodyText, data.emails[].attachmentFileNames, and data.emails[].unsubscribe when relevant.
-When you show emails, include each uid in the answer. Prefer the format: subject — uid <data.emails[].uid>.
+When you show emails, put each exact UID in an Email UID comment immediately after its subject, never in visible text.
 Use the returned heuristicClassification, replyItems, actionItems, and deadlineItems when they help, but do not describe them as model analysis.
 If the user only needs straightforward extraction, prefer show_email over analyze_email.
 
@@ -179,8 +180,8 @@ For reply drafts, default to writing in the same language as the email being rep
 The user does not need to repeat the recipient or subject for a normal reply because the tool can derive them from the referenced email, but the agent must still pass folder and uid from the latest retrieve_emails result.
 If the user explicitly provides to or subject while replying, pass those values and let them override the values derived from the referenced email.
 Do not call this tool with a uid unless the uid comes from the latest retrieve_emails result in this conversation.
-If this tool succeeds and data.draftUid is present, you must mention both data.draftFolder and data.draftUid explicitly in the answer.
-Do not omit that information when it is present in the tool output.
+If this tool succeeds and data.draftUid is present, mention data.draftFolder in visible text and put data.draftUid in an Email UID comment immediately after the draft subject.
+Do not omit the draft UID comment when data.draftUid is present in the tool output.
 Use that reported draft folder and draft uid later as the saved draft location.
 Do not use this tool to send the email. Use send_email only when the user clearly wants delivery.
 

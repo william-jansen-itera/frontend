@@ -8,6 +8,7 @@ const MARKDOWN_TABLE_SEPARATOR_PATTERN = /^:?-{3,}:?$/;
 const AGENT_METADATA_PREFIX = "<!-- agent-meta: ";
 const AGENT_METADATA_SUFFIX = " -->";
 const PREVIEW_ID_LINE_PATTERN = /^<!-- Preview ID: [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12} -->$/i;
+const EMAIL_UID_LINE_PATTERN = /^<!-- Email UID: [0-9]+ -->$/;
 
 function isAgentMetadataLine(line) {
   if (!line.startsWith(AGENT_METADATA_PREFIX) || !line.endsWith(AGENT_METADATA_SUFFIX)) {
@@ -238,7 +239,7 @@ function buildAgentAnswerBlocks(answer) {
   const normalizedAnswer = String(answer ?? "")
     .replace(/\r\n?/g, "\n")
     .split("\n")
-    .filter((line) => !isAgentMetadataLine(line) && !PREVIEW_ID_LINE_PATTERN.test(line))
+    .filter((line) => !isAgentMetadataLine(line) && !PREVIEW_ID_LINE_PATTERN.test(line) && !EMAIL_UID_LINE_PATTERN.test(line))
     .join("\n")
     .trimEnd();
   const lines = normalizedAnswer.split("\n");
