@@ -64,6 +64,7 @@ Optional analytics settings:
 
 Search engine metadata:
 
+- Next.js serves `src/app/robots.js` at `/robots.txt` and `src/app/sitemap.js` at `/sitemap.xml`. It calls each file's default export and serializes the returned metadata; no separate API route or static text/XML file is needed.
 - Set `SITE_URL` to the canonical production origin (for example `https://example.com`) so `robots.txt` and `sitemap.xml` always use that hostname. If unset, they use the incoming request's host.
 - The sitemap lists only `/`, `/about`, and `/contact`. Protected routes rely on authentication, not `robots.txt`, for access control.
 

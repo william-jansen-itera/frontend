@@ -494,8 +494,9 @@ export async function collectPortfolioHoldings({ treeId, entries, updatedBy = nu
     }
     if (entry.averagePurchasePrice) {
       targetRow[PORTFOLIO_HOLDINGS_AVERAGE_PURCHASE_PRICE_HEADER] = entry.averagePurchasePrice;
-    }
-    if (entry.returnSnapshot) {
+      targetRow[PORTFOLIO_HOLDINGS_RETURN_SNAPSHOT_HEADER] = '';
+    } else if (entry.returnSnapshot) {
+      targetRow[PORTFOLIO_HOLDINGS_AVERAGE_PURCHASE_PRICE_HEADER] = '';
       targetRow[PORTFOLIO_HOLDINGS_RETURN_SNAPSHOT_HEADER] = normalizedReturnSnapshot;
     }
 
