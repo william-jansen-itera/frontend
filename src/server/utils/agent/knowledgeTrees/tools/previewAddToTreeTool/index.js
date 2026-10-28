@@ -32,16 +32,24 @@ export const previewAddToTreeToolDefinition = {
   },
 };
 
-export function createPreviewAddToTreeHandler({ includedTreeIds, principal, includeDebug }) {
+export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug }) {
   return async ({ toolName, originalQuestion, broaderAnswer }) => {
     const match = String(toolName ?? '').trim().match(/_(\d+)$/);
     const resolvedTreeId = match ? match[1] : '';
+    const targetTree = includedTrees.find((tree) => String(tree.id) === resolvedTreeId);
 
-    if (!resolvedTreeId || !includedTreeIds.has(resolvedTreeId)) {
+    if (!targetTree) {
       throw new Error('A valid writable tree tool context is required to save a broader answer.');
     }
 
-    await assertWritableRuntimeTree({ treeId: resolvedTreeId, principal });
+    try {
+      await assertWritableRuntimeTree({ treeId: resolvedTreeId, principal });
+    } catch (error) {
+      if (error?.message === 'Tree was not found for the active application instance') {
+        throw new Error(`Please check if you have permission to edit the tree "${targetTree.name}".`, { cause: error });
+      }
+      throw error;
+    }
 
     const preview = await previewLeafFromChat({
       treeInstanceId: Number.parseInt(resolvedTreeId, 10),

@@ -259,7 +259,7 @@ function buildHandlerMap(includedTrees, { includeDebug = false, principal = null
     }));
   });
 
-  handlerMap.set(previewAddToTreeToolDefinition.name, createPreviewAddToTreeHandler({ includedTreeIds, principal, includeDebug }));
+  handlerMap.set(previewAddToTreeToolDefinition.name, createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug }));
   handlerMap.set(confirmAddToTreeToolDefinition.name, createConfirmAddToTreeHandler({ includedTreeIds, principal, includeDebug }));
 
   return handlerMap;
