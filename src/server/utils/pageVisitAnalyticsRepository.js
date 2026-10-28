@@ -10,7 +10,7 @@ function buildPageVisitPrefix(appIdentifier) {
 }
 
 function buildPageVisitLogBlobName(appIdentifier) {
-  return `${buildPageVisitPrefix(appIdentifier)}/events.ndjson`;
+  return `${buildPageVisitPrefix(appIdentifier)}/events-2026-10-28.ndjson`;
 }
 
 function buildPageVisitMetadata(eventPayload) {
