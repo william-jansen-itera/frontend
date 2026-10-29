@@ -663,6 +663,85 @@
 .messageContent {
   display: grid;
   gap: 0.8rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.messageHeading {
+  margin: 0.35rem 0 0;
+  color: #0f172a;
+  line-height: 1.35;
+  font-weight: 750;
+}
+
+h1.messageHeading { font-size: 1.35rem; }
+h2.messageHeading { font-size: 1.2rem; }
+h3.messageHeading { font-size: 1.08rem; }
+h4.messageHeading,
+h5.messageHeading,
+h6.messageHeading { font-size: 1rem; }
+
+.messageContent ul,
+.messageContent ol {
+  margin: 0;
+  padding-left: 1.5rem;
+  line-height: 1.7;
+}
+
+.messageContent ul {
+  list-style-type: disc;
+}
+
+.messageContent ol {
+  list-style-type: decimal;
+}
+
+.messageContent ul ul {
+  list-style-type: circle;
+}
+
+.messageContent li + li {
+  margin-top: 0.25rem;
+}
+
+.messageContent li > p {
+  margin: 0;
+}
+
+.messageContent blockquote {
+  margin: 0;
+  padding: 0.15rem 0 0.15rem 0.85rem;
+  border-left: 3px solid #0f766e;
+  color: #334155;
+}
+
+.messageContent blockquote p {
+  margin: 0;
+}
+
+.messageContent code {
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: #e2e8f0;
+  font-size: 0.9em;
+}
+
+.messageContent pre {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0.85rem;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: #e2e8f0;
+  line-height: 1.55;
+}
+
+.messageContent pre code {
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+  overflow-wrap: normal;
 }
 
 .messageTextPending {
