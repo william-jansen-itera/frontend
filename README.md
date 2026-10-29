@@ -497,6 +497,7 @@ When `delete_email` moves a message from Inbox to Trash, IMAP assigns it a Trash
 
 - `search_tree_<name>_<id>` is generated for each accessible tree with a published description. It searches that tree's notes and attachments for evidence to answer grounded questions; available tools depend on the user's tree access and visibility scope.
 - `preview_add_to_tree` proposes a location for saving a broader answer and returns a preview ID. It is used only after the user accepts an offer to save that answer; previewing does not create a note.
+- `revise_tree_preview` accepts a user's complete `>`-separated path (optionally starting with the tree name) after a preview. The path must end with the note title at the configured leaf depth. It reuses existing branches, previews any missing intermediate nodes, and replaces the previous preview ID; users can revise again before saving.
 - `confirm_add_to_tree` creates the note from the saved preview after the user separately confirms the proposed location. A missing or stale preview ID requires a new preview.
 
 ### Chat history and tool history

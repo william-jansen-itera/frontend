@@ -20,6 +20,10 @@ import {
   previewAddToTreeToolDefinition,
 } from '@/server/utils/agent/knowledgeTrees/tools/previewAddToTreeTool';
 import {
+  createReviseTreePreviewHandler,
+  reviseTreePreviewToolDefinition,
+} from '@/server/utils/agent/knowledgeTrees/tools/reviseTreePreviewTool';
+import {
   confirmAddToTreeToolDefinition,
   createConfirmAddToTreeHandler,
 } from '@/server/utils/agent/knowledgeTrees/tools/confirmAddToTreeTool';
@@ -117,6 +121,7 @@ You must never offer to save grounded retrieved content directly as a new tree n
 Use this tool only after the prior answer visibly offered to save the broad answer and the user explicitly accepted that offer. isPersistenceOffer=true by itself is not permission to call this tool.
 Use this tool to provide a preview of a suggested location in the tree.
 After the preview is returned, state the suggested tree name and path using treeName, plannedLeafParentBreadcrumb, and generatedLeafTitle from the preview output, then ask whether to create the note there.
+If the user requests a different path after a preview, call revise_tree_preview with the latest previewId and the user's complete path, including the leaf title. The tree name is optional. If the path is incomplete, ask for the full path; if the tool rejects it, explain the required depth and ask for a corrected path. Never confirm the old preview after a revision. Report the revised path and ask whether to create the note there. The user may revise it again before confirming.
 After the question, put the exact previewId from the tool output on its own line in the exact form <!-- Preview ID: <previewId> -->.
 Do not restate, quote, or summarize broaderAnswer in this preview response; the user has already seen the broad answer.
 Before calling this tool, clean and normalize the broad answer into saveable tree-note content.
@@ -142,9 +147,10 @@ Use answer for the user-facing text. For the current reply, choose exactly one c
 - Asking permission to broaden: knowledgeMode="grounded", isPermissionToBroadenRequest=true, isPersistenceOffer=false, explanation="Tree evidence cannot answer the question; asking permission to broaden." Briefly describe the evidence gap in answer, then end that same answer string with this exact question on its own line: Would you like a broader answer? Do not stop after describing the evidence gap.
 - Completed broader answer: knowledgeMode="broad", isPermissionToBroadenRequest=false, isPersistenceOffer=true, explanation="User approved a broader answer; answer includes an offer to save it." End answer with this exact question on its own line: Would you like me to save this answer in the tree?
 - Reply after preview_add_to_tree: knowledgeMode="grounded", isPermissionToBroadenRequest=false, isPersistenceOffer=false, explanation="Reporting the preview from preview_add_to_tree." In answer, show the preview, ask whether to create the note, then include the standalone <!-- Preview ID: <previewId> --> line with the exact previewId from the tool output; do not repeat the earlier broad answer.
+- Reply after revise_tree_preview: knowledgeMode="grounded", isPermissionToBroadenRequest=false, isPersistenceOffer=false, explanation="Reporting the revised preview from revise_tree_preview." In answer, show the revised path, ask whether to create the note, then include the standalone <!-- Preview ID: <previewId> --> line with the new previewId; do not repeat the earlier broad answer.
 - Reply after confirm_add_to_tree: knowledgeMode="grounded", isPermissionToBroadenRequest=false, isPersistenceOffer=false, explanation="Reporting the note created by confirm_add_to_tree." In answer, confirm creation, display the complete data.details.notes from the tool output, and include the exact noteLink; do not offer to save again.
 These fields classify the current reply, not an earlier broad answer. For either question above, separate it from preceding answer text with a blank line; in the JSON answer string, encode this as \\n\\n before the question. A true flag or explanation alone does not ask the user.
-Before returning JSON after preview_add_to_tree, check that answer contains the Preview ID line with the exact previewId from the latest preview_add_to_tree tool output. If it is missing, add the line after the creation question before returning JSON. The flag or explanation cannot replace this line.
+Before returning JSON after preview_add_to_tree or revise_tree_preview, check that answer contains the Preview ID line with the exact previewId from the latest preview tool output. If it is missing, add the line after the creation question before returning JSON. The flag or explanation cannot replace this line.
 Before returning JSON with isPermissionToBroadenRequest=true, check that answer itself ends with \\n\\nWould you like a broader answer? If it does not, add the question to answer before returning the JSON. Never set the flag to true for an answer that only reports missing evidence.
 Before returning JSON with isPersistenceOffer=true, check that answer itself ends with \\n\\nWould you like me to save this answer in the tree? If it does not, add the question to answer before returning the JSON. Never set the flag to true for an answer that doesn't include the offer.
 
@@ -173,7 +179,7 @@ export function buildAllowedToolInstruction(includedTrees) {
   return [
     'For this request, you may only use the following tree search tools; call one when its subject is plausibly related, even if its description does not mention the exact topic:',
     allowedToolNames.map((toolName) => `- ${toolName}`).join('\n'),
-    'For a grounded answer, search a plausibly related tree before deciding its contents are insufficient. If no listed tool is even plausibly related or the searched results are insufficient, ask permission before using broader knowledge. After a broad answer, use preview_add_to_tree and confirm_add_to_tree only when the user confirms each save step; do not search again just to preview or confirm.',
+    'For a grounded answer, search a plausibly related tree before deciding its contents are insufficient. If no listed tool is even plausibly related or the searched results are insufficient, ask permission before using broader knowledge. After a broad answer, use preview_add_to_tree, revise_tree_preview, and confirm_add_to_tree only at their respective user-approved save steps; do not search again just to preview, revise, or confirm.',
   ].join('\n');
 }
 
@@ -222,7 +228,7 @@ export function buildVisibilityScopeInstruction(options = {}) {
 }
 
 function buildPersistenceToolDefinitions() {
-  return [previewAddToTreeToolDefinition, confirmAddToTreeToolDefinition];
+  return [previewAddToTreeToolDefinition, reviseTreePreviewToolDefinition, confirmAddToTreeToolDefinition];
 }
 
 function buildPersistenceToolPreview() {
@@ -260,6 +266,7 @@ function buildHandlerMap(includedTrees, { includeDebug = false, principal = null
   });
 
   handlerMap.set(previewAddToTreeToolDefinition.name, createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug }));
+  handlerMap.set(reviseTreePreviewToolDefinition.name, createReviseTreePreviewHandler({ includedTreeIds, principal, includeDebug }));
   handlerMap.set(confirmAddToTreeToolDefinition.name, createConfirmAddToTreeHandler({ includedTreeIds, principal, includeDebug }));
 
   return handlerMap;

@@ -53,10 +53,8 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
     const noteSearchParams = new URLSearchParams({
       treeId: String(createdLeaf.treeId),
       nodeId: String(createdLeaf.createdNodeId),
+      visibility: writableTree.isPrivate ? 'private' : 'public',
     });
-    if (writableTree.isPrivate) {
-      noteSearchParams.set('visibility', 'private');
-    }
 
     const toolOutput = {
       ...createdLeaf,

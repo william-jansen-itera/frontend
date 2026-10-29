@@ -514,6 +514,37 @@ export async function previewLeafFromChat({ treeInstanceId, originalQuestion, br
   return resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer });
 }
 
+export async function reviseLeafPreviewPath({ treeInstanceId, preview, requestedPath }) {
+  const { treeName, maxDepth, candidates } = await getChatLeafPlacementContext(treeInstanceId);
+  const requestedTitles = String(requestedPath ?? '').split('>').map((title) => title.trim());
+  const pathTitles = requestedTitles.length === maxDepth + 2 && requestedTitles[0]?.toLowerCase() === treeName.toLowerCase()
+    ? requestedTitles.slice(1)
+    : requestedTitles;
+
+  if (pathTitles.some((title) => !title) || pathTitles.length !== maxDepth + 1) {
+    throw new Error(`Provide a complete path of ${maxDepth + 1} non-empty titles separated by >, ending with the note title.`);
+  }
+
+  const selectedCandidate = candidates
+    .filter((candidate) => candidate.breadcrumbTitles.every((title, index) => title.toLowerCase() === pathTitles[index].toLowerCase()))
+    .sort((left, right) => right.depth - left.depth)[0] ?? null;
+  const anchorTitles = selectedCandidate?.breadcrumbTitles ?? [];
+  const generatedPathTitles = pathTitles.slice(anchorTitles.length, -1);
+
+  return {
+    ...preview,
+    treeName,
+    placementMode: selectedCandidate
+      ? generatedPathTitles.length ? 'anchor_with_intermediates' : 'direct_leaf_from_anchor'
+      : 'full_path_from_root',
+    selectedAnchorNodeId: selectedCandidate?.nodeId ?? '',
+    selectedAnchorBreadcrumb: selectedCandidate?.breadcrumb ?? '',
+    generatedPathTitles,
+    plannedLeafParentBreadcrumb: buildResolvedBreadcrumb(anchorTitles, generatedPathTitles),
+    generatedLeafTitle: pathTitles.at(-1),
+  };
+}
+
 export async function generateChildrenForNode(treeInstanceId, nodeId) {
   return withSqlConnection(async () => {
     const generationContext = await getNodeGenerationContext(treeInstanceId, nodeId);

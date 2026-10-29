@@ -81,6 +81,49 @@ export async function storeTreePreviewSnapshot({ previewId, preview, principal }
   });
 }
 
+export async function getTreePreviewSnapshot({ previewId, principal }) {
+  const cacheContext = await buildAgentPersonalCacheContext(principal);
+  const snapshotDocument = await readSnapshotDocument({
+    treeId: cacheContext.personalCacheTreeId,
+    principal,
+  });
+  const snapshot = pruneSnapshots(snapshotDocument?.previews)[String(previewId ?? '').trim()];
+
+  if (!snapshot?.preview) {
+    throw new Error('The previewId was not found or has expired. Ask the user to preview the save again.');
+  }
+
+  return snapshot.preview;
+}
+
+export async function replaceTreePreviewSnapshot({ previousPreviewId, previewId, preview, principal }) {
+  const cacheContext = await buildAgentPersonalCacheContext(principal);
+  const snapshotDocument = await readSnapshotDocument({
+    treeId: cacheContext.personalCacheTreeId,
+    principal,
+  });
+  const snapshots = pruneSnapshots(snapshotDocument?.previews);
+  const previousId = String(previousPreviewId ?? '').trim();
+
+  if (!snapshots[previousId]?.preview) {
+    throw new Error('The previewId was not found or has expired. Ask the user to preview the save again.');
+  }
+
+  delete snapshots[previousId];
+  snapshots[String(previewId ?? '').trim()] = {
+    preview,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + PREVIEW_SNAPSHOT_TTL_MS).toISOString(),
+  };
+
+  await writeSnapshotDocument({
+    treeId: cacheContext.personalCacheTreeId,
+    principal,
+    snapshots,
+    updatedBy: cacheContext.updatedBy,
+  });
+}
+
 export async function consumeTreePreviewSnapshot({ previewId, principal }) {
   const cacheContext = await buildAgentPersonalCacheContext(principal);
   const snapshotDocument = await readSnapshotDocument({
