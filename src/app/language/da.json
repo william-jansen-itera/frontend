@@ -180,7 +180,7 @@
       "TreeCount": "{count, plural, one {# træ} other {# træer}}", "TreeId": "Træ {id}",
       "PublicationHint": "Træer uden en gemt beskrivelse offentliggøres ikke til agenten.",
       "Loading": "Indlæser træer...", "LoadingPage": "Indlæser...", "Empty": "Der findes endnu ingen træer for denne applikationsinstans.",
-      "Save": "Gem", "Saving": "Gemmer...", "Populate": "Udfyld", "Populating": "Udfylder...", "Open": "Åbn",
+      "Save": "Gem", "Saving": "Gemmer...", "Populate": "Udfyld træet", "Populating": "Udfylder...", "Open": "Åbn",
       "CreatePrivateCopy": "Opret privat kopi", "CopyingPrivate": "Kopierer...",
       "Delete": "Slet", "Working": "Arbejder...", "DescriptionLabel": "Beskrivelse", "DescriptionContext": "(bruges af agenten)",
       "UnsavedDraft": "Ikke gemt kladde", "Saved": "Gemt", "Published": "Offentliggjort til agenten",
