@@ -8,19 +8,19 @@ import {
 export const confirmAddToTreeToolDefinition = {
   type: 'function',
   name: 'confirm_save_to_tree',
-  description: 'Save the previewed answer after user confirmation. Choose the offered default mode for an unqualified yes (merge if offered), or create_leaf only if the user explicitly requests a separate note. Use only the latest previewId. Failures after confirmation require a new preview.',
+  description: 'Save the previewed answer after user confirmation. Choose the offered default mode for an unqualified yes (merge if offered), or create_leaf only if it was offered and the user explicitly requests a separate note. Use only the latest previewId, including a revised previewId when the path was changed. Failures after confirmation require a new preview.',
   strict: true,
   parameters: {
     type: 'object',
     properties: {
       previewId: {
         type: 'string',
-        description: 'The exact previewId returned by preview_save_to_tree. Pass only this id so the server can load the cached preview snapshot.',
+        description: 'The exact latest previewId returned by preview_save_to_tree or revise_tree_preview. Pass only this id so the server can load the cached preview snapshot.',
       },
       saveMode: {
         type: 'string',
         enum: ['merge_existing', 'create_leaf'],
-        description: 'The approved mode: use defaultSaveMode for an unqualified yes; choose create_leaf instead of an offered merge only when the user explicitly requests a separate note.',
+        description: 'The approved mode: use defaultSaveMode for an unqualified yes; choose create_leaf instead of an offered merge only when create_leaf was offered and the user explicitly requests a separate note.',
       },
     },
     required: ['previewId', 'saveMode'],
@@ -31,7 +31,7 @@ export const confirmAddToTreeToolDefinition = {
 export function createConfirmAddToTreeHandler({ includedTreeIds, principal, includeDebug }) {
   return async ({ previewId, saveMode }) => {
     if (!String(previewId ?? '').trim()) {
-      throw new Error('A previewId from preview_save_to_tree is required to confirm saving the broader answer.');
+      throw new Error('A previewId from the latest preview is required to confirm saving the broader answer.');
     }
 
     const offeredPreview = await getTreePreviewSnapshot({ previewId, principal });
