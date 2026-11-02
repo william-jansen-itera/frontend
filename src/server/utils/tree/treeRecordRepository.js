@@ -1014,6 +1014,37 @@ export async function upsertTreeNodeDetails({
     `);
 }
 
+export async function updateUnchangedLeafNotes({ treeInstanceId, nodeId, originalNotes, notes, expectedTitle, expectedParentId, updatedBy, transaction }) {
+  const result = await createSqlRequest(transaction)
+    .input('tree_instance_id', sql.Int, parseInt(treeInstanceId, 10))
+    .input('node_id', sql.Int, parseInt(nodeId, 10))
+    .input('original_notes', sql.NVarChar(sql.MAX), originalNotes)
+    .input('expected_title', sql.NVarChar(255), expectedTitle)
+    .input('expected_parent_id', sql.Int, expectedParentId ? parseInt(expectedParentId, 10) : null)
+    .input('notes', sql.NVarChar(sql.MAX), notes)
+    .input('updated_by_object_id', sql.NVarChar(100), updatedBy?.updatedByObjectId ?? null)
+    .input('updated_by_user_details', sql.NVarChar(320), updatedBy?.updatedByUserDetails ?? null)
+    .query(`
+      UPDATE details SET
+        notes = @notes,
+        updated_by_object_id = @updated_by_object_id,
+        updated_by_user_details = @updated_by_user_details,
+        updated_at = SYSUTCDATETIME()
+      FROM tree_node_details details
+      INNER JOIN tree_nodes node ON node.id = details.tree_node_id
+      WHERE node.tree_instance_id = @tree_instance_id
+        AND node.id = @node_id
+        AND node.deleted_at IS NULL
+        AND node.is_leaf_node = 1
+        AND CONVERT(VARBINARY(MAX), node.text) = CONVERT(VARBINARY(MAX), @expected_title)
+        AND (node.parent_id = @expected_parent_id OR (node.parent_id IS NULL AND @expected_parent_id IS NULL))
+        AND details.is_secret = 0
+        AND CONVERT(VARBINARY(MAX), details.notes) = CONVERT(VARBINARY(MAX), @original_notes);
+    `);
+
+  return Number(result.rowsAffected?.[0] ?? 0) === 1;
+}
+
 export async function applyTreeNodeReviewStatus({
   treeInstanceId,
   nodeId,

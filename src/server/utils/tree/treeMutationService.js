@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   deleteNodeAttachmentBlobIfExists,
   restoreNodeAttachmentBlobIfDeleted,
@@ -6,7 +7,7 @@ import {
 import {
   generateChatLeafPathPlan,
   generateChildTitlesFromBreadcrumb,
-  generateLeafNotesFromChatAnswer,
+  generateMergedLeafNotes,
   generateLeafNotesDraft,
   selectChatLeafAnchorCandidate,
 } from '@/server/utils/tree/treeGenerationService';
@@ -35,6 +36,7 @@ import {
   queryTreeNodeDetailRecord,
   queryTreeSummary,
   softDeleteAttachmentMetadataRecord,
+  updateUnchangedLeafNotes,
   updateTreeNodeText,
   upsertTreeNodeDetails,
 } from '@/server/utils/tree/treeRecordRepository';
@@ -281,7 +283,7 @@ function buildResolvedBreadcrumb(anchorBreadcrumbTitles, generatedPathTitles) {
   return [...anchorBreadcrumbTitles, ...generatedPathTitles].filter(Boolean).join(' > ');
 }
 
-async function getChatLeafPlacementContext(treeInstanceId) {
+async function getChatLeafPlacementContext(treeInstanceId, originalQuestion = '', broaderAnswer = '') {
   const [flatData, treeSummary, maxDepth] = await Promise.all([
     queryTreeData(treeInstanceId),
     queryTreeSummary(treeInstanceId),
@@ -315,10 +317,45 @@ async function getChatLeafPlacementContext(treeInstanceId) {
       directLeafPossible: node.directLeafPossible,
     }));
 
+  const questionTerms = new Set(originalQuestion
+    .toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+  const answerTerms = new Set(broaderAnswer.slice(0, 1000)
+    .toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+  const leafShortlist = originalQuestion && broaderAnswer
+    ? flatData.filter((node) => node.isLeafNode)
+      .map((node) => {
+        const breadcrumb = breadcrumbByNodeId.get(String(node.id)) ?? '';
+        const breadcrumbWords = breadcrumb.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+        const titleWords = String(node.name ?? '').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+        const score = titleWords.filter((word) => questionTerms.has(word)).length * 3
+          + breadcrumbWords.filter((word) => questionTerms.has(word)).length * 2
+          + breadcrumbWords.filter((word) => answerTerms.has(word)).length;
+        return { node, breadcrumb, score };
+      })
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 12)
+    : [];
+  const leafRecords = await Promise.all(leafShortlist.map(async (candidate) => ({
+    ...candidate,
+    details: await queryTreeNodeDetailRecord(treeInstanceId, candidate.node.id),
+  })));
+  const leafCandidates = leafRecords
+    .filter((candidate) => candidate.details && !candidate.details.isSecret)
+    .filter((candidate) => candidate.details.notes.length < 4000)
+    .map((candidate) => ({
+      nodeId: String(candidate.node.id),
+      breadcrumb: candidate.breadcrumb,
+      isLeafNode: true,
+      notes: candidate.details.notes.slice(0, 1500),
+      parentId: String(candidate.node.parent ?? ''),
+      title: candidate.node.name,
+      notesFingerprint: fingerprintNotes(candidate.details.notes),
+    }));
+
   return {
     treeName: treeSummary.treeName,
     maxDepth,
-    candidates,
+    candidates: [...candidates, ...leafCandidates],
   };
 }
 
@@ -330,7 +367,9 @@ async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broa
     throw new Error('The chat add action requires the original question and broader answer content.');
   }
 
-  const { treeName, maxDepth, candidates } = await getChatLeafPlacementContext(treeInstanceId);
+  const { treeName, maxDepth, candidates } = await getChatLeafPlacementContext(
+    treeInstanceId, normalizedOriginalQuestion, normalizedBroaderAnswer,
+  );
 
   let selectedCandidate = null;
 
@@ -342,14 +381,32 @@ async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broa
       candidates,
     });
 
-    if (selection.selectionDisposition === 'selected_anchor') {
+    if (selection.selectionDisposition !== 'no_anchor') {
       selectedCandidate = candidates.find((candidate) => candidate.nodeId === selection.selectedAnchorNodeId) ?? null;
 
       if (!selectedCandidate) {
         throw new Error('The selected anchor path was not valid for the target tree.');
       }
 
-      if (selectedCandidate.directLeafPossible) {
+      if (selection.selectionDisposition === 'selected_leaf') {
+        return {
+          treeId: String(treeInstanceId),
+          treeName,
+          placementMode: 'merge_existing',
+          generatedLeafTitle: '',
+          originalQuestion: normalizedOriginalQuestion,
+          broaderAnswer: normalizedBroaderAnswer,
+          mergeTarget: {
+            nodeId: selectedCandidate.nodeId,
+            breadcrumb: selectedCandidate.breadcrumb,
+            parentId: selectedCandidate.parentId,
+            title: selectedCandidate.title,
+            notesFingerprint: selectedCandidate.notesFingerprint,
+          },
+        };
+      }
+
+      if (selectedCandidate.directLeafPossible && selection.generatedLeafTitle) {
         return {
           treeId: String(treeInstanceId),
           treeName,
@@ -510,8 +567,44 @@ export function normalizeUpdatedByMetadata(principal) {
   };
 }
 
+function fingerprintNotes(notes) {
+  return createHash('sha256').update(notes).digest('hex');
+}
+
+function buildPreviewDestinations(preview, mergeTarget = null) {
+  return {
+    ...preview,
+    createPath: preview.generatedLeafTitle
+      ? [preview.plannedLeafParentBreadcrumb, preview.generatedLeafTitle].filter(Boolean).join(' > ')
+      : null,
+    mergeTarget,
+    defaultSaveMode: mergeTarget ? 'merge_existing' : 'create_leaf',
+  };
+}
+
 export async function previewLeafFromChat({ treeInstanceId, originalQuestion, broaderAnswer }) {
-  return resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer });
+  const placement = await resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer });
+  if (placement.broaderAnswer.length > 4000) {
+    throw new Error('The cleaned answer is too long to save as one note. Shorten it before previewing.');
+  }
+  if (placement.mergeTarget) {
+    return buildPreviewDestinations(placement, placement.mergeTarget);
+  }
+  const flatData = await queryTreeData(treeInstanceId);
+  const breadcrumbs = buildBreadcrumbByNodeId(flatData);
+  const occupiedPaths = new Set(flatData.filter((node) => node.isLeafNode)
+    .map((node) => (breadcrumbs.get(String(node.id)) ?? '').toLowerCase()));
+  const baseTitle = placement.generatedLeafTitle;
+  for (let suffix = 0; suffix <= occupiedPaths.size; suffix += 1) {
+    const addition = suffix === 0 ? '' : ` (New ${suffix})`;
+    const title = `${baseTitle.slice(0, 255 - addition.length)}${addition}`;
+    const path = [placement.plannedLeafParentBreadcrumb, title].filter(Boolean).join(' > ').toLowerCase();
+    if (!occupiedPaths.has(path)) {
+      placement.generatedLeafTitle = title;
+      break;
+    }
+  }
+  return buildPreviewDestinations(placement);
 }
 
 export async function reviseLeafPreviewPath({ treeInstanceId, preview, requestedPath }) {
@@ -531,7 +624,14 @@ export async function reviseLeafPreviewPath({ treeInstanceId, preview, requested
   const anchorTitles = selectedCandidate?.breadcrumbTitles ?? [];
   const generatedPathTitles = pathTitles.slice(anchorTitles.length, -1);
 
-  return {
+  const flatData = await queryTreeData(treeInstanceId);
+  const breadcrumbs = buildBreadcrumbByNodeId(flatData);
+  if (flatData.some((node) => node.isLeafNode &&
+    (breadcrumbs.get(String(node.id)) ?? '').toLowerCase() === pathTitles.join(' > ').toLowerCase())) {
+    throw new Error('Path revision creates a new note. Choose a path with a new leaf title.');
+  }
+
+  return buildPreviewDestinations({
     ...preview,
     treeName,
     placementMode: selectedCandidate
@@ -542,7 +642,7 @@ export async function reviseLeafPreviewPath({ treeInstanceId, preview, requested
     generatedPathTitles,
     plannedLeafParentBreadcrumb: buildResolvedBreadcrumb(anchorTitles, generatedPathTitles),
     generatedLeafTitle: pathTitles.at(-1),
-  };
+  });
 }
 
 export async function generateChildrenForNode(treeInstanceId, nodeId) {
@@ -931,17 +1031,20 @@ export async function createLeafNodeFromChat({
     throw new Error('A generated leaf title is required for the chat add action.');
   }
 
-  const generatedNotes = await generateLeafNotesFromChatAnswer({
-    treeName: resolvedPlacement.treeName,
-    breadcrumbTitles: [
-      ...String(resolvedPlacement.plannedLeafParentBreadcrumb ?? '').split('>').map((title) => title.trim()).filter(Boolean),
-      resolvedPlacement.generatedLeafTitle,
-    ],
-    originalQuestion: resolvedPlacement.originalQuestion,
-    broaderAnswer: resolvedPlacement.broaderAnswer,
-  });
+  const notes = resolvedPlacement.broaderAnswer;
+  if (!notes || notes.length > 4000) {
+    throw new Error('The cleaned answer must be non-empty and at most 4000 characters. Preview again.');
+  }
 
   return withSqlConnection(async () => {
+    const flatData = await queryTreeData(treeInstanceId);
+    const breadcrumbs = buildBreadcrumbByNodeId(flatData);
+    const intendedPath = [resolvedPlacement.plannedLeafParentBreadcrumb, resolvedPlacement.generatedLeafTitle]
+      .filter(Boolean).join(' > ').toLowerCase();
+    if (flatData.some((node) => node.isLeafNode &&
+      (breadcrumbs.get(String(node.id)) ?? '').toLowerCase() === intendedPath)) {
+      throw new Error('The new note path already exists. Preview again and choose a different path.');
+    }
     const transaction = new sql.Transaction();
 
     try {
@@ -959,7 +1062,7 @@ export async function createLeafNodeFromChat({
         treeInstanceId,
         nodeId: parseInt(placementResult.createdLeafNode.createdNodeId, 10),
         name: resolvedPlacement.generatedLeafTitle,
-        notes: generatedNotes.notes,
+        notes,
         updatedBy: normalizeUpdatedByMetadata(principal),
         transaction,
       });
@@ -989,6 +1092,70 @@ export async function createLeafNodeFromChat({
 
       throw error;
     }
+  });
+}
+
+export async function mergeLeafNodeFromChat({ treeInstanceId, principal, preview, toolName }) {
+  const target = preview.mergeTarget;
+  if (!target?.nodeId || !target.notesFingerprint) {
+    throw new Error('No existing note was offered for this preview. Preview again.');
+  }
+
+  const node = await queryTreeNode(treeInstanceId, target.nodeId);
+  const current = await queryTreeNodeDetailRecord(treeInstanceId, target.nodeId);
+    const flatData = await queryTreeData(treeInstanceId);
+    const breadcrumbs = buildBreadcrumbByNodeId(flatData);
+    const positionedNode = flatData.find((item) => String(item.id) === target.nodeId);
+  if (!node?.isLeafNode || !current || current.isSecret ||
+      !positionedNode || (breadcrumbs.get(target.nodeId) ?? '') !== target.breadcrumb ||
+      String(positionedNode.parent ?? '') !== target.parentId || node.name !== target.title ||
+      fingerprintNotes(current.notes) !== target.notesFingerprint) {
+    throw new Error('The existing note has changed or is no longer available. Preview again before merging.');
+  }
+
+  const notes = await generateMergedLeafNotes({
+    treeName: preview.treeName,
+    breadcrumb: target.breadcrumb,
+    originalNotes: current.notes,
+    broaderAnswer: preview.broaderAnswer,
+  });
+
+  return withSqlConnection(async () => {
+    const transaction = new sql.Transaction();
+    try {
+      await transaction.begin();
+      await ensureTreeNodeDetailsRow(target.nodeId, transaction);
+      const updated = await updateUnchangedLeafNotes({
+        treeInstanceId,
+        nodeId: target.nodeId,
+        originalNotes: current.notes,
+        notes,
+        expectedTitle: target.title,
+        expectedParentId: target.parentId,
+        updatedBy: normalizeUpdatedByMetadata(principal),
+        transaction,
+      });
+      if (!updated) {
+        throw new Error('The existing note changed during the merge. Preview again before merging.');
+      }
+      await transaction.commit();
+    } catch (error) {
+      if (transaction._aborted !== true) {
+        await transaction.rollback();
+      }
+      throw error;
+    }
+
+    const indexerRun = await requestIndexerRefreshForMutation(treeInstanceId, 'chat merge');
+    return {
+      treeId: String(treeInstanceId),
+      treeName: preview.treeName,
+      toolName,
+      updatedNodeId: target.nodeId,
+      mergeBreadcrumb: target.breadcrumb,
+      details: await queryNodeDetails(treeInstanceId, target.nodeId),
+      indexerRun,
+    };
   });
 }
 

@@ -7,12 +7,13 @@ import {
 import {
   assertWritableRuntimeTree,
   buildPersistenceToolHandlerResult,
+  buildTreePreviewToolOutput,
 } from '@/server/utils/agent/knowledgeTrees/tools/persistenceToolShared';
 
 export const reviseTreePreviewToolDefinition = {
   type: 'function',
   name: 'revise_tree_preview',
-  description: 'Update the suggested placement after the user requests a different path. Use the latest previewId and the complete path from the first tree node through the note title, separated by >. This returns a new previewId; the previous preview can no longer be confirmed.',
+  description: 'Choose a different path for creating a new leaf, even when the original preview offered merging. The complete path must end in a new leaf title, not an existing note. Returns a new previewId; the old preview cannot be confirmed.',
   strict: true,
   parameters: {
     type: 'object',
@@ -23,7 +24,7 @@ export const reviseTreePreviewToolDefinition = {
       },
       requestedPath: {
         type: 'string',
-        description: 'Complete path after the tree name, including the final note title, with titles separated by >.',
+        description: 'Complete path after the tree name, ending in a new leaf title, with titles separated by >.',
       },
     },
     required: ['previewId', 'requestedPath'],
@@ -52,7 +53,7 @@ export function createReviseTreePreviewHandler({ includedTreeIds, principal, inc
     return buildPersistenceToolHandlerResult({
       toolName: reviseTreePreviewToolDefinition.name,
       toolResultType: 'tree_note_preview',
-      toolOutput: { previewId: revisedPreviewId, ...revisedPreview, toolName: reviseTreePreviewToolDefinition.name },
+      toolOutput: buildTreePreviewToolOutput(revisedPreviewId, revisedPreview),
       includeDebug,
     });
   };

@@ -90,6 +90,11 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     })
     : null;
   const requestStartedAtMs = includeDebug ? Date.now() : null;
+  const validateAnswerState = buildStructuredAnswerStateFinalResponseValidator({
+    allowBroadMode: true,
+    allowPersistence: true,
+    requirePersistenceOfferForBroad: true,
+  });
 
   try {
     const { response, toolInvocations, modelCalls } = await runAgentFamilyExecution({
@@ -105,11 +110,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
       },
       initialInput,
       handlerMap,
-      finalResponseValidator: buildStructuredAnswerStateFinalResponseValidator({
-        allowBroadMode: true,
-        allowPersistence: true,
-        requirePersistenceOfferForBroad: true,
-      }),
+      finalResponseValidator: validateAnswerState,
       debug,
       includeDebug,
     });

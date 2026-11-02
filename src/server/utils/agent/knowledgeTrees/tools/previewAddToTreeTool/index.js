@@ -4,12 +4,13 @@ import { storeTreePreviewSnapshot } from '@/server/utils/agent/knowledgeTrees/to
 import {
   assertWritableRuntimeTree,
   buildPersistenceToolHandlerResult,
+  buildTreePreviewToolOutput,
 } from '@/server/utils/agent/knowledgeTrees/tools/persistenceToolShared';
 
 export const previewAddToTreeToolDefinition = {
   type: 'function',
-  name: 'preview_add_to_tree',
-  description: 'Preview where a broader answer would be saved in a writable tree. Use only after the prior user-facing answer visibly offered to save it and the user explicitly accepted that offer; isPersistenceOffer=true alone is not permission. Call it directly once the user confirms. The output includes previewId, and the server caches the preview for a later confirm_add_to_tree call.',
+  name: 'preview_save_to_tree',
+  description: 'Preview existing-note merge (default when offered) or separate new-note creation after explicit acceptance of a prior offer to save the broad answer. Clean the broader answer before preview for either mode. The server caches it for confirmation; output includes previewId and destinations only.',
   strict: true,
   parameters: {
     type: 'object',
@@ -20,11 +21,11 @@ export const previewAddToTreeToolDefinition = {
       },
       originalQuestion: {
         type: 'string',
-        description: 'The user question that led to the broader answer. This value is stored in the cached preview snapshot and later used during confirm_add_to_tree.',
+        description: 'The user question that led to the broader answer. This value is stored in the cached preview snapshot and later used during confirm_save_to_tree.',
       },
       broaderAnswer: {
         type: 'string',
-        description: 'The broader answer cleaned and normalized into saveable tree-note content for the previewed note, while preserving detail needed for placement and note generation. This value is stored in the cached preview snapshot and later used during confirm_add_to_tree.',
+        description: 'The broader answer cleaned and normalized into saveable reference-note content before either direct creation or merge. This is stored only in the preview snapshot.',
       },
     },
     required: ['toolName', 'originalQuestion', 'broaderAnswer'],
@@ -63,7 +64,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
     return buildPersistenceToolHandlerResult({
       toolName: previewAddToTreeToolDefinition.name,
       toolResultType: 'tree_note_preview',
-      toolOutput: { previewId, ...preview, toolName: previewAddToTreeToolDefinition.name },
+      toolOutput: buildTreePreviewToolOutput(previewId, preview),
       includeDebug,
     });
   };
