@@ -317,31 +317,17 @@ async function getChatLeafPlacementContext(treeInstanceId, originalQuestion = ''
       directLeafPossible: node.directLeafPossible,
     }));
 
-  const questionTerms = new Set(originalQuestion
-    .toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
-  const answerTerms = new Set(broaderAnswer.slice(0, 1000)
-    .toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
-  const leafShortlist = originalQuestion && broaderAnswer
-    ? flatData.filter((node) => node.isLeafNode)
-      .map((node) => {
-        const breadcrumb = breadcrumbByNodeId.get(String(node.id)) ?? '';
-        const breadcrumbWords = breadcrumb.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
-        const titleWords = String(node.name ?? '').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
-        const score = titleWords.filter((word) => questionTerms.has(word)).length * 3
-          + breadcrumbWords.filter((word) => questionTerms.has(word)).length * 2
-          + breadcrumbWords.filter((word) => answerTerms.has(word)).length;
-        return { node, breadcrumb, score };
-      })
-      .sort((left, right) => right.score - left.score)
-      .slice(0, 12)
+  const leafRecords = originalQuestion && broaderAnswer
+    ? await Promise.all(flatData
+      .filter((node) => node.isLeafNode)
+      .map(async (node) => ({
+        node,
+        breadcrumb: breadcrumbByNodeId.get(String(node.id)) ?? '',
+        details: await queryTreeNodeDetailRecord(treeInstanceId, node.id),
+      })))
     : [];
-  const leafRecords = await Promise.all(leafShortlist.map(async (candidate) => ({
-    ...candidate,
-    details: await queryTreeNodeDetailRecord(treeInstanceId, candidate.node.id),
-  })));
   const leafCandidates = leafRecords
     .filter((candidate) => candidate.details && !candidate.details.isSecret)
-    .filter((candidate) => candidate.details.notes.length < 4000)
     .map((candidate) => ({
       nodeId: String(candidate.node.id),
       breadcrumb: candidate.breadcrumb,

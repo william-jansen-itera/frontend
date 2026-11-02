@@ -10,7 +10,7 @@ import {
 export const previewAddToTreeToolDefinition = {
   type: 'function',
   name: 'preview_save_to_tree',
-  description: 'Preview existing-note merge (default when offered) or separate new-note creation after explicit acceptance of a prior offer to save the broad answer. Clean the broader answer before preview for either mode. The server caches it for confirmation; output includes previewId and destinations only.',
+  description: 'Preview existing-note merge (default when offered) or separate new-note creation only after the user accepts a save offer in an already-delivered broad answer. Use that answer, not a newly generated or expanded answer; clean it before preview for either mode. A prior yes to broaden is not consent to preview saving. The server caches the preview for confirmation; output includes previewId and destinations only.',
   strict: true,
   parameters: {
     type: 'object',
@@ -25,7 +25,7 @@ export const previewAddToTreeToolDefinition = {
       },
       broaderAnswer: {
         type: 'string',
-        description: 'The broader answer cleaned and normalized into saveable reference-note content before either direct creation or merge. This is stored only in the preview snapshot.',
+        description: 'The already-delivered broad answer whose save offer the user accepted, cleaned into saveable reference-note content without adding new facts. This is stored only in the preview snapshot.',
       },
     },
     required: ['toolName', 'originalQuestion', 'broaderAnswer'],
