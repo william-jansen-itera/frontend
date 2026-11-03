@@ -505,6 +505,7 @@ export function buildAnalyzeEmailHandler({ includeDebug = false, updatedBy = nul
       return buildEmailToolResult({
         toolName: ANALYZE_EMAIL_TOOL,
         toolResultType: 'email_analysis',
+        untrustedDataPaths: ['analyses'],
         data: {
           analyses,
         },

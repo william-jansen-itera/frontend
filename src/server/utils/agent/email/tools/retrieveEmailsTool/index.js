@@ -399,6 +399,7 @@ export function buildRetrieveEmailsHandler({ includeDebug = false, updatedBy = n
       return buildEmailToolResult({
         toolName: RETRIEVE_EMAILS_TOOL,
         toolResultType: 'email_retrieval',
+        untrustedDataPaths: ['emails'],
         data: {
           accountLabel: accountConfig.label,
           provider: accountConfig.provider,

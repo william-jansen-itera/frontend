@@ -8,6 +8,16 @@ function normalizeMeta(meta) {
   return { ...meta };
 }
 
+export function buildUntrustedContentMeta(data, paths) {
+  const untrustedDataPaths = paths.filter((path) => path.split('.').reduce(
+    (value, segment) => value?.[segment], data,
+  ) != null);
+
+  return untrustedDataPaths.length > 0
+    ? { contentTrust: 'untrusted_source', untrustedDataPaths }
+    : {};
+}
+
 export function buildAgentToolResult({
   sourceToolFamily,
   toolName,

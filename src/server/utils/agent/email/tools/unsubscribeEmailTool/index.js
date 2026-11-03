@@ -139,6 +139,11 @@ export function buildUnsubscribeEmailHandler({ includeDebug = false, updatedBy =
       return buildEmailToolResult({
         toolName: UNSUBSCRIBE_EMAIL_TOOL,
         toolResultType: 'email_unsubscribe',
+        untrustedDataPaths: [
+          'subject', 'unsubscribe.link', 'unsubscribe.manualInstructionText',
+          'action.url', 'action.finalUrl', 'action.responseText', 'action.followUpAction.url',
+          'action.to', 'action.cc', 'action.bcc', 'action.subject', 'action.response',
+        ],
         data: {
           provider: args.provider,
           folder: normalizedFolder,

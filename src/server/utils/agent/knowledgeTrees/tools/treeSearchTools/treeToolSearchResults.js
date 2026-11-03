@@ -115,6 +115,7 @@ export function buildTreeToolHandlerResult({
     meta: {
       resultCount: Number(toolOutput?.count ?? 0),
       supportsCitations: true,
+      contentTrust: 'untrusted_source',
       generatedAt: new Date().toISOString(),
     },
     ...(includeDebug

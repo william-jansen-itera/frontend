@@ -1,4 +1,4 @@
-import { buildAgentToolResult } from '@/server/utils/agent/agentToolResult';
+import { buildAgentToolResult, buildUntrustedContentMeta } from '@/server/utils/agent/agentToolResult';
 import { assertTreeAccess } from '@/server/utils/tree/treeCatalog';
 
 export const KNOWLEDGE_TREES_FAMILY = 'knowledgeTrees';
@@ -24,7 +24,7 @@ export function buildTreePreviewToolOutput(previewId, preview) {
   };
 }
 
-export function buildPersistenceToolHandlerResult({ toolName, toolResultType, toolOutput, includeDebug = false }) {
+export function buildPersistenceToolHandlerResult({ toolName, toolResultType, toolOutput, untrustedDataPaths = [], includeDebug = false }) {
   const wrappedToolOutput = buildAgentToolResult({
     sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
     toolName,
@@ -34,6 +34,7 @@ export function buildPersistenceToolHandlerResult({ toolName, toolResultType, to
       resultCount: 1,
       supportsCitations: false,
       generatedAt: new Date().toISOString(),
+      ...buildUntrustedContentMeta(toolOutput, untrustedDataPaths),
     },
   });
 

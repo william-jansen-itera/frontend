@@ -188,6 +188,7 @@ export function buildShowEmailHandler({ includeDebug = false, updatedBy = null, 
       return buildEmailToolResult({
         toolName: SHOW_EMAIL_TOOL,
         toolResultType: 'email_show',
+        untrustedDataPaths: ['emails'],
         data: {
           provider: args.provider,
           folder: normalizedFolder,

@@ -1,4 +1,4 @@
-import { buildAgentToolResult } from '@/server/utils/agent/agentToolResult';
+import { buildAgentToolResult, buildUntrustedContentMeta } from '@/server/utils/agent/agentToolResult';
 
 export const EMAIL_FAMILY = 'email';
 
@@ -46,7 +46,7 @@ function resolveResultCount(data) {
   return 1;
 }
 
-export function buildEmailToolResult({ toolName, toolResultType, data, includeDebug = false, debug = null }) {
+export function buildEmailToolResult({ toolName, toolResultType, data, untrustedDataPaths = [], includeDebug = false, debug = null }) {
   return buildAgentToolResult({
     sourceToolFamily: EMAIL_FAMILY,
     toolName,
@@ -55,6 +55,7 @@ export function buildEmailToolResult({ toolName, toolResultType, data, includeDe
     meta: {
       resultCount: resolveResultCount(data),
       generatedAt: new Date().toISOString(),
+      ...buildUntrustedContentMeta(data, untrustedDataPaths),
     },
     ...(includeDebug ? { debug } : {}),
   });

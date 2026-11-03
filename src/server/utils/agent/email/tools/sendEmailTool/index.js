@@ -218,6 +218,7 @@ export function buildSendEmailHandler({ includeDebug = false, personalCacheTreeI
       return buildEmailToolResult({
         toolName: SEND_EMAIL_TOOL,
         toolResultType: 'email_send',
+        untrustedDataPaths: ['sourceSubject', 'accepted', 'rejected', 'response'],
         data: result,
         includeDebug,
         debug: includeDebug ? result : null,

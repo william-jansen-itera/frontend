@@ -65,6 +65,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       toolName: previewAddToTreeToolDefinition.name,
       toolResultType: 'tree_note_preview',
       toolOutput: buildTreePreviewToolOutput(previewId, preview),
+      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath'],
       includeDebug,
     });
   };

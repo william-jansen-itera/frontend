@@ -215,6 +215,10 @@ export function buildDraftEmailHandler({ includeDebug = false, updatedBy = null,
       return buildEmailToolResult({
         toolName: DRAFT_EMAIL_TOOL,
         toolResultType: 'email_draft',
+        untrustedDataPaths: [
+          'to', 'cc', 'bcc', 'subject', 'body', 'htmlBody', 'replySourceSubject',
+          'inReplyTo', 'references',
+        ],
         data: result,
         includeDebug,
         debug: includeDebug ? result : null,

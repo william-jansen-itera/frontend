@@ -87,6 +87,11 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
       toolName: confirmAddToTreeToolDefinition.name,
       toolResultType: saveMode === 'merge_existing' ? 'tree_note_updated' : 'tree_note_created',
       toolOutput,
+      untrustedDataPaths: [
+        'treeName', 'selectedAnchorBreadcrumb', 'plannedLeafParentBreadcrumb',
+        'generatedLeafTitle', 'createdIntermediateNodes', 'mergeBreadcrumb',
+        'details.name', 'details.notes', 'details.attachments',
+      ],
       includeDebug,
     });
   };

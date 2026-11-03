@@ -54,6 +54,7 @@ export function createReviseTreePreviewHandler({ includedTreeIds, principal, inc
       toolName: reviseTreePreviewToolDefinition.name,
       toolResultType: 'tree_note_preview',
       toolOutput: buildTreePreviewToolOutput(revisedPreviewId, revisedPreview),
+      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath'],
       includeDebug,
     });
   };
