@@ -10,8 +10,11 @@ export async function POST(request) {
   try {
     const principal = requireAuthenticatedPrincipal(request);
     const origin = request.headers.get('origin');
+    const allowedOrigins = process.env.NODE_ENV === 'production'
+      ? ['https://www.mds.net', ...(process.env.SITE_URL?.trim() ? [new URL(process.env.SITE_URL.trim()).origin] : [])]
+      : [new URL(request.url).origin];
 
-    if (origin && (!URL.canParse(origin) || new URL(origin).origin !== origin || new URL(origin).host !== request.headers.get('host'))) {
+    if (origin && !allowedOrigins.includes(origin)) {
       return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
     }
 
