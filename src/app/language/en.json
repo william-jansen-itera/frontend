@@ -133,10 +133,10 @@
       "Reject": "Reject", "Rejecting": "Rejecting...", "RejectAll": "Reject All"
     },
     "Chat": {
-      "Prompt": "Prompt", "NoFamilies": "No families available", "Visibility": { "Public": "Public", "Private": "Private", "Both": "Both" },
+      "Prompt": "Prompt", "AgentPaused": "Agent (paused)", "NoFamilies": "No families available", "Visibility": { "Public": "Public", "Private": "Private", "Both": "Both" },
       "NoChatFamilies": "No chat families are currently available", "AskAbout": "Ask the agent about {topic}", "AskAboutMany": "Ask the agent about {topics}, or {last}",
       "Highlight": "Highlight from source", "GroundingNodes": "Grounding nodes", "NodeLabel": "Node: {name}",
-      "Modes": { "Grounded": "GROUNDED MODE", "Broad": "BROAD MODE", "NoResult": "NO TOOL RESULT", "NoTool": "NO TOOL USED", "Tool": "TOOL: {name}" },
+      "Modes": { "Grounded": "GROUNDED MODE", "Broad": "BROAD MODE", "NoResult": "NO TOOL RESULT", "NoTool": "NO TOOL USED", "Authorization": "AUTHORIZATION", "Tool": "TOOL: {name}" },
       "Debug": {
         "Select": "Select a turn", "SelectHint": "Send a message to inspect the query, tool activity, curated agent input, and final model output.",
         "Waiting": "Waiting for response", "WaitingHint": "Debug details will appear here after the current turn finishes.",
@@ -156,6 +156,7 @@
       "Thinking": "Thinking...", "Send": "Send", "Start": "Start a turn", "EmptyWithInspector": "This will show the conversation.",
       "Empty": "The conversation history and grounded citations will appear here as you ask questions.",
       "Status": { "Pending": "Pending", "Error": "Error", "Complete": "Complete" }, "Waiting": "Waiting for response...", "NoAnswer": "No answer returned.",
+      "Approval": { "Trash": "Move {count} emails to Trash?", "Permanent": "Permanently delete {count} emails? This cannot be undone.", "Details": "Review messages", "Account": "Account: {provider}", "Folder": "Folder: {folder}", "Approve": "Approve", "Cancel": "Cancel" },
       "Inspector": "Turn inspector", "InspectorIntro": "Inspect exactly how the agent searched, curated evidence, and produced the answer."
     },
     "Contact": {

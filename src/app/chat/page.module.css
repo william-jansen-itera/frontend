@@ -640,6 +640,30 @@
   overflow-wrap: anywhere;
 }
 
+.approvalPrompt {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.approvalPrompt details {
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.approvalPrompt summary {
+  cursor: pointer;
+}
+
+.approvalPrompt ul {
+  padding-left: 1.25rem;
+}
+
+.approvalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
 .inlineAttachmentLink {
   color: #0369a1;
   font-weight: 600;
@@ -1044,6 +1068,7 @@ h6.messageHeading { font-size: 1rem; }
 .addToToolChip,
 .modeChip,
 .noToolChip,
+.authorizationChip,
 .toolErrorBadge {
   padding: 0.28rem 0.65rem;
   border-radius: 999px;
@@ -1072,6 +1097,13 @@ h6.messageHeading { font-size: 1rem; }
 .noToolChip {
   background: #fef3c7;
   color: #b45309;
+}
+
+.authorizationChip {
+  padding-top: 0.34rem;
+  padding-bottom: 0.22rem;
+  background: #1f2937;
+  color: #ffffff;
 }
 
 .toolErrorBadge {

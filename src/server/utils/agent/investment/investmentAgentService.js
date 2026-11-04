@@ -83,7 +83,7 @@ export async function invokeInvestmentAgent({
   appendDebugStep(debug, 'personal cache context loaded', {
     personalCacheTreeId: agentPersonalCacheContext?.personalCacheTreeId ?? null,
   });
-  const { handlerMap, tools } = buildInvestmentRuntimeContext({
+  const { handlerMap, toolPolicies, tools } = buildInvestmentRuntimeContext({
     includeDebug,
     updatedBy: agentPersonalCacheContext.updatedBy,
     personalCacheTreeId: agentPersonalCacheContext.personalCacheTreeId,
@@ -115,6 +115,7 @@ export async function invokeInvestmentAgent({
       },
       initialInput,
       handlerMap,
+      toolPolicies,
       handlerContext: {
         ...agentPersonalCacheContext,
         debug,

@@ -360,6 +360,18 @@ In practice this means:
 
 So output schemas are still useful as code contracts and maintenance documentation, but they are not yet active runtime validators in the current chat execution path.
 
+### Untrusted content labeling
+
+Email and knowledge-tree tool results label source-authored content with `meta.contentTrust: "untrusted_source"`. Where the result mixes source text with operational fields, `meta.untrustedDataPaths` names the present fields under `data` that contain source-derived content; status-only results do not receive this label. The original content is preserved. These labels help the agent distinguish data from instructions, but do not sanitize content, enforce trust boundaries, or authorize tool calls. See `buildUntrustedContentMeta` in `src/server/utils/agent/agentToolResult.js` and its tests for the precise contract.
+
+### Email deletion approval
+
+Apply `azure-sql/agent-action-approvals.sql` before deploying the chat approval endpoint. The server requires a registered approval policy for each tool; `delete_email` is the only approval-gated tool. A pending action expires after five minutes, and its approve/cancel decision is claimed once for the authenticated principal. The resolved email targets are checked again before any IMAP deletion. The prompt-agent instructions must be published separately with the matching single-confirmation guidance; prompt instructions alone do not authorize a delete. Do not validate this workflow using a real mailbox deletion.
+
+When the agent calls `delete_email`, the executor pauses that call. The email service invokes the handler in preview-only mode, then stores the tool arguments, resolved-target preview, authenticated principal, expiry, and model continuation (including the original call ID) in `agent_action_approvals`. The browser receives a pending-action ID and shows one Approve/Cancel prompt. The approval endpoint atomically claims that ID for the same principal; replay, another principal, and expired requests cannot authorize execution. Approval invokes the handler with the saved target identities, which must still match the freshly resolved targets before IMAP is called. Cancellation never invokes the delete handler. The service records the outcome and resumes the model with the original call ID; it does not retry a claimed delete automatically.
+
+This table is an operational record, not a complete audit trail: it records states and outcomes but has no history view or retention cleanup, and a process interruption can leave an action in `executing` with an uncertain outcome. It also contains potentially sensitive previews and continuation data. The account configuration, live cache, and mailbox are loaded separately at execution time; permanent tool policies live in server code, not in this table or the personal cache tree.
+
 ### Citation behavior
 
 Citations are currently assembled by the server after the tool loop finishes. The model does not pick a single citation to display.

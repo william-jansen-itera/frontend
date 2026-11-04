@@ -98,27 +98,31 @@ export async function runAgentFamilyExecution({
   responseConfig,
   initialInput,
   handlerMap,
+  toolPolicies,
+  createApproval = null,
+  resumeState = null,
+  approvedCall = null,
   finalResponseValidator = null,
   handlerContext = null,
   debug = null,
   includeDebug = false,
 }) {
-  const modelCalls = [];
-  const toolInvocations = [];
+  const modelCalls = resumeState?.modelCalls ?? [];
+  const toolInvocations = resumeState?.toolInvocations ?? [];
   let finalResponseValidationRetries = 0;
 
   const initialModelCallStartedAt = new Date().toISOString();
   const initialModelCallStartedAtMs = performance.now();
   appendDebugStep(debug, 'initial model response requested');
-  let currentResponse = await createAgentResponse(openAIClient, responseConfig, {
-    input: initialInput,
-  });
+  let currentResponse = resumeState
+    ? { id: resumeState.responseId, output: resumeState.functionCalls }
+    : await createAgentResponse(openAIClient, responseConfig, { input: initialInput });
   appendDebugStep(debug, 'initial model response received', {
     responseId: currentResponse?.id ?? null,
     status: currentResponse?.status ?? null,
   });
 
-  if (debug) {
+  if (debug && !resumeState) {
     debug.timings.modelCalls.push({
       phase: 'initial_response',
       round: 0,
@@ -130,7 +134,7 @@ export async function runAgentFamilyExecution({
     });
   }
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+  for (let round = resumeState?.round ?? 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const functionCalls = Array.isArray(currentResponse?.output)
       ? currentResponse.output.filter((item) => item?.type === 'function_call')
       : [];
@@ -194,13 +198,14 @@ export async function runAgentFamilyExecution({
       };
     }
 
-    const functionOutputs = [];
+    const functionOutputs = resumeState?.round === round ? [...resumeState.outputs] : [];
     const roundDebug = includeDebug ? [] : null;
     appendDebugStep(debug, `tool round ${round + 1} started`, {
       functionCallCount: functionCalls.length,
     });
 
-    for (const functionCall of functionCalls) {
+    for (let index = resumeState?.round === round ? resumeState.nextIndex : 0; index < functionCalls.length; index += 1) {
+      const functionCall = functionCalls[index];
       const toolName = functionCall.name;
       const handler = handlerMap.get(toolName);
       const toolStartedAt = new Date().toISOString();
@@ -221,7 +226,42 @@ export async function runAgentFamilyExecution({
           callId: functionCall.call_id ?? null,
         });
 
-        if (!handler) {
+        const policy = toolPolicies?.get(toolName);
+
+        if (!policy || typeof policy.requiresUserApproval !== 'boolean') {
+          throw new Error(`No approval policy is registered for tool ${toolName}.`);
+        }
+
+        if (policy.requiresUserApproval) {
+          if (approvedCall?.round === round && approvedCall?.index === index && approvedCall?.callId === functionCall.call_id) {
+            output = approvedCall.output;
+            approvedCall = null;
+          } else if (createApproval && handler && functionCall.call_id && currentResponse.id) {
+            return {
+              approvalRequired: await createApproval({
+                toolName,
+                arguments: parsedArguments,
+                state: {
+                  responseId: currentResponse.id,
+                  functionCalls,
+                  outputs: functionOutputs,
+                  toolInvocations,
+                  modelCalls,
+                  round,
+                  nextIndex: index,
+                },
+              }),
+              toolInvocations,
+              modelCalls,
+            };
+          } else {
+            throw new Error(`Tool ${toolName} requires application approval before execution.`);
+          }
+        }
+
+        if (output !== undefined) {
+          appendDebugStep(debug, `tool ${toolName} approval resolved`, { callId: functionCall.call_id });
+        } else if (!handler) {
           output = {
             error: `No handler is registered for tool ${toolName}.`,
           };
@@ -307,6 +347,7 @@ export async function runAgentFamilyExecution({
       input: functionOutputs,
       previous_response_id: currentResponse.id,
     });
+    resumeState = null;
     appendDebugStep(debug, `tool round ${round + 1} synthesis received`, {
       responseId: currentResponse?.id ?? null,
       status: currentResponse?.status ?? null,

@@ -60,7 +60,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const agent = await getPublishedKnowledgeTreesPromptAgent();
-  const { handlerMap, includedTrees } = await buildRuntimeTreeToolContext({
+  const { handlerMap, toolPolicies, includedTrees } = await buildRuntimeTreeToolContext({
     principal,
     visibility,
     enforceAccess: true,
@@ -110,6 +110,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
       },
       initialInput,
       handlerMap,
+      toolPolicies,
       finalResponseValidator: validateAnswerState,
       debug,
       includeDebug,

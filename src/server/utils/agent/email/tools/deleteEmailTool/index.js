@@ -18,7 +18,7 @@ export const DELETE_EMAIL_TOOL = 'delete_email';
 export const deleteEmailToolDefinition = {
   type: 'function',
   name: DELETE_EMAIL_TOOL,
-  description: 'Move one or more emails to the trash folder. When expunge is true, permanently delete them instead.',
+  description: 'Propose moving one or more emails to Trash, or permanently deleting them when expunge is true. When the targets and deletion mode are clear, call this tool; the app asks the user for the sole confirmation before executing.',
   strict: true,
   parameters: {
     type: 'object',
@@ -172,6 +172,32 @@ export function buildDeleteEmailHandler({ includeDebug = false, updatedBy = null
         }
 
         throw buildDeleteEmailMissingUidError(uid, normalizedFolder, { expunge: Boolean(args.expunge) });
+      }
+
+      const targetIdentities = resolvedDeleteTargets.map((target) => ({
+        requestedUid: target.requestedUid,
+        requestedFolder: target.requestedFolder,
+        actualUid: target.actualUid,
+        actualFolder: target.actualFolder,
+        messageId: target.sourceMessage?.messageId ?? null,
+      }));
+
+      if (agentContext?.previewOnly === true) {
+        return {
+          provider: args.provider,
+          folder: normalizedFolder,
+          expunge: args.expunge === true,
+          targets: resolvedDeleteTargets.map((target, index) => ({
+            ...targetIdentities[index],
+            subject: target.sourceMessage?.subject ?? null,
+            from: target.sourceMessage?.from ?? null,
+          })),
+        };
+      }
+
+      if (!Array.isArray(agentContext?.approvedTargetIdentities)
+        || JSON.stringify(targetIdentities) !== JSON.stringify(agentContext.approvedTargetIdentities)) {
+        throw new Error('Email deletion requires approval for these exact resolved targets.');
       }
 
       const deleteOperations = args.expunge

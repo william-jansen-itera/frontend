@@ -762,6 +762,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [availableChatFamilies, setAvailableChatFamilies] = useState([]);
   const [chatFamily, setChatFamily] = useState(null);
   const chatFeedRef = useRef(null);
+  const approvalRequestRef = useRef(false);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
@@ -914,6 +915,7 @@ export default function ChatPageClient({ includeDebug }) {
         citations: [],
         toolsUsed: [],
         toolInvocations: [],
+        approvalRequired: null,
         knowledgeMode: KNOWLEDGE_MODE_GROUNDED,
         isPersistenceOffer: false,
         isPermissionToBroadenRequest: false,
@@ -955,6 +957,7 @@ export default function ChatPageClient({ includeDebug }) {
             citations: Array.isArray(payload?.citations) ? payload.citations : [],
             toolsUsed: Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [],
             toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
+            approvalRequired: payload?.approvalRequired ?? null,
             knowledgeMode: String(payload?.knowledgeMode ?? payload?.familyPayload?.knowledgeMode ?? KNOWLEDGE_MODE_GROUNDED).trim() || KNOWLEDGE_MODE_GROUNDED,
             isPersistenceOffer: payload?.isPersistenceOffer === true,
             isPermissionToBroadenRequest: payload?.isPermissionToBroadenRequest === true,
@@ -977,6 +980,7 @@ export default function ChatPageClient({ includeDebug }) {
             error: messageText,
             familyPayload: null,
             toolInvocations: [],
+            approvalRequired: null,
             knowledgeMode: KNOWLEDGE_MODE_GROUNDED,
             isPersistenceOffer: false,
             isPermissionToBroadenRequest: false,
@@ -985,6 +989,87 @@ export default function ChatPageClient({ includeDebug }) {
           : turn
       )));
     } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function decideApproval(turnId, id, decision) {
+    if (approvalRequestRef.current) {
+      return;
+    }
+
+    approvalRequestRef.current = true;
+    setIsSubmitting(true);
+    setRequestError(null);
+    setTurns((currentTurns) => currentTurns.map((turn) => turn.id === turnId ? { ...turn, isPending: true } : turn));
+
+    try {
+      const response = await fetch("/api/chat/approval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, decision }),
+      });
+      const payload = await parseApiResponseBody(response);
+
+      if (!response.ok) {
+        throw new Error(payload?.error || `Approval failed (${response.status}). Verify the email state before retrying.`);
+      }
+
+      setTurns((currentTurns) => currentTurns.map((turn) => turn.id === turnId ? {
+        ...turn,
+        answer: String(payload?.answer ?? "").trim(),
+        debug: turn.debug && payload?.debug?.approval ? {
+          ...turn.debug,
+          turnClassification: {
+            ...turn.debug.turnClassification,
+            knowledgeMode: payload.familyPayload?.knowledgeMode ?? turn.debug.turnClassification?.knowledgeMode ?? null,
+            isPermissionToBroadenRequest: payload.familyPayload?.isPermissionToBroadenRequest ?? turn.debug.turnClassification?.isPermissionToBroadenRequest ?? false,
+            isPersistenceOffer: payload.familyPayload?.isPersistenceOffer ?? turn.debug.turnClassification?.isPersistenceOffer ?? false,
+            responseToolInvocations: payload.familyPayload?.responseToolInvocations ?? turn.debug.turnClassification?.responseToolInvocations ?? [],
+            status: payload.approvalRequired ? "awaiting_user_approval"
+              : payload.debug.approval.outcome?.status === "failed" ? "failed"
+                : payload.debug.approval.outcome?.status === "outcome_not_saved" ? "outcome_not_saved"
+                  : payload.debug.approval.decision === "cancel" ? "declined" : "approved",
+            toolName: payload.approvalRequired?.toolName ?? payload.debug.approval.toolName,
+            deletionMode: (payload.approvalRequired?.preview ?? payload.debug.approval.preview)?.expunge
+              ? "permanent_delete" : "move_to_trash",
+            decision: payload.debug.approval.decision,
+          },
+          toolCalls: [
+            ...(turn.debug.toolCalls ?? []).map((toolCall) => (
+              toolCall.toolName === payload.debug.approval.toolName && toolCall.toolOutput?.status === "pending_user_approval"
+                ? {
+                  ...toolCall,
+                  toolOutput: payload.debug.approval,
+                  ...(payload.debug.approval.actionTiming ?? {}),
+                }
+                : toolCall
+            )),
+            ...(payload?.approvalRequired ? [{
+              round: turn.debug.toolCalls?.at(-1)?.round ?? 1,
+              toolName: payload.approvalRequired.toolName,
+              parsedArguments: { approvalPreview: payload.approvalRequired.preview },
+              toolOutput: { status: "pending_user_approval", preview: payload.approvalRequired.preview },
+            }] : []),
+          ],
+          agentOutput: { approval: payload.debug.approval, answer: payload?.answer ?? null },
+        } : turn.debug,
+        approvalRequired: payload?.approvalRequired ?? null,
+        toolsUsed: Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [],
+        toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
+        citations: Array.isArray(payload?.citations) ? payload.citations : [],
+        familyPayload: payload?.familyPayload ?? null,
+        error: null,
+        isPending: false,
+      } : turn));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Approval failed. Verify the email state before retrying.";
+      setRequestError(message);
+      setTurns((currentTurns) => currentTurns.map((turn) => turn.id === turnId ? {
+        ...turn, approvalRequired: null, error: message, isPending: false,
+      } : turn));
+    } finally {
+      approvalRequestRef.current = false;
       setIsSubmitting(false);
     }
   }
@@ -1002,7 +1087,7 @@ export default function ChatPageClient({ includeDebug }) {
 
     const message = prompt.trim();
 
-    if (!message || isSubmitting || !isVisibilityReady || !chatFamily) {
+    if (!message || isSubmitting || turns.some((turn) => turn.approvalRequired) || !isVisibilityReady || !chatFamily) {
       return;
     }
 
@@ -1061,7 +1146,7 @@ export default function ChatPageClient({ includeDebug }) {
                 type="submit"
                 form="chat-prompt-form"
                 className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
-                disabled={isSubmitting || !prompt.trim() || !isVisibilityReady || !chatFamily}
+                disabled={isSubmitting || turns.some((turn) => turn.approvalRequired) || !prompt.trim() || !isVisibilityReady || !chatFamily}
               >
                 {t(isSubmitting ? "Thinking" : "Send")}
               </button>
@@ -1127,14 +1212,14 @@ export default function ChatPageClient({ includeDebug }) {
                             <span key={`${turn.id}-${label}`} className={styles.toolChip}>{t("Modes.Tool", { name: label.slice(6) })}</span>
                           ))}
                           {toolBadgeState.statusLabel ? (
-                            <span className={toolBadgeState.statusLabel === "GROUNDED MODE" ? styles.modeChip : styles.noToolChip}>{t(`Modes.${({ "GROUNDED MODE": "Grounded", "BROAD MODE": "Broad", "NO TOOL RESULT": "NoResult", "NO TOOL USED": "NoTool" })[toolBadgeState.statusLabel]}`)}</span>
+                            <span className={turn.approvalRequired ? styles.authorizationChip : toolBadgeState.statusLabel === "GROUNDED MODE" ? styles.modeChip : styles.noToolChip}>{turn.approvalRequired ? t("Modes.Authorization") : t(`Modes.${({ "GROUNDED MODE": "Grounded", "BROAD MODE": "Broad", "NO TOOL RESULT": "NoResult", "NO TOOL USED": "NoTool" })[toolBadgeState.statusLabel]}`)}</span>
                           ) : null}
                         </div>
                       ) : null}
 
                       <div className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""} ${turn.isPending ? styles.messageBubbleAgentThinking : ""}`}>
                         <div className={styles.messageHeaderRow}>
-                          <p className={styles.messageLabel}>Agent</p>
+                          <p className={styles.messageLabel}>{turn.approvalRequired ? t("AgentPaused") : "Agent"}</p>
                         </div>
                         <div className={styles.messageContent}>
                           {turn.isPending ? (
@@ -1145,6 +1230,30 @@ export default function ChatPageClient({ includeDebug }) {
                             <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>
                               {turn.error}
                             </p>
+                          ) : turn.approvalRequired ? (
+                            <div className={styles.approvalPrompt} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                              <p className={styles.messageText}>
+                                {t(turn.approvalRequired.preview?.expunge ? "Approval.Permanent" : "Approval.Trash", {
+                                  count: turn.approvalRequired.preview?.targets?.length ?? 0,
+                                })}
+                              </p>
+                              <details>
+                                <summary>{t("Approval.Details")}</summary>
+                                <p>{t("Approval.Account", { provider: turn.approvalRequired.preview?.provider ?? "" })}</p>
+                                <p>{t("Approval.Folder", { folder: turn.approvalRequired.preview?.folder ?? "" })}</p>
+                                <ul>
+                                  {(turn.approvalRequired.preview?.targets ?? []).map((target) => (
+                                    <li key={`${target.requestedFolder}-${target.requestedUid}`}>
+                                      {target.subject || target.requestedUid} ({target.requestedUid}) {target.from ? `- ${target.from}` : ""}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                              <div className={styles.approvalActions}>
+                                <button type="button" className="appCompactActionButton appCompactActionButtonNeutral" disabled={isSubmitting} onClick={() => decideApproval(turn.id, turn.approvalRequired.id, "approve")}>{t("Approval.Approve")}</button>
+                                <button type="button" className="appCompactActionButton appCompactActionButtonNeutral" disabled={isSubmitting} onClick={() => decideApproval(turn.id, turn.approvalRequired.id, "cancel")}>{t("Approval.Cancel")}</button>
+                              </div>
+                            </div>
                           ) : (
                             <AgentAnswerContent
                               answer={turn.answer || t("NoAnswer")}

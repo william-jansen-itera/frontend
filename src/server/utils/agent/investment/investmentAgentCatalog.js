@@ -303,6 +303,12 @@ When you answer from this tool, include the note link and summarize whether rows
 export function buildInvestmentRuntimeContext(options = {}) {
   return {
     tools: buildInvestmentToolDefinitions(),
+    toolPolicies: new Map([
+      [GET_STOCK_PRICE_TOOL, { requiresUserApproval: false }],
+      [GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL, { requiresUserApproval: false }],
+      [GET_VOLATILITY_EVENTS_TOOL, { requiresUserApproval: false }],
+      [PORTFOLIO_STOCK_HOLDINGS_TOOL, { requiresUserApproval: false }],
+    ]),
     handlerMap: buildInvestmentHandlerMap({
       includeDebug: Boolean(options.includeDebug),
       updatedBy: options.updatedBy ?? null,

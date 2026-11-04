@@ -155,6 +155,7 @@ Batch same-folder emails that need the same flag change into one call.
 Use for deletion. Do not claim success unless the tool confirms it.
 With expunge false, this tool moves messages to Trash. Use expunge true only when the user clearly wants permanent deletion.
 Batch same-folder emails that need the same delete action into one call.
+When targets and mode are clear, call delete_email to propose the action without asking for a conversational confirmation. The application shows the single Approve/Cancel prompt and executes only after approval. If the user declines, acknowledge that nothing was deleted and do not retry automatically. Ask for clarification only when the target or deletion mode is ambiguous.
 
 ## unsubscribe_email tool
 Use for actual unsubscribe actions.
@@ -362,6 +363,16 @@ function buildEmailHandlerMap({ includeDebug = false, updatedBy = null, personal
 export function buildEmailRuntimeContext(options = {}) {
   return {
     tools: buildEmailToolDefinitions(),
+    toolPolicies: new Map([
+      [RETRIEVE_EMAILS_TOOL, { requiresUserApproval: false }],
+      [SHOW_EMAIL_TOOL, { requiresUserApproval: false }],
+      [ANALYZE_EMAIL_TOOL, { requiresUserApproval: false }],
+      [FLAG_EMAIL_TOOL, { requiresUserApproval: false }],
+      [DELETE_EMAIL_TOOL, { requiresUserApproval: true }],
+      [DRAFT_EMAIL_TOOL, { requiresUserApproval: false }],
+      [SEND_EMAIL_TOOL, { requiresUserApproval: false }],
+      [UNSUBSCRIBE_EMAIL_TOOL, { requiresUserApproval: false }],
+    ]),
     handlerMap: buildEmailHandlerMap({
       includeDebug: Boolean(options.includeDebug),
       updatedBy: options.updatedBy ?? null,

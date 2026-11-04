@@ -320,13 +320,20 @@ async function buildPublishTreeToolContext(options = {}) {
 
 export async function buildRuntimeTreeToolContext(options = {}) {
   const selection = await loadTreeSelection(options);
+  const handlerMap = buildHandlerMap(selection.includedTrees, {
+    includeDebug: Boolean(options.includeDebug),
+    principal: options.principal ?? null,
+  });
 
   return {
     includedTrees: selection.includedTrees,
-    handlerMap: buildHandlerMap(selection.includedTrees, {
-      includeDebug: Boolean(options.includeDebug),
-      principal: options.principal ?? null,
-    }),
+    handlerMap,
+    toolPolicies: new Map([
+      ...selection.includedTrees.map((tree) => [buildToolName(tree), { requiresUserApproval: false }]),
+      [previewAddToTreeToolDefinition.name, { requiresUserApproval: false }],
+      [reviseTreePreviewToolDefinition.name, { requiresUserApproval: false }],
+      [confirmAddToTreeToolDefinition.name, { requiresUserApproval: false }],
+    ]),
   };
 }
 

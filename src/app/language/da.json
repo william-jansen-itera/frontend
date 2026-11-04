@@ -133,10 +133,10 @@
       "Reject": "Afvis", "Rejecting": "Afviser...", "RejectAll": "Afvis alle"
     },
     "Chat": {
-      "Prompt": "Spørgsmål", "NoFamilies": "Ingen agentfamilier tilgængelige", "Visibility": { "Public": "Offentlig", "Private": "Privat", "Both": "Begge" },
+      "Prompt": "Spørgsmål", "AgentPaused": "Agent (sat på pause)", "NoFamilies": "Ingen agentfamilier tilgængelige", "Visibility": { "Public": "Offentlig", "Private": "Privat", "Both": "Begge" },
       "NoChatFamilies": "Ingen chatfamilier tilgængelige lige nu", "AskAbout": "Spørg agenten om {topic}", "AskAboutMany": "Spørg agenten om {topics} eller {last}",
       "Highlight": "Vis uddrag fra kilden", "GroundingNodes": "Kildenoder", "NodeLabel": "Node: {name}",
-      "Modes": { "Grounded": "KILDEBASERET", "Broad": "BREDERE VIDEN", "NoResult": "INGEN VÆRKTØJSRESULTATER", "NoTool": "INTET VÆRKTØJ BRUGT", "Tool": "VÆRKTØJ: {name}" },
+      "Modes": { "Grounded": "KILDEBASERET", "Broad": "BREDERE VIDEN", "NoResult": "INGEN VÆRKTØJSRESULTATER", "NoTool": "INTET VÆRKTØJ BRUGT", "Authorization": "GODKENDELSE", "Tool": "VÆRKTØJ: {name}" },
       "Debug": {
         "Select": "Vælg en tur", "SelectHint": "Send en besked for at se spørgsmålet, værktøjsaktivitet, udvalgt agentinput og modellens endelige svar.",
         "Waiting": "Venter på svar", "WaitingHint": "Detaljerne vises her, når turen er færdig.",
@@ -156,6 +156,7 @@
       "Thinking": "Tænker...", "Send": "Send", "Start": "Start en samtale", "EmptyWithInspector": "Samtalen vises her.",
       "Empty": "Samtalehistorikken og kildehenvisninger vises her, når du stiller spørgsmål.",
       "Status": { "Pending": "Afventer", "Error": "Fejl", "Complete": "Færdig" }, "Waiting": "Venter på svar...", "NoAnswer": "Intet svar modtaget.",
+      "Approval": { "Trash": "Flyt {count} mails til papirkurven?", "Permanent": "Slet {count} mails permanent? Dette kan ikke fortrydes.", "Details": "Gennemse mails", "Account": "Konto: {provider}", "Folder": "Mappe: {folder}", "Approve": "Godkend", "Cancel": "Annuller" },
       "Inspector": "Samtaleinspektion", "InspectorIntro": "Se præcis, hvordan agenten søgte, udvalgte kilder og dannede svaret."
     },
     "Contact": {
