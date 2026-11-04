@@ -11,7 +11,7 @@ export async function POST(request) {
     const principal = requireAuthenticatedPrincipal(request);
     const origin = request.headers.get('origin');
 
-    if (origin && origin !== new URL(request.url).origin) {
+    if (origin && (!URL.canParse(origin) || new URL(origin).origin !== origin || new URL(origin).host !== request.headers.get('host'))) {
       return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
     }
 
