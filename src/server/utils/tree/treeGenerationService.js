@@ -380,6 +380,7 @@ function buildRootBranchPrompt({ treeName, description, rootTitle }) {
     'Each leaf must be semantically derived from the entire ancestor chain (root → level-2 → level-3).',
     'Do not introduce concepts not implied by the ancestors.',
     'Use domain knowledge to produce realistic, actionable leaf-level details.',
+    'For each leaf, write notes as exactly one substantive sentence with a concrete fact or practical guidance specific to its title and ancestor path.',
     '',
     'General constraints:',
     'Upper levels organize the topic; leaves carry actionable detail.',
