@@ -9,6 +9,7 @@ import {
   UpdateTreeNodes,
   UpdateTreeNodeOpenState,
   UpdateTreeNodeOpenStates,
+  UpdateTreeOpenStates,
 } from '@/server/utils/tree/treeRecordRepository';
 import {
   createTreeNodeAttachment,
@@ -250,6 +251,15 @@ export async function PATCH(request) {
           rejectionComment,
         }),
       });
+    }
+
+    if (normalizedAction === 'set-tree-expansion') {
+      if (typeof isExpanded !== 'boolean') {
+        return NextResponse.json({ error: 'Invalid request, isExpanded is required' }, { status: 400 });
+      }
+
+      await UpdateTreeOpenStates(parseInt(treeId, 10), isExpanded);
+      return NextResponse.json({ success: true });
     }
 
     if (Array.isArray(expandedNodeIds)) {

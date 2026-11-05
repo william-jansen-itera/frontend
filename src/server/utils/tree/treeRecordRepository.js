@@ -729,6 +729,15 @@ export async function UpdateTreeNodeOpenState(treeInstanceId, nodeId, isExpanded
   });
 }
 
+export async function UpdateTreeOpenStates(treeInstanceId, isExpanded) {
+  return withSqlConnection(async () => {
+    await new sql.Request()
+      .input('tree_instance_id', sql.Int, treeInstanceId)
+      .input('is_expanded', sql.Bit, isExpanded ? 1 : 0)
+      .query('UPDATE tree_nodes SET is_expanded = @is_expanded WHERE tree_instance_id = @tree_instance_id AND is_leaf_node = 0');
+  });
+}
+
 export async function UpdateTreeNodeOpenStates(treeInstanceId, nodeIds, isExpanded) {
   const normalizedNodeIds = Array.isArray(nodeIds)
     ? Array.from(new Set(nodeIds.map((nodeId) => Number.parseInt(String(nodeId), 10)).filter(Number.isFinite)))

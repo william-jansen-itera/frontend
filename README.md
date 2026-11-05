@@ -24,7 +24,9 @@ Required Foundry settings:
 - `AZURE_AI_PROJECT_ENDPOINT`
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME`
 
-Tree Populate reuses the server-only `AZURE_STORAGE_CONNECTION_STRING` for its Storage Queue; the Function queue worker uses `AzureWebJobsStorage`, which must point to the same storage account. Apply `azure-sql/tree-jobs.sql` and deploy/configure the Function queue worker before enabling the asynchronous frontend route. The shared `tree_jobs` table records typed tree jobs; the Populate worker uses `job_type = 'populate'`. Populate generation uses the Function App's Foundry endpoint/model settings and identity, not the browser; job submission and polling remain authorized by tree write access.
+Tree Populate reuses the server-only `AZURE_STORAGE_CONNECTION_STRING` for its Storage Queue; the Function queue worker uses `AzureWebJobsStorage`, which must point to the same storage account. The frontend submits a job ID to the queue and polls its own API for SQL-backed status; it does not call a Populate Function HTTP endpoint, so no additional Function URL or key is needed. The existing purge and secret HTTP functions still use their own URLs and keys. Apply `azure-sql/tree-jobs.sql` and deploy/configure the Function queue worker before enabling the asynchronous frontend route. The shared `tree_jobs` table records typed tree jobs; the Populate worker uses `job_type = 'populate'`. Populate generation uses the Function App's Foundry endpoint/model settings and identity, not the browser; job submission and polling remain authorized by tree write access.
+
+For Populate, enable the Function App's system-assigned managed identity and grant it **Foundry User** (formerly **Azure AI User**) on the Foundry resource. The Function worker uses that identity for Foundry calls when no service-principal credentials are configured on the Function App; the frontend's credentials are not required there.
 
 Optional chat settings:
 

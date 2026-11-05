@@ -247,6 +247,7 @@ function NotesPage() {
   const [loadedVisibility, setLoadedVisibility] = useState(null);
   const [treeData, setTreeData] = useState([]);
   const [expandedState, setExpandedState] = useState({});
+  const [isUpdatingExpansion, setIsUpdatingExpansion] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [nodeEditorState, setNodeEditorState] = useState(() => buildNodeEditorState());
   const [savedNodeEditorState, setSavedNodeEditorState] = useState(() => buildNodeEditorState());
@@ -663,6 +664,38 @@ function NotesPage() {
     } catch (err) {
       console.error("Failed to persist tree open state:", err);
       setExpandedState((currentExpandedState) => updateExpandedStateValue(currentExpandedState, id, previousIsExpanded));
+    }
+  };
+
+  const handleSetTreeExpansion = async (isExpanded) => {
+    const expandableNodeIds = collectExpandableNodeIds(treeData);
+    if (expandableNodeIds.length === 0 || isUpdatingExpansion) {
+      return;
+    }
+
+    const previousExpandedState = expandedState;
+    setExpandedState(isExpanded ? Object.fromEntries(expandableNodeIds.map((id) => [id, true])) : {});
+
+    if (!canWriteSelectedTree) {
+      return;
+    }
+
+    setIsUpdatingExpansion(true);
+    try {
+      const response = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set-tree-expansion", treeId: treeIdParam, isExpanded }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to persist tree expansion state");
+      }
+    } catch (err) {
+      console.error("Failed to persist tree expansion state:", err);
+      setExpandedState(previousExpandedState);
+    } finally {
+      setIsUpdatingExpansion(false);
     }
   };
 
@@ -1174,6 +1207,9 @@ function NotesPage() {
   }
 
   const visibleNodeCount = countVisibleNodes(treeData, expandedState);
+  const expandableNodeIds = collectExpandableNodeIds(treeData);
+  const hasCollapsedNodes = expandableNodeIds.some((id) => !expandedState[id]);
+  const hasExpandedNodes = expandableNodeIds.some((id) => expandedState[id]);
   const stackedTreeHeight = Math.max((visibleNodeCount * TREE_ROW_HEIGHT) + TREE_PADDING_TOP + TREE_PADDING_BOTTOM + TREE_HEIGHT_BUFFER, 160);
   const resolvedTreeHeight = isStackedLayout ? stackedTreeHeight : treeHeight;
   const pageContainerStyle = isStackedLayout
@@ -1270,6 +1306,22 @@ function NotesPage() {
                 className="appCompactActionButton appCompactActionButtonNeutral"
               >
                 {t(isGeneratingChildren ? "Tree.Generating" : "Tree.Generate")}
+              </button>
+              <button
+                onClick={() => handleSetTreeExpansion(false)}
+                disabled={!hasExpandedNodes || isUpdatingExpansion}
+                type="button"
+                className="appCompactActionButton appCompactActionButtonNeutral"
+              >
+                {t("Tree.CollapseAll")}
+              </button>
+              <button
+                onClick={() => handleSetTreeExpansion(true)}
+                disabled={!hasCollapsedNodes || isUpdatingExpansion}
+                type="button"
+                className="appCompactActionButton appCompactActionButtonNeutral"
+              >
+                {t("Tree.ExpandAll")}
               </button>
               <button
                 onClick={handleDelete}

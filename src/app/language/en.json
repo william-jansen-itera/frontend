@@ -246,6 +246,8 @@
         "Delete": "Delete",
         "Collapse": "Collapse {name}",
         "Expand": "Expand {name}",
+        "CollapseAll": "Collapse all",
+        "ExpandAll": "Expand all",
         "DropIntoNode": "Drop into node"
       },
       "Visibility": {

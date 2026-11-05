@@ -246,6 +246,8 @@
         "Delete": "Slet",
         "Collapse": "Fold {name} sammen",
         "Expand": "Fold {name} ud",
+        "CollapseAll": "Fold alle sammen",
+        "ExpandAll": "Fold alle ud",
         "DropIntoNode": "Slip i noden"
       },
       "Visibility": {
