@@ -1260,10 +1260,19 @@ function TreesPageContent() {
         body: JSON.stringify({ treeId }),
         body: JSON.stringify({ treeId, visibility: visibilityFilter }),
       });
-      const data = await response.json();
+      const responseText = await response.text();
+      let data;
+
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        if (response.ok) {
+          throw new Error("Tree population returned an invalid response");
+        }
+      }
 
       if (!response.ok) {
-        throw new Error(data?.error || "Tree could not be populated");
+        throw new Error(data?.error || responseText.trim().slice(0, 300) || "Tree could not be populated");
       }
 
       applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
