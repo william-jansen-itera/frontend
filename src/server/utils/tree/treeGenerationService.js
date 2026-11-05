@@ -4,8 +4,8 @@ import {
 } from '@/server/utils/foundryAgentClient';
 import { validateMergedLeafNotes } from './treeMergeValidation.js';
 
-const MAX_GENERATED_ROOT_NODES = 5;
-const MAX_GENERATED_CHILDREN_PER_NODE = 5;
+const MAX_GENERATED_ROOT_NODES = 8;
+const MAX_GENERATED_CHILDREN_PER_NODE = 8;
 const MAX_GENERATED_LEAF_CHILDREN_PER_NODE = 10;
 const MAX_GENERATED_TITLE_LENGTH = 255;
 const MAX_CHAT_LEAF_TITLE_WORDS = 8;
@@ -131,14 +131,32 @@ const LEVEL_TWO_NODE_SCHEMA = {
   additionalProperties: false,
 };
 
-const ROOT_NODE_SCHEMA = {
+const ROOT_TITLE_SCHEMA = {
   type: 'object',
   properties: {
-    title: {
-      type: 'string',
-      minLength: 1,
-      maxLength: MAX_GENERATED_TITLE_LENGTH,
+    declaredRootCount: {
+      type: 'integer',
+      minimum: 0,
+      maximum: MAX_GENERATED_ROOT_NODES,
     },
+    rootTitles: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_GENERATED_ROOT_NODES,
+      items: {
+        type: 'string',
+        minLength: 1,
+        maxLength: MAX_GENERATED_TITLE_LENGTH,
+      },
+    },
+  },
+  required: ['declaredRootCount', 'rootTitles'],
+  additionalProperties: false,
+};
+
+const ROOT_BRANCH_SCHEMA = {
+  type: 'object',
+  properties: {
     children: {
       type: 'array',
       minItems: 1,
@@ -146,21 +164,7 @@ const ROOT_NODE_SCHEMA = {
       items: LEVEL_TWO_NODE_SCHEMA,
     },
   },
-  required: ['title', 'children'],
-  additionalProperties: false,
-};
-
-const TREE_POPULATION_SCHEMA = {
-  type: 'object',
-  properties: {
-    nodes: {
-      type: 'array',
-      minItems: 1,
-      maxItems: MAX_GENERATED_ROOT_NODES,
-      items: ROOT_NODE_SCHEMA,
-    },
-  },
-  required: ['nodes'],
+  required: ['children'],
   additionalProperties: false,
 };
 
@@ -330,27 +334,34 @@ function countGeneratedNodes(nodes) {
   }, 0);
 }
 
-function buildTreePopulationPrompt({ treeName, description }) {
+function buildRootTitlePrompt({ treeName, description }) {
   return [
     `Tree name: ${treeName}.`,
-    'This tree has four levels: root, level-2, level-3, and level-4 leaf nodes.',
-    'Follow all instruction blocks exactly as written. Do not merge, reinterpret, or generalize instructions across blocks.',
-    'Use the stored tree description only to identify top-level topics. Top-level topics must be taken exactly as enumerated; do not reinterpret, merge, broaden, or reorganize them based on other parts of the description.',
-    'During child-node generation (level-2, level-3, and leaf nodes), you may use relevant domain knowledge to expand and enrich the top-level topics, but all generated content must remain fully consistent with the ancestor chain.',
-    '',
-    'Extraction instruction:',
-    'Extract all explicitly enumerated overall areas from the stored tree description. If the description lists N overall areas (e.g., “five overall areas: A, B, C, D, E”), extract each one as a separate top-level topic.',
+    'Extract only the top-level topics from the stored tree description. Return root titles only, not descendants.',
+    'Extract every explicitly enumerated overall area as a separate top-level topic, regardless of the description language or list format.',
+    'Recognize numbered and inline lists, including their final item when it is joined by a conjunction rather than a separator. Count all named items before returning the titles.',
+    'Set declaredRootCount to the number explicitly stated for the overall areas, or 0 if no number is stated. The rootTitles array must contain every stated area.',
     'Extract only major conceptual groups; do not infer new categories.',
-    'Preserve original wording.',
-    'Every extracted top-level topic must become a root node.',
-    'Output a flat list of concise phrases.',
+    'Preserve each root topic in its original language and wording; do not translate or combine listed topics.',
+    `Return between 1 and ${MAX_GENERATED_ROOT_NODES} distinct root titles, matching the number of explicitly listed overall areas.`,
+    'Do not use detailed descriptions of individual areas as additional roots.',
+    'Return valid JSON only, matching the provided schema.',
     '',
-    'Root-level instruction:',
-    'The number of root nodes must exactly match the number of extracted top-level topics.',
-    'Do not merge or collapse topics.',
-    'Each root node defines the primary semantic anchor for its entire branch.',
-    'Use concise titles.',
-    'Each root node must be a direct semantic parent of its level-2 children.',
+    'Stored tree description:',
+    description,
+  ].filter(Boolean).join('\n');
+}
+
+function buildRootBranchPrompt({ treeName, description, rootTitle }) {
+  return [
+    `Tree name: ${treeName}.`,
+    `Fixed root title: ${rootTitle}.`,
+    'Generate only the descendants of this fixed root in a four-level tree: root, level-2, level-3, and level-4 leaf nodes.',
+    'Return the children of the fixed root only; do not generate or rename root nodes or include content for other top-level topics.',
+    'Use the stored tree description to enrich this root branch, but keep every descendant consistent with its ancestor chain.',
+    'Write generated descendants in the language of the stored tree description.',
+    'Use concise, specific titles at every level; each title must fit its parent and the full path back to the fixed root.',
+    'Return valid JSON only, matching the provided schema.',
     '',
     'Level-2 instruction:',
     `Generate between 1 and ${MAX_GENERATED_CHILDREN_PER_NODE} children per root node.`,
@@ -374,15 +385,14 @@ function buildTreePopulationPrompt({ treeName, description }) {
     'Upper levels organize the topic; leaves carry actionable detail.',
     'Do not produce duplicate sibling titles, empty categories, or structural-node notes.',
     'Do not place content intended for one level into another.',
-    'All descendant nodes must reinforce the top-level topic of their branch.',
-    'Use the rest of the stored tree description only to enrich and specify content without redirecting the top-level topic.',
+    'All descendant nodes must reinforce the fixed root topic.',
     '',
     'Stored tree description:',
     description,
   ].filter(Boolean).join('\n');
 }
 
-async function requestGeneratedTreeNodes(tree) {
+async function requestGeneratedRootTitles(tree) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const { modelDeploymentName } = getRequiredFoundryConfig();
@@ -393,7 +403,7 @@ async function requestGeneratedTreeNodes(tree) {
       {
         type: 'message',
         role: 'system',
-        content: buildTreePopulationPrompt({
+        content: buildRootTitlePrompt({
           treeName: tree.name,
           description: tree.description,
         }),
@@ -403,9 +413,39 @@ async function requestGeneratedTreeNodes(tree) {
       verbosity: 'medium',
       format: {
         type: 'json_schema',
-        name: 'generated_tree_nodes',
+        name: 'generated_root_titles',
         strict: true,
-        schema: TREE_POPULATION_SCHEMA,
+        schema: ROOT_TITLE_SCHEMA,
+      },
+    },
+  });
+}
+
+async function requestGeneratedRootBranch(tree, rootTitle) {
+  const project = getProjectClient();
+  const openAIClient = project.getOpenAIClient();
+  const { modelDeploymentName } = getRequiredFoundryConfig();
+
+  return openAIClient.responses.create({
+    model: modelDeploymentName,
+    input: [
+      {
+        type: 'message',
+        role: 'system',
+        content: buildRootBranchPrompt({
+          treeName: tree.name,
+          description: tree.description,
+          rootTitle,
+        }),
+      },
+    ],
+    text: {
+      verbosity: 'medium',
+      format: {
+        type: 'json_schema',
+        name: 'generated_root_branch',
+        strict: true,
+        schema: ROOT_BRANCH_SCHEMA,
       },
     },
   });
@@ -419,6 +459,7 @@ function buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles, generateLe
   return [
     'Generate immediate child node titles for a tree-based knowledge application.',
     'Use the tree title and breadcrumb path below as the only semantic context.',
+    'Write titles in the language of the tree title and breadcrumb path, and keep every child within the scope of the full breadcrumb path.',
     `Generate between 1 and ${maxChildren} immediate ${generateLeafChildren ? 'leaf ' : ''}children for the final node in the breadcrumb path.`,
     'Return valid JSON only, matching the provided schema.',
     'Each child must include title only.',
@@ -771,11 +812,41 @@ export function validateGeneratedTreePayload(payload) {
   };
 }
 
-export async function generateTreeNodesFromDescription(tree) {
+function validateGeneratedRootTitles(payload) {
+  const rootTitles = Array.isArray(payload?.rootTitles) ? payload.rootTitles : null;
+
+  if (!rootTitles || rootTitles.length === 0 || rootTitles.length > MAX_GENERATED_ROOT_NODES) {
+    throw new Error(`Generated root titles must include between 1 and ${MAX_GENERATED_ROOT_NODES} topics.`);
+  }
+
+  if (!Number.isInteger(payload.declaredRootCount) || payload.declaredRootCount < 0 || payload.declaredRootCount > MAX_GENERATED_ROOT_NODES) {
+    throw new Error('Generated root count must be between 0 and the maximum root count.');
+  }
+
+  if (payload.declaredRootCount && payload.declaredRootCount !== rootTitles.length) {
+    throw new Error('Generated root titles do not match the declared number of overall areas.');
+  }
+
+  const titles = rootTitles.map((title) => {
+    if (typeof title !== 'string' || !title.trim() || title.length > MAX_GENERATED_TITLE_LENGTH) {
+      throw new Error('Generated root titles must be non-empty strings within the title limit.');
+    }
+
+    return normalizeWhitespace(title);
+  });
+
+  if (new Set(titles.map((title) => title.toLocaleLowerCase())).size !== titles.length) {
+    throw new Error('Generated root titles must be distinct.');
+  }
+
+  return titles;
+}
+
+async function generateValidatedResponse(requestResponse, validatePayload) {
   let lastError = null;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await requestGeneratedTreeNodes(tree);
+    const response = await requestResponse();
     const parsedResponse = parseTreePopulationResponse(response);
 
     if (parsedResponse.error) {
@@ -784,13 +855,31 @@ export async function generateTreeNodesFromDescription(tree) {
     }
 
     try {
-      return validateGeneratedTreePayload(parsedResponse.parsed);
+      return validatePayload(parsedResponse.parsed);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Generated payload was invalid.');
     }
   }
 
   throw lastError ?? new Error('Generated payload was invalid.');
+}
+
+export async function generateTreeNodesFromDescription(tree) {
+  const rootTitles = await generateValidatedResponse(
+    () => requestGeneratedRootTitles(tree),
+    validateGeneratedRootTitles,
+  );
+  const nodes = [];
+
+  for (const rootTitle of rootTitles) {
+    const rootNode = await generateValidatedResponse(
+      () => requestGeneratedRootBranch(tree, rootTitle),
+      (payload) => validateGeneratedRootNode({ title: rootTitle, children: payload?.children }, rootTitle),
+    );
+    nodes.push(rootNode);
+  }
+
+  return validateGeneratedTreePayload({ nodes });
 }
 
 export function validateGeneratedChildTitlePayload(payload, maxChildren = MAX_GENERATED_CHILDREN_PER_NODE) {
