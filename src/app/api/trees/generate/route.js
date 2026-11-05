@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
-import { generateTreeNodesFromDescription } from '@/server/utils/tree/treeGenerationService';
+import { QueueClient } from '@azure/storage-queue';
 import { parseClientPrincipal } from '@/server/utils/auth';
-import { appendGeneratedNodesToTree, assertTreeAccess, getTreeForPopulation, getTreeList } from '@/server/utils/tree/treeCatalog';
+import { assertTreeAccess, getTreeForPopulation } from '@/server/utils/tree/treeCatalog';
+import { createOrGetPopulateJob, failQueuedPopulateJob } from '@/server/utils/tree/treePopulateJobRepository';
+
+const QUEUE_NAME = 'tree-populate-jobs';
+
+function getQueueClient() {
+  const connection = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connection) throw new Error('AZURE_STORAGE_CONNECTION_STRING is not configured');
+  return new QueueClient(connection, QUEUE_NAME);
+}
 
 function parseTreeId(value) {
   const parsedValue = Number.parseInt(String(value ?? ''), 10);
@@ -41,26 +50,28 @@ export async function POST(request) {
       return NextResponse.json({ error: 'A saved description is required before populating a tree' }, { status: 400 });
     }
 
-    const generated = await generateTreeNodesFromDescription(tree);
-    const inserted = await appendGeneratedNodesToTree({
-      treeId: parsedTreeId,
-      generatedNodes: generated.nodes,
-    });
-    const trees = await getTreeList({ principal, visibility, enforceAccess: true });
-    const updatedTree = trees.find((entry) => String(entry.id) === String(parsedTreeId)) ?? tree;
+    const job = await createOrGetPopulateJob({ tree, principal });
+    if (job.jobType !== 'populate') {
+      return NextResponse.json({ error: 'Another tree job is already running.' }, { status: 409 });
+    }
+    if (job.isNew) {
+      try {
+        const queue = getQueueClient();
+        await queue.createIfNotExists();
+        await queue.sendMessage(Buffer.from(JSON.stringify({ jobId: job.jobId })).toString('base64'));
+      } catch (error) {
+        await failQueuedPopulateJob(job.jobId);
+        console.error('Populate queue submission failed', error);
+        throw new Error('Could not queue tree population.');
+      }
+    }
 
-    return NextResponse.json({
-      treeId: String(parsedTreeId),
-      status: 'success',
-      message: `Appended ${inserted.totalNodeCount} nodes across ${inserted.rootNodeCount} root ${inserted.rootNodeCount === 1 ? 'branch' : 'branches'}.`,
-      inserted,
-      tree: updatedTree,
-      trees,
-    });
+    return NextResponse.json({ jobId: job.jobId, treeId: String(parsedTreeId), jobType: job.jobType, status: job.status }, { status: 202 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Tree population failed.' },
-      { status: 500 },
+      { status: error?.status ?? 500 },
     );
   }
 }
+export { GET } from '../jobs/route';

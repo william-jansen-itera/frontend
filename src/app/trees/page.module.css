@@ -171,6 +171,13 @@
   justify-content: flex-end;
 }
 
+.treeJobStatus {
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .treeId {
   color: #64748b;
   font-size: var(--ui-eyebrow-size);

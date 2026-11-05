@@ -335,6 +335,8 @@ function TreesPageContent() {
   const [isCreating, setIsCreating] = useState(false);
   const [rowPendingStates, setRowPendingStates] = useState({});
   const [rowFeedback, setRowFeedback] = useState({});
+  const [activeTreeJobs, setActiveTreeJobs] = useState({});
+  const [treeJobs, setTreeJobs] = useState({});
   const [transferQueries, setTransferQueries] = useState({});
   const [transferMatches, setTransferMatches] = useState({});
   const [selectedTransferTargets, setSelectedTransferTargets] = useState({});
@@ -854,6 +856,23 @@ function TreesPageContent() {
         }
 
         applyTreeList(Array.isArray(data) ? data : []);
+        setActiveTreeJobs({});
+        setTreeJobs({});
+        await Promise.all((Array.isArray(data) ? data : []).map(async (tree) => {
+          const treeId = String(tree.id);
+          const jobResponse = await fetch(`/api/trees/jobs?treeId=${encodeURIComponent(treeId)}&visibility=${encodeURIComponent(visibilityFilter)}`, { cache: "no-store" });
+          if (!isMounted || !jobResponse.ok) return;
+          const job = await jobResponse.json();
+          if (!isMounted) return;
+          setTreeJobs((current) => ({ ...current, [treeId]: job }));
+          if (job.status === "queued" || job.status === "running") {
+            setActiveTreeJobs((current) => ({ ...current, [treeId]: job.jobId }));
+            setTreePendingState(treeId, "populate", true);
+            updateRowFeedback(treeId, { populateMessage: job.jobType === "populate" ? "Tree population is in progress." : "Tree job is in progress.", populateError: "" });
+          } else {
+            setTreePendingState(treeId, "populate", false);
+          }
+        }));
         setErrorMessage("");
         setStatusMessage(copiedTreeMessage.current ?? "");
         copiedTreeMessage.current = null;
@@ -874,6 +893,57 @@ function TreesPageContent() {
       isMounted = false;
     };
   }, [isVisibilityReady, visibilityFilter]);
+
+  useEffect(() => {
+    const jobs = Object.entries(activeTreeJobs);
+    if (!jobs.length) return;
+
+    let cancelled = false;
+    let inFlight = false;
+    const checkJobs = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        for (const [treeId, jobId] of jobs) {
+          const response = await fetch(`/api/trees/jobs?treeId=${encodeURIComponent(treeId)}&jobId=${encodeURIComponent(jobId)}&visibility=${encodeURIComponent(visibilityFilter)}`, { cache: "no-store" });
+          const job = await response.json();
+          if (cancelled) return;
+          if (!response.ok) throw new Error(job?.error || "Tree population status could not be loaded");
+          setTreeJobs((current) => ({ ...current, [treeId]: job }));
+          if (job.status === "queued" || job.status === "running") continue;
+
+          setActiveTreeJobs((current) => {
+            if (current[treeId] !== jobId) return current;
+            const next = { ...current };
+            delete next[treeId];
+            return next;
+          });
+          setTreePendingState(treeId, "populate", false);
+          if (job.status === "succeeded") {
+            const listResponse = await fetch(`/api/trees?visibility=${encodeURIComponent(visibilityFilter)}`, { cache: "no-store" });
+            const nextTrees = await listResponse.json();
+            if (cancelled) return;
+            if (listResponse.ok) applyTreeList(Array.isArray(nextTrees) ? nextTrees : []);
+            updateRowFeedback(treeId, {
+              populateError: "",
+              populateMessage: job.jobType === "populate"
+                ? `Appended ${job.totalNodeCount} nodes across ${job.rootNodeCount} root ${job.rootNodeCount === 1 ? "branch" : "branches"}.`
+                : "Tree job completed.",
+            });
+          } else {
+            updateRowFeedback(treeId, { populateError: job.failureSummary || "Tree job failed.", populateMessage: "" });
+          }
+        }
+      } catch (error) {
+        if (!cancelled) setErrorMessage(getErrorMessage(error, "Tree population status could not be loaded"));
+      } finally {
+        inFlight = false;
+      }
+    };
+    checkJobs();
+    const timer = setInterval(checkJobs, 3000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [activeTreeJobs, visibilityFilter]);
 
 
   const handleCreateTree = async (event) => {
@@ -1218,6 +1288,7 @@ function TreesPageContent() {
 
   const handlePopulateTree = async (tree) => {
     const treeId = String(tree.id);
+    let submitted = false;
     const storedDescription = String(tree.description ?? "");
     const draftDescription = String(draftDescriptions[treeId] ?? storedDescription);
     const isDescriptionChanged = normalizeComparableValue(draftDescription) !== normalizeComparableValue(storedDescription);
@@ -1257,7 +1328,6 @@ function TreesPageContent() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ treeId }),
         body: JSON.stringify({ treeId, visibility: visibilityFilter }),
       });
       const responseText = await response.text();
@@ -1275,18 +1345,19 @@ function TreesPageContent() {
         throw new Error(data?.error || responseText.trim().slice(0, 300) || "Tree could not be populated");
       }
 
-      applyTreeList(Array.isArray(data?.trees) ? data.trees : []);
-      updateRowFeedback(treeId, {
-        populateError: "",
-        populateMessage: data?.message || t("Feedback.TreePopulated"),
-      });
+      setTreeJobs((current) => ({ ...current, [treeId]: data }));
+      setActiveTreeJobs((current) => ({ ...current, [treeId]: data.jobId }));
+      submitted = true;
+      updateRowFeedback(treeId, { populateError: "", populateMessage: "Tree population is in progress." });
     } catch (error) {
       updateRowFeedback(treeId, {
         populateError: getErrorMessage(error, "Tree could not be populated"),
         populateMessage: "",
       });
     } finally {
-      setTreePendingState(treeId, "populate", false);
+      if (!submitted) {
+        setTreePendingState(treeId, "populate", false);
+      }
     }
   };
 
@@ -1500,6 +1571,8 @@ function TreesPageContent() {
                 const draftDescription = String(draftDescriptions[treeId] ?? storedDescription);
                 const rowPendingState = rowPendingStates[treeId] ?? {};
                 const feedback = rowFeedback[treeId] ?? {};
+                const treeJob = treeJobs[treeId];
+                const isTreeJobActive = treeJob?.status === "queued" || treeJob?.status === "running";
                 const isPending = Object.values(rowPendingState).some(Boolean);
                 const isDescriptionEditing = Boolean(editingDescriptions[treeId]);
                 const isNameChanged = draftName.trim() !== tree.name;
@@ -1579,6 +1652,11 @@ function TreesPageContent() {
                             </div>
                           </div>
                           <div className={styles.treeMetaActions}>
+                            {canWriteTree ? (
+                              <span className={styles.treeJobStatus} role="status">
+                                Job: {treeJob ? `${treeJob.jobType === "populate" ? "Populate" : treeJob.jobType} - ${{ queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed" }[treeJob.status] ?? treeJob.status}` : "None"}
+                              </span>
+                            ) : null}
                             {!tree.isPrivate && user ? (
                               <button
                                 type="button"
@@ -1592,7 +1670,7 @@ function TreesPageContent() {
                             <button
                               type="button"
                               onClick={() => handlePopulateTree(tree)}
-                              disabled={!canWriteTree || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
+                              disabled={!canWriteTree || isTreeJobActive || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta) || !hasSavedDescription || isDescriptionChanged}
                               className="appCompactActionButton appCompactActionButtonNeutral"
                             >
                               {t(rowPendingState.populate ? "Populating" : "Populate")}

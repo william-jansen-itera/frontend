@@ -24,6 +24,8 @@ Required Foundry settings:
 - `AZURE_AI_PROJECT_ENDPOINT`
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME`
 
+Tree Populate reuses the server-only `AZURE_STORAGE_CONNECTION_STRING` for its Storage Queue; the Function queue worker uses `AzureWebJobsStorage`, which must point to the same storage account. Apply `azure-sql/tree-jobs.sql` and deploy/configure the Function queue worker before enabling the asynchronous frontend route. The shared `tree_jobs` table records typed tree jobs; the Populate worker uses `job_type = 'populate'`. Populate generation uses the Function App's Foundry endpoint/model settings and identity, not the browser; job submission and polling remain authorized by tree write access.
+
 Optional chat settings:
 
 - `AZURE_AI_AGENT_NAME` defaults to `tree-search-agent`
