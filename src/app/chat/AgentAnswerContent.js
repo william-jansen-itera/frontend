@@ -3,6 +3,8 @@
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import styles from "./page.module.css";
 
 const IMAGE_FILE_EXTENSIONS = new Set(["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "webp"]);
@@ -136,7 +138,8 @@ export function AgentAnswerContent({ answer, keyPrefix, textClassName }) {
   return (
     <ReactMarkdown
       key={keyPrefix}
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       urlTransform={answerUrlTransform}
       components={{
         p: ({ node, children }) => node.children.some((child) => child.type === "element" && child.tagName === "img")

@@ -634,7 +634,7 @@ function buildChatLeafAnchorSelectionPrompt({ treeName, originalQuestion, broade
 
   return [
     'Choose the best existing path for saving a broader answer in a tree-based knowledge application.',
-    'You must only choose from the provided candidates. Never invent an existing path.',
+    'You must only choose from the provided candidates. Never invent a path.',
     'For a candidate labeled nodeType=leaf, return selectionDisposition=selected_leaf. For nodeType=anchor, return selectionDisposition=selected_anchor. Never mix a candidate with the other disposition.',
     'Prefer an existing leaf when its full breadcrumb already covers the subject of the question and answer, even if its title uses different wording or its notes are empty. Do not create a near-duplicate leaf beneath the same parent.',
     'Before selecting an anchor for a new leaf, compare the subject of the answer with the existing leaf candidates under that parent. Select an existing leaf if its scope covers the answer even when its wording differs; create a new leaf only for a distinct subject.',
@@ -1037,15 +1037,13 @@ export function validateChatLeafAnchorSelectionPayload(payload, candidates) {
     if (generatedLeafTitle && countTitleWords(generatedLeafTitle) > MAX_CHAT_LEAF_TITLE_WORDS) {
       throw new Error(`Generated anchor selection leaf title must be ${MAX_CHAT_LEAF_TITLE_WORDS} words or fewer.`);
     }
-  } else if (generatedLeafTitle) {
-    throw new Error('Generated anchor selection must not include a leaf title when intermediate nodes are still required.');
   }
 
   return {
     selectionDisposition: 'selected_anchor',
     selectedAnchorNodeId,
     selectedBreadcrumb: selectedCandidate.breadcrumb,
-    generatedLeafTitle,
+    generatedLeafTitle: selectedCandidate.directLeafPossible ? generatedLeafTitle : '',
   };
 }
 

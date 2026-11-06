@@ -1,6 +1,7 @@
 "use client";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";

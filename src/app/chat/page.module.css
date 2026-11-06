@@ -768,6 +768,12 @@ h6.messageHeading { font-size: 1rem; }
   overflow-wrap: normal;
 }
 
+.messageContent :global(.katex-display) {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .messageTextPending {
   margin-top: 0.3rem;
   line-height: 1.55;
