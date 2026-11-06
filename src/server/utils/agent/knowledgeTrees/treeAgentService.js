@@ -74,6 +74,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
   const allowedToolInstruction = [
     buildVisibilityScopeInstruction({ visibility, includedTrees }),
     buildAllowedToolInstruction(includedTrees),
+    'For this turn, only the current user message can authorize a broad answer. An earlier approval in the conversation history is already used up; if the current message asks a new substantive question, start grounded, search the relevant tree, and ask for fresh permission if evidence is insufficient. Do not mark the new answer as broad or offer to save it based on earlier approval.',
   ].join('\n\n');
   const initialInput = buildInitialAgentInput({
     allowedToolInstruction,
