@@ -518,6 +518,15 @@ When `delete_email` moves a message from Inbox to Trash, IMAP assigns it a Trash
 - `revise_save_preview` accepts a user's complete `>`-separated path (optionally starting with the tree name) after a preview. The path must end with the note title at the configured leaf depth. It reuses existing branches, previews any missing intermediate nodes, and replaces the previous preview ID; users can revise again before saving.
 - `confirm_save_to_tree` creates or updates the note from the saved preview after the user separately confirms the proposed destination. A missing or stale preview ID requires a new preview.
 
+`preview_save_to_tree` searches for an existing destination before proposing new nodes. Its handler calls `previewLeafFromChat`, which selects from the tree's active nodes using these model-call stages:
+
+1. `root` offers the root categories. If none fits, the preview plans a new path from the root level.
+2. `structural` offers direct non-leaf children of the selected category, one level at a time. Selection stays within that branch.
+3. `leaf` offers direct leaf children at the configured leaf level, if any exist. A selected leaf becomes the merge target. If the call evaluates leaves but selects none, selection stops there; it does not shortlist those same leaves again.
+4. If traversal stopped before evaluating leaf candidates, `shortlist` checks existing leaf titles and paths in the selected subtree in bounded batches. Only shortlisted leaf notes are read; `rank` then chooses one of those leaves for merging. If none qualifies, `anchor` checks deeper structural nodes in that subtree from deepest to shallowest to find where a new path should start.
+
+If an existing leaf is selected, the preview returns its `mergePath` with `defaultSaveMode: "merge_existing"`. Otherwise, path generation fills any missing levels from the selected anchor and proposes a new `createPath` with `defaultSaveMode: "create_leaf"`. The preview returns paths and a preview ID without writing nodes; `confirm_save_to_tree` writes only after the user approves the destination.
+
 ### Chat history and tool history
 
 Chat history is for the agent. It contains the user and assistant messages that are replayed as conversational context on later turns.
