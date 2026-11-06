@@ -15,7 +15,7 @@ export const confirmAddToTreeToolDefinition = {
     properties: {
       previewId: {
         type: 'string',
-        description: 'The exact latest previewId returned by preview_save_to_tree or revise_tree_preview. Pass only this id so the server can load the cached preview snapshot.',
+        description: 'The exact latest previewId returned by preview_save_to_tree or revise_save_preview. Pass only this id so the server can load the cached preview snapshot.',
       },
       saveMode: {
         type: 'string',

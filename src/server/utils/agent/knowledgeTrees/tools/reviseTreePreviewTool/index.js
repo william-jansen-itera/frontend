@@ -12,7 +12,7 @@ import {
 
 export const reviseTreePreviewToolDefinition = {
   type: 'function',
-  name: 'revise_tree_preview',
+  name: 'revise_save_preview',
   description: 'Choose a different path for creating a new leaf, even when the original preview offered merging. The complete path must end in a new leaf title, not an existing note. Returns a new previewId; the old preview cannot be confirmed.',
   strict: true,
   parameters: {
