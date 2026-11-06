@@ -24,7 +24,7 @@ export function buildTreePreviewToolOutput(previewId, preview) {
   };
 }
 
-export function buildPersistenceToolHandlerResult({ toolName, toolResultType, toolOutput, untrustedDataPaths = [], includeDebug = false }) {
+export function buildPersistenceToolHandlerResult({ toolName, toolResultType, toolOutput, untrustedDataPaths = [], includeDebug = false, debug = null }) {
   const wrappedToolOutput = buildAgentToolResult({
     sourceToolFamily: KNOWLEDGE_TREES_FAMILY,
     toolName,
@@ -44,7 +44,7 @@ export function buildPersistenceToolHandlerResult({ toolName, toolResultType, to
 
   return {
     toolOutput: wrappedToolOutput,
-    debug: { toolOutput: wrappedToolOutput },
+    debug: { toolOutput: wrappedToolOutput, ...debug },
   };
 }
 

@@ -1116,9 +1116,11 @@ function NotesPage() {
           ? result.secretValue
           : currentState.secretValue,
       }));
+      return true;
     } catch (err) {
       console.error("Failed to reveal secret:", err);
       setNodeDetailsError(err.message);
+      return false;
     } finally {
       setIsRevealingSecret(false);
     }
@@ -1167,27 +1169,19 @@ function NotesPage() {
     }
   };
 
-  const handleStartEditingNotes = async () => {
+  const handleStartEditingNotes = () => {
     if (!canEditLeafDetails || isNodeDetailsBusy) {
       return;
     }
-
-    const revealedSecretValue = typeof nodeEditorState.revealedSecretValue === "string"
-      ? nodeEditorState.revealedSecretValue
-      : null;
 
     setNodeDetailsError(null);
     setIsSecretValueVisible(false);
     setNodeEditorState((currentState) => ({
       ...currentState,
-      secretValue: revealedSecretValue ?? "",
-      revealedSecretValue,
+      secretValue: "",
+      revealedSecretValue: null,
     }));
     setIsEditingNotes(true);
-
-    if (nodeEditorState.isSecret && nodeEditorState.secretMetadata?.hasStoredSecret && !revealedSecretValue) {
-      await handleRevealSecret({ populateInput: true });
-    }
   };
 
   const handleCancelEditingNotes = () => {
@@ -1561,14 +1555,21 @@ function NotesPage() {
                               />
                               <button
                                 type="button"
-                                onClick={() => {
+                                onClick={async () => {
+                                  if (!isSecretValueVisible && !nodeEditorState.secretValue && canRevealSecret) {
+                                    if (await handleRevealSecret({ populateInput: true })) {
+                                      setIsSecretValueVisible(true);
+                                    }
+                                    return;
+                                  }
+
                                   setIsSecretValueVisible((currentValue) => !currentValue);
                                 }}
-                                disabled={isNodeDetailsBusy || !canWriteSelectedTree || !nodeEditorState.secretValue}
+                                disabled={isNodeDetailsBusy || !canWriteSelectedTree || (!nodeEditorState.secretValue && !canRevealSecret)}
                                 className="appCompactActionButton appCompactActionButtonNeutral"
                                 aria-pressed={isSecretValueVisible}
                               >
-                                {t(isSecretValueVisible ? "Details.Hide" : "Details.Show")}
+                                {t(isRevealingSecret ? "Details.Revealing" : isSecretValueVisible ? "Details.Hide" : "Details.Show")}
                               </button>
                             </div>
                           ) : (

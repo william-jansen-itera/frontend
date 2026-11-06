@@ -9,7 +9,7 @@ import {
   generateChildTitlesFromBreadcrumb,
   generateMergedLeafNotes,
   generateLeafNotesDraft,
-  selectChatLeafAnchorCandidate,
+  selectChatPlacementCandidates,
 } from '@/server/utils/tree/treeGenerationService';
 import { requestTreeSqlIndexerRun } from '@/server/utils/azureSearch';
 import { logException, logTrace } from '@/server/utils/logging';
@@ -43,6 +43,8 @@ import {
 import { assertTreeAccess, getAuditMetadata, isPersonalCacheTree } from '@/server/utils/tree/treeCatalog';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const PLACEMENT_BATCH_SIZE = 30;
+const PLACEMENT_SHORTLIST_SIZE = 4;
 const REVIEW_STATUS_DRAFT = 'draft';
 const REVIEW_STATUS_SUBMITTED = 'submitted';
 const REVIEW_STATUS_APPROVED = 'approved';
@@ -283,7 +285,7 @@ function buildResolvedBreadcrumb(anchorBreadcrumbTitles, generatedPathTitles) {
   return [...anchorBreadcrumbTitles, ...generatedPathTitles].filter(Boolean).join(' > ');
 }
 
-async function getChatLeafPlacementContext(treeInstanceId, originalQuestion = '', broaderAnswer = '') {
+async function getChatLeafPlacementContext(treeInstanceId) {
   const [flatData, treeSummary, maxDepth] = await Promise.all([
     queryTreeData(treeInstanceId),
     queryTreeSummary(treeInstanceId),
@@ -317,35 +319,46 @@ async function getChatLeafPlacementContext(treeInstanceId, originalQuestion = ''
       directLeafPossible: node.directLeafPossible,
     }));
 
-  const leafRecords = originalQuestion && broaderAnswer
-    ? await Promise.all(flatData
-      .filter((node) => node.isLeafNode)
-      .map(async (node) => ({
-        node,
-        breadcrumb: breadcrumbByNodeId.get(String(node.id)) ?? '',
-        details: await queryTreeNodeDetailRecord(treeInstanceId, node.id),
-      })))
-    : [];
-  const leafCandidates = leafRecords
-    .filter((candidate) => candidate.details && !candidate.details.isSecret)
-    .map((candidate) => ({
-      nodeId: String(candidate.node.id),
-      breadcrumb: candidate.breadcrumb,
-      isLeafNode: true,
-      notes: candidate.details.notes.slice(0, 1500),
-      parentId: String(candidate.node.parent ?? ''),
-      title: candidate.node.name,
-      notesFingerprint: fingerprintNotes(candidate.details.notes),
-    }));
-
   return {
     treeName: treeSummary.treeName,
     maxDepth,
-    candidates: [...candidates, ...leafCandidates],
+    flatData,
+    breadcrumbByNodeId,
+    candidates,
   };
 }
 
-async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer }) {
+async function shortlistPlacementLeaves({ leaves, selectionContext, parentBreadcrumb }) {
+  let shortlist = [];
+
+  for (let index = 0; index < leaves.length; index += PLACEMENT_BATCH_SIZE) {
+    const batch = leaves.slice(index, index + PLACEMENT_BATCH_SIZE);
+    const ids = await selectChatPlacementCandidates({
+      ...selectionContext,
+      parentBreadcrumb,
+      candidates: batch,
+      stage: 'shortlist',
+      maxSelections: PLACEMENT_SHORTLIST_SIZE,
+    });
+    shortlist.push(...batch.filter((candidate) => ids.includes(candidate.nodeId)));
+
+    while (shortlist.length > PLACEMENT_SHORTLIST_SIZE) {
+      const offered = shortlist.slice(0, PLACEMENT_BATCH_SIZE);
+      const retainedIds = await selectChatPlacementCandidates({
+        ...selectionContext,
+        parentBreadcrumb,
+        candidates: offered,
+        stage: 'shortlist',
+        maxSelections: PLACEMENT_SHORTLIST_SIZE,
+      });
+      shortlist = [...offered.filter((candidate) => retainedIds.includes(candidate.nodeId)), ...shortlist.slice(offered.length)];
+    }
+  }
+
+  return shortlist;
+}
+
+async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer, onModelCall }) {
   const normalizedOriginalQuestion = String(originalQuestion ?? '').trim();
   const normalizedBroaderAnswer = String(broaderAnswer ?? '').trim();
 
@@ -353,64 +366,89 @@ async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broa
     throw new Error('The chat add action requires the original question and broader answer content.');
   }
 
-  const { treeName, maxDepth, candidates } = await getChatLeafPlacementContext(
-    treeInstanceId, normalizedOriginalQuestion, normalizedBroaderAnswer,
-  );
+  const { treeName, maxDepth, flatData, breadcrumbByNodeId, candidates } = await getChatLeafPlacementContext(treeInstanceId);
 
-  let selectedCandidate = null;
+  if (!Number.isFinite(maxDepth) || maxDepth < 0) {
+    throw new Error(`Tree depth is not configured for ${treeName}.`);
+  }
 
-  if (candidates.length > 0) {
-    const selection = await selectChatLeafAnchorCandidate({
-      treeName,
-      originalQuestion: normalizedOriginalQuestion,
-      broaderAnswer: normalizedBroaderAnswer,
-      candidates,
+  const selectionContext = { treeName, originalQuestion: normalizedOriginalQuestion, broaderAnswer: normalizedBroaderAnswer, onModelCall };
+  const roots = candidates.filter((candidate) => candidate.depth === 0);
+  const [rootId] = await selectChatPlacementCandidates({ ...selectionContext, candidates: roots, stage: 'root' });
+  const nodeById = new Map(flatData.map((node) => [String(node.id), node]));
+  let selectedCandidate = roots.find((candidate) => candidate.nodeId === rootId) ?? null;
+  let leafMatch = null;
+  let evaluatedLeafCandidates = false;
+
+  while (selectedCandidate) {
+    const childNodes = flatData.filter((node) => String(node.parent ?? '') === selectedCandidate.nodeId);
+    const isLeafLevel = selectedCandidate.remainingDepthBudget === 1;
+    const children = isLeafLevel
+      ? childNodes.filter((node) => node.isLeafNode).map((node) => ({
+        nodeId: String(node.id), breadcrumb: breadcrumbByNodeId.get(String(node.id)) ?? '',
+        parentId: String(node.parent ?? ''), title: node.name, isLeafNode: true,
+      }))
+      : candidates.filter((candidate) => childNodes.some((node) => String(node.id) === candidate.nodeId));
+    if (children.length === 0) break;
+    if (isLeafLevel) evaluatedLeafCandidates = true;
+    const [childId] = await selectChatPlacementCandidates({
+      ...selectionContext, parentBreadcrumb: selectedCandidate.breadcrumb, candidates: children,
+      stage: isLeafLevel ? 'leaf' : 'structural',
     });
+    if (!childId) break;
 
-    if (selection.selectionDisposition !== 'no_anchor') {
-      selectedCandidate = candidates.find((candidate) => candidate.nodeId === selection.selectedAnchorNodeId) ?? null;
+    if (isLeafLevel) {
+      const leaf = children.find((candidate) => candidate.nodeId === childId);
+      const details = await queryTreeNodeDetailRecord(treeInstanceId, childId);
+      if (details) leafMatch = { ...leaf, notesFingerprint: fingerprintNotes(details.notes) };
+      break;
+    }
+    selectedCandidate = children.find((candidate) => candidate.nodeId === childId);
+  }
 
-      if (!selectedCandidate) {
-        throw new Error('The selected anchor path was not valid for the target tree.');
+  if (selectedCandidate && !leafMatch && !evaluatedLeafCandidates) {
+    const isWithinSubtree = (nodeId) => {
+      let node = nodeById.get(String(nodeId));
+      while (node) {
+        if (String(node.id) === selectedCandidate.nodeId) return true;
+        node = node.parent === null || node.parent === undefined ? null : nodeById.get(String(node.parent));
       }
+      return false;
+    };
+    const leaves = flatData.filter((node) => node.isLeafNode && isWithinSubtree(node.id))
+      .map((node) => ({ nodeId: String(node.id), breadcrumb: breadcrumbByNodeId.get(String(node.id)) ?? '', parentId: String(node.parent ?? ''), title: node.name, isLeafNode: true }));
+    const shortlist = await shortlistPlacementLeaves({ leaves, selectionContext, parentBreadcrumb: selectedCandidate.breadcrumb });
+    const leafRecords = await Promise.all(shortlist.map(async (leaf) => ({ leaf, details: await queryTreeNodeDetailRecord(treeInstanceId, leaf.nodeId) })));
+    const rankedLeaves = leafRecords.filter(({ details }) => details)
+      .map(({ leaf, details }) => ({ ...leaf, notes: details.notes.slice(0, 1500), notesFingerprint: fingerprintNotes(details.notes) }));
+    if (rankedLeaves.length) {
+      const [leafId] = await selectChatPlacementCandidates({ ...selectionContext, candidates: rankedLeaves, stage: 'rank', required: true });
+      leafMatch = rankedLeaves.find((leaf) => leaf.nodeId === leafId);
+    }
 
-      if (selection.selectionDisposition === 'selected_leaf') {
-        return {
-          treeId: String(treeInstanceId),
-          treeName,
-          placementMode: 'merge_existing',
-          generatedLeafTitle: '',
-          originalQuestion: normalizedOriginalQuestion,
-          broaderAnswer: normalizedBroaderAnswer,
-          mergeTarget: {
-            nodeId: selectedCandidate.nodeId,
-            breadcrumb: selectedCandidate.breadcrumb,
-            parentId: selectedCandidate.parentId,
-            title: selectedCandidate.title,
-            notesFingerprint: selectedCandidate.notesFingerprint,
-          },
-        };
-      }
-
-      if (selectedCandidate.directLeafPossible && selection.generatedLeafTitle) {
-        return {
-          treeId: String(treeInstanceId),
-          treeName,
-          placementMode: 'direct_leaf_from_anchor',
-          selectedAnchorNodeId: selectedCandidate.nodeId,
-          selectedAnchorBreadcrumb: selection.selectedBreadcrumb || selectedCandidate.breadcrumb,
-          generatedPathTitles: [],
-          plannedLeafParentBreadcrumb: selection.selectedBreadcrumb || selectedCandidate.breadcrumb,
-          generatedLeafTitle: selection.generatedLeafTitle,
-          originalQuestion: normalizedOriginalQuestion,
-          broaderAnswer: normalizedBroaderAnswer,
-        };
+    if (!leafMatch) {
+      const descendants = candidates.filter((candidate) => candidate.depth > selectedCandidate.depth && isWithinSubtree(candidate.nodeId));
+      const depths = [...new Set(descendants.map((candidate) => candidate.depth))].sort((left, right) => right - left);
+      for (const depth of depths) {
+        const atDepth = descendants.filter((candidate) => candidate.depth === depth);
+        const [anchorId] = await selectChatPlacementCandidates({ ...selectionContext, parentBreadcrumb: selectedCandidate.breadcrumb, candidates: atDepth, stage: 'anchor' });
+        if (anchorId) {
+          selectedCandidate = atDepth.find((candidate) => candidate.nodeId === anchorId);
+          break;
+        }
       }
     }
   }
 
-  if (!Number.isFinite(maxDepth) || maxDepth < 0) {
-    throw new Error(`Tree depth is not configured for ${treeName}.`);
+  if (leafMatch) {
+    return {
+      treeId: String(treeInstanceId), treeName, placementMode: 'merge_existing', generatedLeafTitle: '',
+      originalQuestion: normalizedOriginalQuestion, broaderAnswer: normalizedBroaderAnswer,
+      mergeTarget: {
+        nodeId: leafMatch.nodeId, breadcrumb: leafMatch.breadcrumb, parentId: leafMatch.parentId,
+        title: leafMatch.title, notesFingerprint: leafMatch.notesFingerprint,
+      },
+    };
   }
 
   const requiredPathTitleCount = selectedCandidate
@@ -430,7 +468,7 @@ async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broa
   return {
     treeId: String(treeInstanceId),
     treeName,
-    placementMode: selectedCandidate ? 'anchor_with_intermediates' : 'full_path_from_root',
+    placementMode: selectedCandidate ? requiredPathTitleCount === 0 ? 'direct_leaf_from_anchor' : 'anchor_with_intermediates' : 'full_path_from_root',
     selectedAnchorNodeId: selectedCandidate?.nodeId ?? '',
     selectedAnchorBreadcrumb: selectedCandidate?.breadcrumb ?? '',
     generatedPathTitles: pathPlan.pathTitles,
@@ -568,8 +606,8 @@ function buildPreviewDestinations(preview, mergeTarget = null) {
   };
 }
 
-export async function previewLeafFromChat({ treeInstanceId, originalQuestion, broaderAnswer }) {
-  const placement = await resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer });
+export async function previewLeafFromChat({ treeInstanceId, originalQuestion, broaderAnswer, onModelCall }) {
+  const placement = await resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer, onModelCall });
   if (placement.broaderAnswer.length > 4000) {
     throw new Error('The cleaned answer is too long to save as one note. Shorten it before previewing.');
   }
@@ -866,7 +904,7 @@ export async function transitionAttachmentReviewStatus({ treeInstanceId, attachm
 export async function updateTreeNodeDetails(treeInstanceId, nodeId, {
   name,
   notes,
-  isSecret = false,
+  isSecret,
   secretValue = '',
   secretMetadata = null,
   updatedBy = null,
@@ -903,7 +941,7 @@ export async function updateTreeNodeDetails(treeInstanceId, nodeId, {
     }
 
     const existingDetails = await queryTreeNodeDetailRecord(treeInstanceId, nodeId);
-    const nextIsSecret = Boolean(isSecret);
+    const nextIsSecret = isSecret === undefined ? Boolean(existingDetails?.isSecret) : Boolean(isSecret);
     const nextNotes = typeof notes === 'string' ? notes : '';
     const nextSecretValue = String(secretValue ?? '').trim();
     const requestedSecretMetadata = normalizeSecretMetadata(secretMetadata);
@@ -1092,7 +1130,7 @@ export async function mergeLeafNodeFromChat({ treeInstanceId, principal, preview
     const flatData = await queryTreeData(treeInstanceId);
     const breadcrumbs = buildBreadcrumbByNodeId(flatData);
     const positionedNode = flatData.find((item) => String(item.id) === target.nodeId);
-  if (!node?.isLeafNode || !current || current.isSecret ||
+  if (!node?.isLeafNode || !current ||
       !positionedNode || (breadcrumbs.get(target.nodeId) ?? '') !== target.breadcrumb ||
       String(positionedNode.parent ?? '') !== target.parentId || node.name !== target.title ||
       fingerprintNotes(current.notes) !== target.notesFingerprint) {

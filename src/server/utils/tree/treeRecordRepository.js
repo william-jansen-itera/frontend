@@ -52,8 +52,7 @@ export async function copyPublicTreeRecords({ sourceTreeId, owner, copyAttachmen
   const detailsResult = await createSqlRequest(transaction)
     .input('source_tree_id', sql.Int, sourceTreeId)
     .query(`
-      SELECT details.tree_node_id AS nodeId, details.notes,
-        CAST(details.is_secret AS BIT) AS isSecret
+      SELECT details.tree_node_id AS nodeId, details.notes
       FROM tree_node_details details
       INNER JOIN tree_nodes nodes ON nodes.id = details.tree_node_id
       WHERE nodes.tree_instance_id = @source_tree_id AND nodes.deleted_at IS NULL;
@@ -67,7 +66,7 @@ export async function copyPublicTreeRecords({ sourceTreeId, owner, copyAttachmen
       INNER JOIN tree_node_details details ON details.tree_node_id = files.tree_node_id
       INNER JOIN tree_nodes nodes ON nodes.id = details.tree_node_id
       WHERE nodes.tree_instance_id = @source_tree_id AND nodes.deleted_at IS NULL
-        AND files.deleted_at IS NULL AND details.is_secret = 0
+        AND files.deleted_at IS NULL
       ORDER BY files.id;
     `);
 
@@ -139,13 +138,13 @@ export async function copyPublicTreeRecords({ sourceTreeId, owner, copyAttachmen
       const detail = sourceDetails.get(node.id);
       await createSqlRequest(transaction)
         .input('tree_node_id', sql.Int, newNodeId)
-        .input('notes', sql.NVarChar(sql.MAX), detail?.isSecret ? '' : (detail?.notes ?? ''))
+        .input('notes', sql.NVarChar(sql.MAX), detail?.notes ?? '')
         .query(`
-          UPDATE tree_node_details SET notes = @notes, is_secret = 0
+          UPDATE tree_node_details SET notes = @notes, is_secret = 0, secret_metadata = NULL
           WHERE tree_node_id = @tree_node_id;
           IF @@ROWCOUNT = 0
-            INSERT INTO tree_node_details (tree_node_id, notes, is_secret)
-            VALUES (@tree_node_id, @notes, 0);
+            INSERT INTO tree_node_details (tree_node_id, notes, is_secret, secret_metadata)
+            VALUES (@tree_node_id, @notes, 0, NULL);
         `);
     }
   }
@@ -1047,7 +1046,6 @@ export async function updateUnchangedLeafNotes({ treeInstanceId, nodeId, origina
         AND node.is_leaf_node = 1
         AND CONVERT(VARBINARY(MAX), node.text) = CONVERT(VARBINARY(MAX), @expected_title)
         AND (node.parent_id = @expected_parent_id OR (node.parent_id IS NULL AND @expected_parent_id IS NULL))
-        AND details.is_secret = 0
         AND CONVERT(VARBINARY(MAX), details.notes) = CONVERT(VARBINARY(MAX), @original_notes);
     `);
 

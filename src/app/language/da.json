@@ -146,7 +146,7 @@
         "Timing": "3. Tidsforbrug", "TimeSpent": "Hvor tiden blev brugt", "ToolCalls": "4. Værktøjskald", "InvocationCount": "{count, plural, one {# kald} other {# kald}}",
         "NoToolCalls": "Ingen værktøjskald blev registreret for denne tur.", "ToolCycle": "Værktøjsrunde {round}", "ToolCall": "Værktøjskald", "Error": "Fejl",
         "Arguments": "Fortolkede argumenter", "SearchExecution": "Søgeforløb", "SearchResults": "Faktiske søgeresultater", "ToolOutput": "Værktøjsoutput",
-        "ToolDebug": "Værktøjsdebug", "ToolMetadata": "Værktøjsmetadata", "ToolError": "Værktøjsfejl",
+        "ToolDebug": "Værktøjsdebug", "ToolMetadata": "Værktøjsmetadata", "ToolError": "Værktøjsfejl", "PlacementSelection": "Placering: {count, plural, one {# modelkald} other {# modelkald}}",
         "AgentInput": "5. Udvalgt agentinput", "AgentInputHint": "Beskeder sendt tilbage til modellen", "AgentOutput": "6. Agentoutput", "AgentOutputHint": "Modellens svar",
         "NoTiming": "Ingen tidsdata blev registreret for denne tur.", "Request": "anmodning", "Total": "i alt {duration}", "To": "{start} til {end}", "RawTiming": "Rå tidsdata (JSON)",
         "CoverageFilter": "filter for tokendækning", "CoverageMeta": "{state} · tærskel {threshold}", "Enabled": "aktiveret", "Disabled": "deaktiveret",

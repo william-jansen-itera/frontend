@@ -690,6 +690,13 @@ function TurnDebugPanel({ turn }) {
                     <pre className={styles.jsonBlock}>{formatJson(toolCall.toolOutput)}</pre>
                   </details>
 
+                  {toolCall.toolDebug?.placementSelection ? (
+                    <details className={styles.debugDetail} open>
+                      <summary>{t("PlacementSelection", { count: toolCall.toolDebug.placementSelection.modelCallCount })}</summary>
+                      <pre className={styles.jsonBlock}>{formatJson(toolCall.toolDebug.placementSelection.calls)}</pre>
+                    </details>
+                  ) : null}
+
                   {toolCall.toolDebug ? (
                     <details className={styles.debugDetail}>
                       <summary>{t("ToolDebug")}</summary>

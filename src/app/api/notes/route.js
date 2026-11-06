@@ -283,7 +283,7 @@ export async function PATCH(request) {
     return NextResponse.json(await updateTreeNodeDetails(parseInt(treeId), parseInt(id), {
       name,
       notes: typeof notes === 'string' ? notes : '',
-      isSecret: Boolean(isSecret),
+      isSecret: isSecret === undefined ? undefined : Boolean(isSecret),
       secretValue: typeof secretValue === 'string' ? secretValue : '',
       secretMetadata,
       updatedBy: normalizeUpdatedByMetadata(principal),

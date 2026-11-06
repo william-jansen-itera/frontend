@@ -146,7 +146,7 @@
         "Timing": "3. Execution Timing", "TimeSpent": "Where the time went", "ToolCalls": "4. Tool Calls", "InvocationCount": "{count, plural, one {# invocation} other {# invocations}}",
         "NoToolCalls": "No tool calls were recorded for this turn.", "ToolCycle": "Tool cycle {round}", "ToolCall": "Tool call", "Error": "Error",
         "Arguments": "Parsed arguments", "SearchExecution": "Search execution", "SearchResults": "Actual search results", "ToolOutput": "Tool output",
-        "ToolDebug": "Tool debug", "ToolMetadata": "Tool meta data", "ToolError": "Tool error",
+        "ToolDebug": "Tool debug", "ToolMetadata": "Tool meta data", "ToolError": "Tool error", "PlacementSelection": "Placement selection: {count, plural, one {# model call} other {# model calls}}",
         "AgentInput": "5. Curated Agent Input", "AgentInputHint": "Messages passed back to the model", "AgentOutput": "6. Agent Output", "AgentOutputHint": "Model response and answer",
         "NoTiming": "No timing data was recorded for this turn.", "Request": "request", "Total": "total {duration}", "To": "{start} to {end}", "RawTiming": "Raw timing JSON",
         "CoverageFilter": "token coverage filter", "CoverageMeta": "{state} · threshold {threshold}", "Enabled": "enabled", "Disabled": "disabled",

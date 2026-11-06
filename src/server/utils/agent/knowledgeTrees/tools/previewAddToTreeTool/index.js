@@ -52,10 +52,12 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       throw error;
     }
 
+    const selectionCalls = [];
     const preview = await previewLeafFromChat({
       treeInstanceId: Number.parseInt(resolvedTreeId, 10),
       originalQuestion,
       broaderAnswer,
+      onModelCall: includeDebug ? (call) => selectionCalls.push(call) : undefined,
     });
 
     const previewId = randomUUID();
@@ -67,6 +69,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       toolOutput: buildTreePreviewToolOutput(previewId, preview),
       untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath'],
       includeDebug,
+      debug: { placementSelection: { modelCallCount: selectionCalls.length, calls: selectionCalls } },
     });
   };
 }
