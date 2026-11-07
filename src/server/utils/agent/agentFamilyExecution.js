@@ -4,6 +4,24 @@ import { appendDebugStep } from '@/server/utils/agent/agentDebug';
 
 const MAX_TOOL_ROUNDS = 5;
 const MAX_FINAL_RESPONSE_VALIDATION_RETRIES = 2;
+const MAX_REJECTED_RESPONSE_DEBUG_CHARS = 8000;
+
+function buildResponseDebug(response) {
+  const rawOutputText = typeof response?.output_text === 'string' ? response.output_text : null;
+  const truncated = rawOutputText !== null && rawOutputText.length > MAX_REJECTED_RESPONSE_DEBUG_CHARS;
+  const halfLimit = MAX_REJECTED_RESPONSE_DEBUG_CHARS / 2;
+
+  return {
+    responseId: response?.id ?? null,
+    responseStatus: response?.status ?? null,
+    incompleteDetails: response?.incomplete_details ?? null,
+    rawOutputText: truncated
+      ? `${rawOutputText.slice(0, halfLimit)}\n...[truncated]...\n${rawOutputText.slice(-halfLimit)}`
+      : rawOutputText,
+    outputTextLength: rawOutputText?.length ?? 0,
+    outputTextTruncated: truncated,
+  };
+}
 
 function getElapsedDurationMs(startedAtMs) {
   const elapsedMs = performance.now() - startedAtMs;
@@ -144,14 +162,18 @@ export async function runAgentFamilyExecution({
         const validationInstruction = await finalResponseValidator({
           response: currentResponse,
           toolInvocations,
+          debug,
         });
 
         if (validationInstruction) {
+          const rejectedResponseDebug = debug ? buildResponseDebug(currentResponse) : null;
           if (finalResponseValidationRetries >= MAX_FINAL_RESPONSE_VALIDATION_RETRIES) {
             appendDebugStep(debug, 'final response validation failed permanently', {
               retries: finalResponseValidationRetries,
+              validationInstruction: String(validationInstruction),
+              ...rejectedResponseDebug,
             });
-            throw new Error(String(validationInstruction));
+            throw new Error('The agent could not produce a valid answer. Check whether the requested action completed before retrying.');
           }
 
           finalResponseValidationRetries += 1;
@@ -159,12 +181,14 @@ export async function runAgentFamilyExecution({
           const validationModelCallStartedAtMs = performance.now();
           appendDebugStep(debug, 'final response validation retry requested', {
             retryCount: finalResponseValidationRetries,
+            validationInstruction: String(validationInstruction),
+            ...rejectedResponseDebug,
           });
           currentResponse = await createAgentResponse(openAIClient, responseConfig, {
             input: [{
               type: 'message',
               role: 'system',
-              content: String(validationInstruction),
+              content: `This is a correction within the same user turn, not a new user request. The latest user message is still the one in the original request; do not ask for approval again if that message already provided it. Do not treat earlier user messages as approval for this turn. ${String(validationInstruction)}`,
             }],
             previous_response_id: currentResponse.id,
           });
@@ -188,6 +212,12 @@ export async function runAgentFamilyExecution({
           }
 
           continue;
+        }
+        if (finalResponseValidationRetries > 0) {
+          appendDebugStep(debug, 'final response validation passed', {
+            retryCount: finalResponseValidationRetries,
+            ...(debug ? buildResponseDebug(currentResponse) : {}),
+          });
         }
       }
 

@@ -2,6 +2,7 @@ import { getProjectClient } from '@/server/utils/foundryAgentClient';
 import {
   buildStructuredAnswerStateFinalResponseValidator,
   buildStructuredAnswerStateResponseFormat,
+  parseStructuredAnswerStateResponse,
 } from '@/server/utils/agent/agentAnswerState';
 import { buildInitialAgentInput } from '@/server/utils/agent/agentConversationInput';
 import {
@@ -65,6 +66,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     visibility,
     enforceAccess: true,
     includeDebug,
+    currentUserMessage: normalizedMessage,
   });
   const visibilityScope = buildVisibilityScopeContext({
     visibility,
@@ -74,7 +76,6 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
   const allowedToolInstruction = [
     buildVisibilityScopeInstruction({ visibility, includedTrees }),
     buildAllowedToolInstruction(includedTrees),
-    'For this turn, only the current user message can authorize a broad answer. An earlier approval in the conversation history is already used up; if the current message asks a new substantive question, start grounded, search the relevant tree, and ask for fresh permission if evidence is insufficient. Do not mark the new answer as broad or offer to save it based on earlier approval.',
   ].join('\n\n');
   const initialInput = buildInitialAgentInput({
     allowedToolInstruction,
@@ -95,7 +96,39 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     allowBroadMode: true,
     allowPersistence: true,
     requirePersistenceOfferForBroad: true,
+    requirePersistenceAction: true,
   });
+  const validateFinalResponse = async ({ response, toolInvocations, debug: validationDebug }) => {
+    const stateError = await validateAnswerState({ response, toolInvocations, debug: validationDebug });
+    if (stateError) return stateError;
+
+    const { answer, persistenceAction } = parseStructuredAnswerStateResponse(response, {
+      allowBroadMode: true,
+      allowPersistence: true,
+      requirePersistenceOfferForBroad: true,
+      requirePersistenceAction: true,
+    });
+    const lastAction = toolInvocations.findLast(({ toolName }) =>
+      ['preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree'].includes(toolName));
+    const successfulAction = lastAction?.output?.toolResultType === 'tree_note_preview'
+      ? lastAction.toolName === 'revise_save_preview' ? 'revised' : 'previewed'
+      : ['tree_note_updated', 'tree_note_created'].includes(lastAction?.output?.toolResultType) &&
+        lastAction?.toolName === 'confirm_save_to_tree' ? 'saved' : 'none';
+    if (persistenceAction !== successfulAction) {
+      return `The reported persistenceAction does not match the latest persistence tool result. If the current user message explicitly confirms the latest preview, call confirm_save_to_tree with that preview's exact ID and approved save mode before replying. Only report persistenceAction="saved" after that call succeeds in this turn. Otherwise report persistenceAction="${successfulAction}" and rewrite answer and explanation to match the observed tool result; when confirm_save_to_tree did not succeed, explicitly say the note was not saved and remove any saved-note text, destination, or link. Do not copy the rejected answer.`;
+    }
+    if (['previewed', 'revised'].includes(successfulAction) &&
+        (!answer.includes(`<!-- Preview ID: ${lastAction.output.data.previewId} -->`) ||
+         !answer.includes(lastAction.output.data.defaultSavePath))) {
+      return 'Report the actual defaultSavePath and end the answer with the exact Preview ID marker from the latest preview tool result. Do not claim the note was saved; ask for separate confirmation.';
+    }
+    if (successfulAction === 'saved' &&
+        (!lastAction.output.data?.noteLink || !lastAction.output.data?.details?.notes ||
+         !answer.includes(lastAction.output.data.noteLink) || !answer.includes(lastAction.output.data.details.notes))) {
+      return 'The saved-note answer must contain the exact noteLink and complete details.notes from the successful confirm_save_to_tree result. Do not invent a link or note text.';
+    }
+    return null;
+  };
 
   try {
     const { response, toolInvocations, modelCalls } = await runAgentFamilyExecution({
@@ -107,12 +140,13 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
           allowBroadMode: true,
           allowPersistence: true,
           requirePersistenceOfferForBroad: true,
+          requirePersistenceAction: true,
         }),
       },
       initialInput,
       handlerMap,
       toolPolicies,
-      finalResponseValidator: validateAnswerState,
+      finalResponseValidator: validateFinalResponse,
       debug,
       includeDebug,
     });

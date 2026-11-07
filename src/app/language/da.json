@@ -148,6 +148,7 @@
         "Arguments": "Fortolkede argumenter", "SearchExecution": "Søgeforløb", "SearchResults": "Faktiske søgeresultater", "ToolOutput": "Værktøjsoutput",
         "ToolDebug": "Værktøjsdebug", "ToolMetadata": "Værktøjsmetadata", "ToolError": "Værktøjsfejl", "PlacementSelection": "Placering: {count, plural, one {# modelkald} other {# modelkald}}",
         "AgentInput": "5. Udvalgt agentinput", "AgentInputHint": "Beskeder sendt tilbage til modellen", "AgentOutput": "6. Agentoutput", "AgentOutputHint": "Modellens svar",
+        "StepsComplete": "7. Gennemførte trin",
         "NoTiming": "Ingen tidsdata blev registreret for denne tur.", "Request": "anmodning", "Total": "i alt {duration}", "To": "{start} til {end}", "RawTiming": "Rå tidsdata (JSON)",
         "CoverageFilter": "filter for tokendækning", "CoverageMeta": "{state} · tærskel {threshold}", "Enabled": "aktiveret", "Disabled": "deaktiveret",
         "CoverageResults": "beholdt {after} af {before, plural, one {# grupperet resultat} other {# grupperede resultater}}", "QueryTokens": " · {count, plural, one {# søgetoken} other {# søgetokens}}",

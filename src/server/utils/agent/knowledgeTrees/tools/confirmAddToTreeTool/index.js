@@ -8,7 +8,7 @@ import {
 export const confirmAddToTreeToolDefinition = {
   type: 'function',
   name: 'confirm_save_to_tree',
-  description: 'Save the previewed answer after user confirmation. Choose the offered default mode for an unqualified yes (merge if offered), or create_leaf only if it was offered and the user explicitly requests a separate note. Use only the latest previewId, including a revised previewId when the path was changed. Failures after confirmation require a new preview.',
+  description: 'Save only after the user approves the preview shown in the immediately preceding assistant reply with its Preview ID marker. A yes to a broad answer\'s save offer requires preview_save_to_tree first; it does not authorize confirmation. Choose the offered default mode for an unqualified yes (merge if offered), or create_leaf only if it was offered and the user explicitly requests a separate note. Use only the latest previewId, including a revised previewId when the path was changed. Failures after confirmation require a new preview.',
   strict: true,
   parameters: {
     type: 'object',

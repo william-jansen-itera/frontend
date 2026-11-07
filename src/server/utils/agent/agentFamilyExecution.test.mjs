@@ -30,6 +30,7 @@ registerHooks({
 });
 
 const { runAgentFamilyExecution } = await import('./agentFamilyExecution.js');
+const { buildStructuredAnswerStateFinalResponseValidator } = await import('./agentAnswerState.js');
 const { buildDeleteEmailHandler } = await import('./email/tools/deleteEmailTool/index.js');
 
 test('delete preview does not touch IMAP and changed aliases cannot use an old approval', async () => {
@@ -80,6 +81,166 @@ function clientWithResponses(responses) {
 
 const deleteCall = { type: 'function_call', name: 'delete_email', call_id: 'delete-1', arguments: '{"uids":["1"]}' };
 const responseConfig = { type: 'direct_model', model: 'mock', instructions: 'mock', tools: [] };
+
+test('final response validation retries reach the agent, but exhaustion hides internal instructions from the user', async () => {
+  const client = clientWithResponses([
+    { id: 'response-1', output: [] },
+    { id: 'response-2', output: [] },
+    { id: 'response-3', output: [] },
+  ]);
+  const validationInstruction = 'Report persistenceAction="none"; do not claim a save.';
+  const debug = { stepsComplete: [], timings: { modelCalls: [] } };
+
+  await assert.rejects(runAgentFamilyExecution({
+    openAIClient: client,
+    responseConfig,
+    initialInput: [],
+    handlerMap: new Map(),
+    toolPolicies: new Map(),
+    finalResponseValidator: async () => validationInstruction,
+    debug,
+  }), /The agent could not produce a valid answer/);
+
+  assert.equal(client.requests.length, 3);
+  for (const [index, responseId] of ['response-1', 'response-2'].entries()) {
+    assert.equal(client.requests[index + 1].previous_response_id, responseId);
+    assert.deepEqual(client.requests[index + 1].input, [{
+      type: 'message', role: 'system',
+      content: `This is a correction within the same user turn, not a new user request. The latest user message is still the one in the original request; do not ask for approval again if that message already provided it. Do not treat earlier user messages as approval for this turn. ${validationInstruction}`,
+    }]);
+  }
+  assert.deepEqual(debug.stepsComplete.filter(({ step }) => step === 'final response validation retry requested')
+    .map(({ retryCount, validationInstruction: instruction }) => ({ retryCount, instruction })), [
+    { retryCount: 1, instruction: validationInstruction },
+    { retryCount: 2, instruction: validationInstruction },
+  ]);
+  assert.equal(debug.stepsComplete.at(-1).validationInstruction, validationInstruction);
+});
+
+test('a corrected final response is returned after a validation retry', async () => {
+  const client = clientWithResponses([
+    { id: 'response-1', status: 'completed', output: [], output_text: 'not json' },
+    { id: 'response-2', output: [], output_text: 'Corrected answer' },
+  ]);
+  const debug = { stepsComplete: [], timings: { modelCalls: [] } };
+  const result = await runAgentFamilyExecution({
+    openAIClient: client,
+    responseConfig,
+    initialInput: [],
+    handlerMap: new Map(),
+    toolPolicies: new Map(),
+    finalResponseValidator: async ({ response }) => response.id === 'response-1' ? 'Correct the answer.' : null,
+    debug,
+  });
+
+  assert.equal(result.response.output_text, 'Corrected answer');
+  assert.equal(client.requests.length, 2);
+  assert.match(client.requests[1].input[0].content, /same user turn, not a new user request/);
+  assert.match(client.requests[1].input[0].content, /do not ask for approval again if that message already provided it/);
+  assert.match(client.requests[1].input[0].content, /Correct the answer\.$/);
+  const rejectedStep = debug.stepsComplete.find(({ step }) => step === 'final response validation retry requested');
+  assert.equal(rejectedStep.validationInstruction, 'Correct the answer.');
+  assert.equal(rejectedStep.rawOutputText, 'not json');
+  assert.equal(rejectedStep.outputTextLength, 8);
+  assert.equal(rejectedStep.outputTextTruncated, false);
+  assert.equal(rejectedStep.responseStatus, 'completed');
+  assert.equal(debug.stepsComplete.at(-1).step, 'final response validation passed');
+  assert.equal(debug.stepsComplete.at(-1).retryCount, 1);
+  assert.equal(debug.stepsComplete.at(-1).responseId, 'response-2');
+  assert.equal(debug.stepsComplete.at(-1).rawOutputText, 'Corrected answer');
+  assert.equal(debug.stepsComplete.at(-1).outputTextLength, 'Corrected answer'.length);
+  assert.equal(debug.stepsComplete.at(-1).outputTextTruncated, false);
+});
+
+test('a validation retry can call a tool before returning a final response', async () => {
+  const client = clientWithResponses([
+    { id: 'response-1', output: [], output_text: 'not json' },
+    { id: 'response-2', output: [{
+      type: 'function_call', name: 'confirm_save_to_tree', call_id: 'confirm-1',
+      arguments: '{"previewId":"preview-1","saveMode":"merge_existing"}',
+    }] },
+    { id: 'response-3', output: [], output_text: 'Saved after confirmation.' },
+  ]);
+  let confirmCalls = 0;
+  const result = await runAgentFamilyExecution({
+    openAIClient: client,
+    responseConfig,
+    initialInput: [{ type: 'message', role: 'user', content: 'Yes, save the preview.' }],
+    handlerMap: new Map([['confirm_save_to_tree', async () => {
+      confirmCalls += 1;
+      return { toolResultType: 'tree_note_updated' };
+    }]]),
+    toolPolicies: new Map([['confirm_save_to_tree', { requiresUserApproval: false }]]),
+    finalResponseValidator: async ({ response, toolInvocations }) =>
+      response.id === 'response-1' ? 'Return valid JSON after completing the requested action.'
+        : toolInvocations.some(({ output }) => output.toolResultType === 'tree_note_updated') ? null : 'Confirm the save first.',
+  });
+
+  assert.equal(confirmCalls, 1);
+  assert.equal(result.toolInvocations[0].toolName, 'confirm_save_to_tree');
+  assert.equal(result.response.output_text, 'Saved after confirmation.');
+  assert.equal(client.requests[2].previous_response_id, 'response-2');
+  assert.equal(client.requests[2].input[0].type, 'function_call_output');
+  assert.equal(client.requests[2].input[0].call_id, 'confirm-1');
+});
+
+test('validation debug bounds long rejected model output while preserving both ends', async () => {
+  const rawOutputText = `START-${'x'.repeat(10000)}-END`;
+  const client = clientWithResponses([
+    { id: 'response-1', output: [], output_text: rawOutputText },
+    { id: 'response-2', output: [], output_text: rawOutputText },
+  ]);
+  const debug = { stepsComplete: [], timings: { modelCalls: [] } };
+  await runAgentFamilyExecution({
+    openAIClient: client,
+    responseConfig,
+    initialInput: [],
+    handlerMap: new Map(),
+    toolPolicies: new Map(),
+    finalResponseValidator: async ({ response }) => response.id === 'response-1' ? 'Invalid answer.' : null,
+    debug,
+  });
+
+  const rejectedStep = debug.stepsComplete.find(({ step }) => step === 'final response validation retry requested');
+  assert.equal(rejectedStep.outputTextLength, rawOutputText.length);
+  assert.equal(rejectedStep.outputTextTruncated, true);
+  assert.ok(rejectedStep.rawOutputText.startsWith('START-'));
+  assert.ok(rejectedStep.rawOutputText.endsWith('-END'));
+  assert.ok(rejectedStep.rawOutputText.length < rawOutputText.length);
+  const acceptedStep = debug.stepsComplete.find(({ step }) => step === 'final response validation passed');
+  assert.equal(acceptedStep.outputTextLength, rawOutputText.length);
+  assert.equal(acceptedStep.outputTextTruncated, true);
+  assert.ok(acceptedStep.rawOutputText.startsWith('START-'));
+  assert.ok(acceptedStep.rawOutputText.endsWith('-END'));
+  assert.ok(acceptedStep.rawOutputText.length < rawOutputText.length);
+});
+
+test('malformed structured output records its parser error without changing the model retry', async () => {
+  const malformedOutput = '{"answer":"Saved",]';
+  const client = clientWithResponses([
+    { id: 'response-1', output: [], output_text: malformedOutput },
+    { id: 'response-2', output: [], output_text: JSON.stringify({
+      answer: 'Saved', knowledgeMode: 'grounded', isPermissionToBroadenRequest: false,
+      isPersistenceOffer: false, explanation: 'Reporting a result.', persistenceAction: 'none',
+    }) },
+  ]);
+  const debug = { stepsComplete: [], timings: { modelCalls: [] } };
+  await runAgentFamilyExecution({
+    openAIClient: client,
+    responseConfig,
+    initialInput: [],
+    handlerMap: new Map(),
+    toolPolicies: new Map(),
+    finalResponseValidator: buildStructuredAnswerStateFinalResponseValidator({ requirePersistenceAction: true }),
+    debug,
+  });
+
+  const parseStep = debug.stepsComplete.find(({ step }) => step === 'final response JSON parse failed');
+  assert.equal(parseStep.responseId, 'response-1');
+  assert.ok(parseStep.parseError);
+  assert.equal(debug.stepsComplete.find(({ step }) => step === 'final response validation retry requested').rawOutputText, malformedOutput);
+  assert.match(client.requests[1].input[0].content, /not valid JSON/);
+});
 
 test('proposal and decline never invoke the delete handler, and decline keeps the call id', async () => {
   let handlerCalls = 0;

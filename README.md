@@ -400,10 +400,17 @@ Answer state is agent-reported but application-validated for the families that o
 - `isPermissionToBroadenRequest`
 - `isPersistenceOffer`
 - `explanation` (an internal rationale)
+- `persistenceAction` (`knowledgeTrees` only: `none`, `previewed`, `revised`, or `saved`)
 
 The application does not infer answer mode from tool results or prose. For `knowledgeTrees`, it provides a structured final-response format and validates the returned JSON and allowed state combinations before accepting the turn. If validation fails, the shared execution loop asks the agent to correct its final response; the result builder reads the accepted state from that response.
 
 Validation checks the response shape and state combinations, not whether every factual claim in the answer is grounded in evidence.
+
+### Structural validation of reported actions
+
+For `knowledgeTrees`, structural validation compares what the final JSON reports with what the server observed during the current tool loop. The strict final-response schema requires `persistenceAction`; the server then compares it with the latest `preview_save_to_tree`, `revise_save_preview`, or `confirm_save_to_tree` result in the current turn. A successful preview requires `previewed`, a successful revision requires `revised`, and only a successful confirmation that created or updated a note permits `saved`. With no successful latest persistence action, the reported action must be `none`. A failed confirmation does not turn an earlier preview into a save.
+
+The comparison also checks that a preview or revision answer contains the returned destination and exact preview ID marker, or that a saved-note answer contains the returned note text and link. A mismatch causes the final response validator to request a corrected answer instead of accepting the turn. These checks use server-recorded current-turn tool outputs, not chat history or the agent's prose as proof of a write. They do not verify every free-form factual claim or validate tool outputs against their passive output schemas; the individual tool contracts still control authorization and persistence.
 
 Family policy differs by family.
 
@@ -514,7 +521,7 @@ When `delete_email` moves a message from Inbox to Trash, IMAP assigns it a Trash
 ### Knowledge Trees Tools
 
 - `search_tree_<name>_<id>` is generated for each accessible tree with a published description. It searches that tree's notes and attachments for evidence to answer grounded questions; available tools depend on the user's tree access and visibility scope.
-- `preview_save_to_tree` proposes a location for saving a broader answer and returns a preview ID. It is used only after the user accepts an offer to save that answer; previewing does not create a note.
+- `preview_save_to_tree` proposes a location for factual text supplied in the current user message, or for an already-delivered broad answer after the user accepts its save offer. For direct text, the server checks that the proposed note text is present verbatim in the current message. If no tree was named, the agent selects the best fit from available trees or asks when the choice is ambiguous. It returns a preview ID; previewing does not create a note.
 - `revise_save_preview` accepts a user's complete `>`-separated path (optionally starting with the tree name) after a preview. The path must end with the note title at the configured leaf depth. It reuses existing branches, previews any missing intermediate nodes, and replaces the previous preview ID; users can revise again before saving.
 - `confirm_save_to_tree` creates or updates the note from the saved preview after the user separately confirms the proposed destination. A missing or stale preview ID requires a new preview.
 

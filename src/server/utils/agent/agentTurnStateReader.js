@@ -92,6 +92,7 @@ export function readAgentTurnState({
       knowledgeMode,
       isPermissionToBroadenRequest,
       isPersistenceOffer,
+      ...(answerStateOptions?.requirePersistenceAction ? { persistenceAction: structuredAnswerState.persistenceAction } : {}),
       explanation: answerStateExplanation,
       responseToolInvocations,
     });

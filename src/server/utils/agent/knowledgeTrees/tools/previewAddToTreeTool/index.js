@@ -10,37 +10,51 @@ import {
 export const previewAddToTreeToolDefinition = {
   type: 'function',
   name: 'preview_save_to_tree',
-  description: 'Preview existing-note merge (default when offered) or separate new-note creation only after the user accepts a save offer in an already-delivered broad answer. Use that answer, not a newly generated or expanded answer; clean it before preview for either mode. A prior yes to broaden is not consent to preview saving. The server caches the preview for confirmation; output includes previewId and destinations only.',
+  description: 'Preview existing-note merge (default when offered) or separate new-note creation when the user explicitly requests saving text in the current message, or accepts the save offer for an already-delivered broad answer. Never invent or expand saved content. A prior yes to broaden is not consent to preview saving. The server caches the preview for separate confirmation; output includes previewId and destinations only.',
   strict: true,
   parameters: {
     type: 'object',
     properties: {
       toolName: {
         type: 'string',
-        description: 'The specific dynamic search_tree_* tool that identifies the target tree for the new note. Do not substitute a tree name or any other label.',
+        description: 'The specific dynamic search_tree_* tool that identifies the target tree for the note. Do not substitute a tree name or any other label.',
       },
       originalQuestion: {
         type: 'string',
-        description: 'The user question that led to the broader answer. This value is stored in the cached preview snapshot and later used during confirm_save_to_tree.',
+        description: 'For current_user_text, a short topic question for placing the supplied text; for prior_broad_answer, the question that led to that answer. Stored in the cached preview snapshot for confirmation.',
       },
       broaderAnswer: {
         type: 'string',
-        description: 'The already-delivered broad answer whose save offer the user accepted, cleaned into saveable reference-note content without adding new facts. This is stored only in the preview snapshot.',
+        description: 'For current_user_text, a verbatim factual excerpt of the current user message excluding the save request. For prior_broad_answer, the already-delivered answer cleaned without adding facts. This is stored only in the preview snapshot.',
+      },
+      contentSource: {
+        type: 'string',
+        enum: ['current_user_text', 'prior_broad_answer'],
+        description: 'Whether the text to save comes from the current user message or an already-delivered broad answer whose save offer the user accepted.',
       },
     },
-    required: ['toolName', 'originalQuestion', 'broaderAnswer'],
+    required: ['toolName', 'originalQuestion', 'broaderAnswer', 'contentSource'],
     additionalProperties: false,
   },
 };
 
-export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug }) {
-  return async ({ toolName, originalQuestion, broaderAnswer }) => {
+export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug, currentUserMessage }) {
+  return async ({ toolName, originalQuestion, broaderAnswer, contentSource }) => {
+    if (contentSource === 'current_user_text') {
+      const content = String(broaderAnswer ?? '').trim();
+      const message = String(currentUserMessage ?? '').trim();
+      if (!content || content === message || !message.includes(content)) {
+        throw new Error('The note text must be taken from the current user message. Provide the text to save and preview again.');
+      }
+    } else if (contentSource !== 'prior_broad_answer') {
+      throw new Error('A valid source for the note text is required.');
+    }
     const match = String(toolName ?? '').trim().match(/_(\d+)$/);
     const resolvedTreeId = match ? match[1] : '';
     const targetTree = includedTrees.find((tree) => String(tree.id) === resolvedTreeId);
 
     if (!targetTree) {
-      throw new Error('A valid writable tree tool context is required to save a broader answer.');
+      throw new Error('A valid writable tree tool context is required to preview saving the note.');
     }
 
     try {

@@ -108,6 +108,7 @@ export async function buildKnowledgeTreesFamilyResult({
         allowBroadMode: true,
         allowPersistence: true,
         requirePersistenceOfferForBroad: true,
+        requirePersistenceAction: true,
       },
       debug,
     }),

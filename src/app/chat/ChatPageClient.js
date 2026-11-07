@@ -574,7 +574,7 @@ function TurnDebugPanel({ turn }) {
     );
   }
 
-  if (turn.error) {
+  if (turn.error && !turn.debug) {
     return (
       <div className={styles.debugEmptyState}>
         <h2>{t("Failed")}</h2>
@@ -611,6 +611,14 @@ function TurnDebugPanel({ turn }) {
 
   return (
     <div className={styles.debugSections}>
+      {turn.error ? (
+        <section className={styles.debugSection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>{t("Failed")}</h2>
+          </div>
+          <pre className={styles.jsonBlock}>{turn.error}</pre>
+        </section>
+      ) : null}
       <section className={styles.debugSection}>
         <div className={styles.sectionHeader}>
           <p className="appSectionEyebrow">{t("UserQuery")}</p>
@@ -739,6 +747,14 @@ function TurnDebugPanel({ turn }) {
         </div>
         <pre className={styles.jsonBlock}>{formatJson(turn.debug.agentOutput)}</pre>
       </section>
+      {Array.isArray(turn.debug.stepsComplete) && turn.debug.stepsComplete.length > 0 ? (
+        <section className={styles.debugSection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>{t("StepsComplete")}</h2>
+          </div>
+          <pre className={styles.jsonBlock}>{formatJson(turn.debug.stepsComplete)}</pre>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -951,7 +967,7 @@ export default function ChatPageClient({ includeDebug }) {
       if (!response.ok) {
         throw {
           message: payload?.error || `Chat request failed (${response.status})`,
-          debug: null,
+          debug: payload?.debug ?? null,
         };
       }
       setTurns((currentTurns) => currentTurns.map((turn) => (
@@ -983,7 +999,7 @@ export default function ChatPageClient({ includeDebug }) {
           ? {
             ...turn,
             answer: "",
-            debug: null,
+            debug: error?.debug ?? null,
             error: messageText,
             familyPayload: null,
             toolInvocations: [],

@@ -1,3 +1,5 @@
+import { appendDebugStep } from '@/server/utils/agent/agentDebug';
+
 const KNOWLEDGE_MODE_GROUNDED = 'grounded';
 const KNOWLEDGE_MODE_BROAD = 'broad';
 
@@ -40,7 +42,7 @@ function buildAnswerStateValidationError(message, retryInstruction) {
   return new Error(`${message} ${retryInstruction}`.trim());
 }
 
-function buildStructuredResponseRetryInstruction({ allowBroadMode, allowPersistence, requirePersistenceOfferForBroad }) {
+function buildStructuredResponseRetryInstruction({ allowBroadMode, allowPersistence, requirePersistenceOfferForBroad, requirePersistenceAction = false }) {
   const validStates = !allowBroadMode
     ? [
       `- grounded answer: knowledgeMode="${KNOWLEDGE_MODE_GROUNDED}", isPermissionToBroadenRequest=false, isPersistenceOffer=false`,
@@ -64,8 +66,9 @@ function buildStructuredResponseRetryInstruction({ allowBroadMode, allowPersiste
         ];
 
   return [
-    'Return a JSON object with exactly these fields: answer, knowledgeMode, isPermissionToBroadenRequest, isPersistenceOffer, explanation.',
+    `Return a JSON object with exactly these fields: answer, knowledgeMode, isPermissionToBroadenRequest, isPersistenceOffer, explanation${requirePersistenceAction ? ', persistenceAction' : ''}.`,
     'Use a non-empty string for answer and explanation.',
+    ...(requirePersistenceAction ? ['Set persistenceAction to none, previewed, revised, or saved to match the successful persistence tool used in this turn.'] : []),
     ...validStates,
   ].join(' ');
 }
@@ -78,6 +81,7 @@ export function buildStructuredAnswerStateResponseFormat({
   allowBroadMode = true,
   allowPersistence = true,
   requirePersistenceOfferForBroad = false,
+  requirePersistenceAction = false,
 } = {}) {
   const stateDescription = !allowBroadMode
     ? 'Only grounded answers are valid for this family.'
@@ -117,8 +121,15 @@ export function buildStructuredAnswerStateResponseFormat({
             type: 'string',
             description: `Brief internal rationale for the selected answer state. ${stateDescription}`,
           },
+          ...(requirePersistenceAction ? {
+            persistenceAction: {
+              type: 'string',
+              enum: ['none', 'previewed', 'revised', 'saved'],
+              description: 'The latest successful persistence action in this turn, or none if no persistence tool succeeded.',
+            },
+          } : {}),
         },
-        required: ['answer', 'knowledgeMode', 'isPermissionToBroadenRequest', 'isPersistenceOffer', 'explanation'],
+        required: ['answer', 'knowledgeMode', 'isPermissionToBroadenRequest', 'isPersistenceOffer', 'explanation', ...(requirePersistenceAction ? ['persistenceAction'] : [])],
         additionalProperties: false,
       },
     },
@@ -131,6 +142,7 @@ export function validateReportedAnswerState(
     allowBroadMode = true,
     allowPersistence = true,
     requirePersistenceOfferForBroad = false,
+    requirePersistenceAction = false,
   } = {},
 ) {
   const knowledgeMode = normalizeKnowledgeMode(state?.knowledgeMode);
@@ -140,6 +152,7 @@ export function validateReportedAnswerState(
   const allowsBroadConfirmation = broadConfirmationAllowed({
     allowBroadMode,
     requirePersistenceOfferForBroad,
+    requirePersistenceAction,
   });
   const retryInstruction = buildStructuredResponseRetryInstruction({
     allowBroadMode,
@@ -203,11 +216,16 @@ export function validateReportedAnswerState(
     );
   }
 
+  if (requirePersistenceAction && !['none', 'previewed', 'revised', 'saved'].includes(state?.persistenceAction)) {
+    throw buildAnswerStateValidationError('Invalid persistenceAction: report none, previewed, revised, or saved.', retryInstruction);
+  }
+
   return {
     knowledgeMode,
     isPermissionToBroadenRequest,
     isPersistenceOffer,
     explanation,
+    ...(requirePersistenceAction ? { persistenceAction: state.persistenceAction } : {}),
   };
 }
 
@@ -217,6 +235,7 @@ export function parseStructuredAnswerStateResponse(
     allowBroadMode = true,
     allowPersistence = true,
     requirePersistenceOfferForBroad = false,
+    requirePersistenceAction = false,
   } = {},
 ) {
   const rawText = String(response?.output_text ?? '').trim();
@@ -230,8 +249,8 @@ export function parseStructuredAnswerStateResponse(
 
   try {
     parsedResponse = JSON.parse(jsonText);
-  } catch {
-    throw new Error('The final response was not valid JSON.');
+  } catch (error) {
+    throw new Error('The final response was not valid JSON.', { cause: error });
   }
 
   const answer = String(parsedResponse?.answer ?? '').trim();
@@ -244,6 +263,7 @@ export function parseStructuredAnswerStateResponse(
     allowBroadMode,
     allowPersistence,
     requirePersistenceOfferForBroad,
+    requirePersistenceAction,
   });
 
   return {
@@ -256,14 +276,16 @@ export function buildStructuredAnswerStateFinalResponseValidator({
   allowBroadMode = true,
   allowPersistence = true,
   requirePersistenceOfferForBroad = false,
+  requirePersistenceAction = false,
 } = {}) {
   const retryInstruction = buildStructuredResponseRetryInstruction({
     allowBroadMode,
     allowPersistence,
     requirePersistenceOfferForBroad,
+    requirePersistenceAction,
   });
 
-  return async ({ response }) => {
+  return async ({ response, debug }) => {
     try {
       parseStructuredAnswerStateResponse({
         ...response,
@@ -271,9 +293,16 @@ export function buildStructuredAnswerStateFinalResponseValidator({
         allowBroadMode,
         allowPersistence,
         requirePersistenceOfferForBroad,
+        requirePersistenceAction,
       });
       return null;
     } catch (error) {
+      if (error?.cause instanceof SyntaxError) {
+        appendDebugStep(debug, 'final response JSON parse failed', {
+          responseId: response?.id ?? null,
+          parseError: error.cause.message,
+        });
+      }
       const errorMessage = error instanceof Error ? error.message : 'The final response was invalid.';
 
       return `${errorMessage} Retry by returning valid JSON only. ${retryInstruction}`;
