@@ -81,7 +81,7 @@ test('an accepted prior broad answer remains previewable without appearing in th
 
 test('completed upload preview uses the owned server note, not agent-supplied content', async () => {
   const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: { status: 'succeeded', note: 'Verified note.' } });
-  await handler({ ...directRequest, broaderAnswer: 'Invented content.', contentSource: 'completed_upload_note' });
+  await handler({ ...directRequest, broaderAnswer: 'Invented content.', contentSource: 'completed_upload_note', uploadId: 'owned-upload' });
   assert.deepEqual(calls.map(([name]) => name), ['upload', 'access', 'preview', 'snapshot']);
   assert.deepEqual(calls[0][1], { uploadId: 'owned-upload', ownerObjectId: 'owner' });
   assert.equal(calls[2][1].broaderAnswer, 'Verified note.');
@@ -89,11 +89,17 @@ test('completed upload preview uses the owned server note, not agent-supplied co
 
 test('completed upload preview rejects missing authorization and unfinished uploads', async () => {
   const unauthorized = prepare({ upload: { status: 'succeeded', note: 'Verified note.' } });
-  await assert.rejects(unauthorized.handler({ ...directRequest, contentSource: 'completed_upload_note' }), /authorized/);
+  await assert.rejects(unauthorized.handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' }), /authorized/);
   assert.deepEqual(unauthorized.calls, []);
   const unfinished = prepare({ previewUploadId: 'owned-upload', upload: { status: 'running' } });
-  await assert.rejects(unfinished.handler({ ...directRequest, contentSource: 'completed_upload_note' }), /not available/);
+  await assert.rejects(unfinished.handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' }), /not available/);
   assert.deepEqual(unfinished.calls.map(([name]) => name), ['upload']);
+});
+
+test('completed upload preview rejects a different owned upload ID', async () => {
+  const { calls, handler } = prepare({ previewUploadId: 'current-upload', upload: { status: 'succeeded', note: 'Other note.' } });
+  await assert.rejects(handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'other-upload' }), /authorized/);
+  assert.deepEqual(calls, []);
 });
 
 test('completed upload preview cannot substitute user text or a prior answer', async () => {
@@ -113,5 +119,6 @@ test('invalid source and nonwritable tree cannot create a preview snapshot', asy
 
 test('the published preview tool requires an explicit content source', () => {
   assert.ok(previewAddToTreeToolDefinition.parameters.required.includes('contentSource'));
+  assert.ok(previewAddToTreeToolDefinition.parameters.required.includes('uploadId'));
   assert.deepEqual(previewAddToTreeToolDefinition.parameters.properties.contentSource.enum, ['current_user_text', 'prior_broad_answer', 'completed_upload_note']);
 });

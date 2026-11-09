@@ -34,16 +34,23 @@ export const previewAddToTreeToolDefinition = {
         enum: ['current_user_text', 'prior_broad_answer', 'completed_upload_note'],
         description: 'Whether the text comes from the current user message, an accepted broad answer, or a server-authorized completed upload note.',
       },
+      uploadId: {
+        type: 'string',
+        description: 'For completed_upload_note, the upload ID in the automated completion message; otherwise use an empty string.',
+      },
     },
-    required: ['toolName', 'originalQuestion', 'broaderAnswer', 'contentSource'],
+    required: ['toolName', 'originalQuestion', 'broaderAnswer', 'contentSource', 'uploadId'],
     additionalProperties: false,
   },
 };
 
 export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug, currentUserMessage, previewUploadId = null }) {
-  return async ({ toolName, originalQuestion, broaderAnswer, contentSource }) => {
+  return async ({ toolName, originalQuestion, broaderAnswer, contentSource, uploadId }) => {
     if (previewUploadId && contentSource !== 'completed_upload_note') {
       throw new Error('Only the completed upload note can be previewed in this turn.');
+    }
+    if (contentSource !== 'completed_upload_note' && uploadId) {
+      throw new Error('An upload ID is only valid for a completed upload preview.');
     }
     let noteText = broaderAnswer;
     if (contentSource === 'current_user_text') {
@@ -54,10 +61,10 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       }
     } else if (contentSource === 'completed_upload_note') {
       const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
-      if (!previewUploadId || !ownerObjectId) {
+      if (!previewUploadId || uploadId !== previewUploadId || !ownerObjectId) {
         throw new Error('A completed upload must be authorized for this preview.');
       }
-      const upload = await getOwnedChatUpload({ uploadId: previewUploadId, ownerObjectId });
+      const upload = await getOwnedChatUpload({ uploadId, ownerObjectId });
       if (upload?.status !== 'succeeded' || !String(upload.note ?? '').trim()) {
         throw new Error('The completed upload note is not available for preview.');
       }

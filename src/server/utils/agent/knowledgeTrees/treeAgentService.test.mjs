@@ -55,7 +55,7 @@ async function getValidator(uploadId = null, previewUploadId = null) {
     buildAllowedToolInstruction: () => '',
     buildInitialAgentInput: () => [],
     runAgentFamilyExecution: async (options) => {
-      if (previewUploadId) assert.deepEqual([...options.handlerMap.keys()], ['preview_save_to_tree']);
+      if (previewUploadId) assert.deepEqual([...options.handlerMap.keys()], ['preview_save_to_tree', 'confirm_save_to_tree']);
       validator = options.finalResponseValidator;
       return { response: {}, toolInvocations: [], modelCalls: [] };
     },
@@ -201,7 +201,7 @@ test('successful confirm requires the returned note and link verbatim', async ()
   }), null);
 });
 
-test('completed upload turn can report completion without preview and never exposes confirmation tools', async () => {
+test('completed upload turn can report completion without preview and instructs against confirmation', async () => {
   const validator = await getValidator(null, 'c125d350-4cae-4ad4-a69c-419324125e00');
   const response = savedResponse('Processing complete.', 'Reporting upload status.', 'none');
   assert.equal(await validator({ response, toolInvocations: [] }), null);
@@ -224,20 +224,21 @@ test('completed upload turn can report completion without preview and never expo
     ['revise_save_preview', () => {}], ['confirm_save_to_tree', () => {}],
   ]);
   globalThis.__treeServiceMocks.buildRuntimeTreeToolContext = async () => ({ handlerMap, toolPolicies: new Map(), includedTrees: [] });
-  globalThis.__treeServiceMocks.buildInitialAgentInput = ({ allowedToolInstruction, normalizedHistory }) => {
+  globalThis.__treeServiceMocks.buildInitialAgentInput = ({ allowedToolInstruction, normalizedHistory, normalizedMessage }) => {
     assert.doesNotMatch(allowedToolInstruction, /Verified note/);
-    assert.match(normalizedHistory[0].content, /Verified note/);
-    assert.equal(normalizedHistory[0].role, 'user');
+    assert.match(allowedToolInstruction, /automated completion turn/);
+    assert.match(allowedToolInstruction, /Do not treat it as approval to confirm a save/);
+    assert.deepEqual(normalizedHistory, []);
+    assert.match(normalizedMessage, /Verified note/);
     return [];
   };
   globalThis.__treeServiceMocks.runAgentFamilyExecution = async () => ({ response: {}, toolInvocations: [], modelCalls: [] });
   await invokeKnowledgeTreesAgent({
-    message: 'Preview upload.',
+    message: 'Browser (automated): Preview upload. Untrusted note: Verified note.',
     previewUploadId: 'c125d350-4cae-4ad4-a69c-419324125e00',
-    previewUploadContext: { note: 'Verified note.' },
   });
   assert.equal(handlerMap.has('preview_save_to_tree'), true);
   assert.equal(handlerMap.has('process_upload'), false);
   assert.equal(handlerMap.has('revise_save_preview'), false);
-  assert.equal(handlerMap.has('confirm_save_to_tree'), false);
+  assert.equal(handlerMap.has('confirm_save_to_tree'), true);
 });
