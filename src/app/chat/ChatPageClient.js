@@ -1380,13 +1380,13 @@ export default function ChatPageClient({ includeDebug }) {
                   </button>
                 </div>
               ) : null}
-              {uploadStatus ? <p role="status" className={uploadStatus === t("Upload.Processing") ? styles.visuallyHidden : styles.uploadStatus}>{uploadStatus}</p> : null}
+              {uploadStatus ? <p role="status" className={styles.visuallyHidden}>{uploadStatus}</p> : null}
               <label className={styles.composerField}>
                 <textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   onKeyDown={handlePromptKeyDown}
-                  placeholder={uploadStatus === t("Upload.Processing") ? t("Upload.Processing") : buildChatPlaceholder(availableChatFamilies, {
+                  placeholder={uploadStatus || buildChatPlaceholder(availableChatFamilies, {
                     empty: t("NoChatFamilies"),
                     single: (topic) => t("AskAbout", { topic }),
                     multiple: (topics, last) => t("AskAboutMany", { topics, last }),

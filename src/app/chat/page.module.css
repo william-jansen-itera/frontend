@@ -1334,9 +1334,3 @@ h6.messageHeading { font-size: 1rem; }
 .selectedFile span {
   overflow-wrap: anywhere;
 }
-
-.uploadStatus {
-  margin: 0;
-  color: #0f766e;
-  font-size: 0.9rem;
-}
