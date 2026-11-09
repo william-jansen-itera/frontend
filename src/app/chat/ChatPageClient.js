@@ -852,7 +852,6 @@ export default function ChatPageClient({ includeDebug }) {
   const [prompt, setPrompt] = useState("");
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState("");
-  const [isPollingUpload, setIsPollingUpload] = useState(false);
   const [turns, setTurns] = useState([]);
   const [selectedTurnId, setSelectedTurnId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -902,11 +901,9 @@ export default function ChatPageClient({ includeDebug }) {
     }]);
     setSelectedTurnId(turnId);
     setUploadStatus(t("Upload.Processing"));
-    setIsPollingUpload(true);
     setIsSubmitting(true);
     waitForUploadNote(pending.uploadId, () => {})
       .then((note) => {
-        setIsPollingUpload(false);
         setUploadStatus("");
         const completionTurn = createUploadCompletionTurn(pending.uploadId, note);
         completionTurnId = completionTurn.id;
@@ -929,7 +926,6 @@ export default function ChatPageClient({ includeDebug }) {
           ? { ...turn, error: error.message, isPending: false } : turn));
       })
       .finally(() => {
-        setIsPollingUpload(false);
         setUploadStatus("");
         setIsSubmitting(false);
       });
@@ -1149,9 +1145,7 @@ export default function ChatPageClient({ includeDebug }) {
           : turn
       )));
       if (uploadId) {
-        setIsPollingUpload(true);
         const note = await waitForUploadNote(uploadId, () => setUploadStatus(t("Upload.Processing")));
-        setIsPollingUpload(false);
         setUploadStatus("");
         const completionTurn = createUploadCompletionTurn(uploadId, note);
         completionTurnId = completionTurn.id;
@@ -1190,7 +1184,6 @@ export default function ChatPageClient({ includeDebug }) {
       )));
     } finally {
       setIsSubmitting(false);
-      setIsPollingUpload(false);
       setUploadStatus("");
     }
   }
@@ -1387,13 +1380,13 @@ export default function ChatPageClient({ includeDebug }) {
                   </button>
                 </div>
               ) : null}
-              {uploadStatus ? <p role="status" className={isPollingUpload ? styles.visuallyHidden : styles.uploadStatus}>{uploadStatus}</p> : null}
+              {uploadStatus ? <p role="status" className={uploadStatus === t("Upload.Processing") ? styles.visuallyHidden : styles.uploadStatus}>{uploadStatus}</p> : null}
               <label className={styles.composerField}>
                 <textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   onKeyDown={handlePromptKeyDown}
-                  placeholder={isPollingUpload ? t("Upload.Processing") : buildChatPlaceholder(availableChatFamilies, {
+                  placeholder={uploadStatus === t("Upload.Processing") ? t("Upload.Processing") : buildChatPlaceholder(availableChatFamilies, {
                     empty: t("NoChatFamilies"),
                     single: (topic) => t("AskAbout", { topic }),
                     multiple: (topics, last) => t("AskAboutMany", { topics, last }),
