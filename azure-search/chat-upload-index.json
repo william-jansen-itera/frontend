@@ -1,0 +1,12 @@
+{
+  "name": "chat-upload-index",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "searchable": false, "filterable": true },
+    { "name": "uploadId", "type": "Edm.String", "filterable": true, "searchable": false },
+    { "name": "appIdentifier", "type": "Edm.String", "filterable": true, "searchable": false },
+    { "name": "ownerObjectId", "type": "Edm.String", "filterable": true, "searchable": false },
+    { "name": "fileName", "type": "Edm.String", "searchable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true },
+    { "name": "ocrText", "type": "Collection(Edm.String)", "searchable": true }
+  ]
+}

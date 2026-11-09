@@ -133,6 +133,7 @@
       "Reject": "Reject", "Rejecting": "Rejecting...", "RejectAll": "Reject All"
     },
     "Chat": {
+      "Upload": { "Attach": "Attach file", "Remove": "Remove file", "Staging": "Uploading file...", "Processing": "Processing file...", "StageFailed": "Could not upload file.", "InvalidSize": "Choose a non-empty file of 10 MB or less.", "DefaultPrompt": "Process {fileName} and provide a temporary placement note.", "NotStarted": "File processing was not started.", "TimedOut": "File processing is taking longer than expected. Try again later." },
       "Prompt": "Prompt", "AgentPaused": "Agent (paused)", "NoFamilies": "No families available", "Visibility": { "Public": "Public", "Private": "Private", "Both": "Both" },
       "NoChatFamilies": "No chat families are currently available", "AskAbout": "Ask the agent about {topic}", "AskAboutMany": "Ask the agent about {topics}, or {last}",
       "Highlight": "Highlight from source", "GroundingNodes": "Grounding nodes", "NodeLabel": "Node: {name}",

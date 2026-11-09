@@ -6,6 +6,8 @@ import {
 } from '@/server/utils/agent/agentFamilyInvoker';
 import { logException, logStructuredTrace, logTrace } from '@/server/utils/logging';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
+import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
+import { getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
 
 export const runtime = 'nodejs';
 
@@ -96,7 +98,10 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'request json parsed') : routeDebug;
-    const message = String(payload?.message ?? '').trim();
+    const previewUploadId = String(payload?.previewUploadId ?? '').trim() || null;
+    const message = previewUploadId
+      ? 'Browser (automated): The upload has finished processing and is ready for a save preview if the original human request calls for one. This notification is not a human request or approval to save.'
+      : String(payload?.message ?? '').trim();
     const resolvedFamily = await resolveAgentFamilySelection(payload?.family);
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'agent family resolved', {
       requestedFamily: String(payload?.family ?? '').trim() || null,
@@ -127,6 +132,31 @@ export async function POST(request) {
 
     const history = normalizeHistory(payload?.history);
     const principal = requireAuthenticatedPrincipal(request);
+    const uploadId = String(payload?.uploadId ?? '').trim() || null;
+    let previewUploadContext = null;
+    if (previewUploadId) {
+      const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+      if (family !== 'knowledgeTrees' || uploadId || !ownerObjectId ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(previewUploadId)) {
+        return createChatJsonResponse({ error: 'Upload was not found or has expired.' }, { status: 404, requestId, includeDebug });
+      }
+      const upload = await getOwnedChatUpload({ uploadId: previewUploadId, ownerObjectId });
+      if (!upload) {
+        return createChatJsonResponse({ error: 'Upload was not found or has expired.' }, { status: 404, requestId, includeDebug });
+      }
+      if (upload.status !== 'succeeded' || !String(upload.note ?? '').trim()) {
+        return createChatJsonResponse({ error: 'Upload note is not ready for preview.' }, { status: 409, requestId, includeDebug });
+      }
+      previewUploadContext = { note: upload.note };
+    }
+    if (uploadId) {
+      const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+      if (family !== 'knowledgeTrees' || !ownerObjectId ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uploadId) ||
+          !await getOwnedChatUpload({ uploadId, ownerObjectId })) {
+        return createChatJsonResponse({ error: 'Upload was not found or has expired.' }, { status: 404, requestId, includeDebug });
+      }
+    }
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route invoking agent family', {
       historyCount: history.length,
       hasPrincipal: Boolean(principal),
@@ -140,6 +170,9 @@ export async function POST(request) {
       visibility,
       includeDebug,
       requestId,
+      uploadId,
+      previewUploadId,
+      previewUploadContext,
     });
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route received agent family result', {
       toolsUsedCount: Array.isArray(result?.toolsUsed) ? result.toolsUsed.length : null,

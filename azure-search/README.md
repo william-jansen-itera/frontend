@@ -2,6 +2,12 @@
 
 These files capture the current Azure AI Search setup for the tree content search prototype.
 
+## Temporary chat uploads
+
+`chat-upload-index.json`, `chat-upload-datasource.json`, `chat-upload-skillset.json`, and `chat-upload-indexer.json` describe an isolated, on-demand OCR index for staged chat files. They are not deployed by this repository. Apply `frontend/azure-sql/chat-uploads.sql` separately before enabling uploads. The frontend stages one file, passes its ID to the `process_upload` agent tool, and polls the owner-scoped status endpoint for a temporary placement note. The Function worker generates the note; it does not preview, approve, or save tree content. Publish the updated agent tool configuration before enabling this feature.
+
+Provision a private `chat-uploads` container in a **separate** staging storage account; disable blob soft delete and versioning on that account without changing the existing attachment account. Set `CHAT_UPLOAD_STORAGE_CONNECTION_STRING` on both the frontend and Function App for the `chat-upload-jobs` queue; blob access may alternatively use `CHAT_UPLOAD_STORAGE_ACCOUNT_URL`. Set `CHAT_UPLOAD_CONTAINER_NAME=chat-uploads` on both apps. Keep `AzureWebJobsStorage` and `AZURE_STORAGE_CONNECTION_STRING` on the existing tree/host storage account. Configure `CHAT_UPLOAD_SEARCH_INDEX_NAME=chat-upload-index`, `CHAT_UPLOAD_SEARCH_INDEXER_NAME=chat-upload-indexer`, and the existing `AZURE_SEARCH_ENDPOINT`/`AZURE_SEARCH_ADMIN_KEY` on the Function App. Replace the placeholder Search data-source credential with the staging account connection string or its managed-identity resource ID, and the OCR skillset placeholders with a permitted Foundry enrichment resource. Deploy the index, datasource, skillset, then indexer; do not schedule the indexer. A one-day Blob lifecycle deletion rule is only a fallback for orphaned files, not a 24-hour deletion guarantee. The dedicated `chatUploadCleanup` timer runs daily at midnight UTC and deletes uploads that have expired; the existing tree purge is unchanged.
+
 Private trees named `personal cache` are not indexed: the SQL search view excludes their nodes, and blob attachments are marked for the blob indexer to skip.
 
 Files:

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { previewLeafFromChat } from '@/server/utils/tree/treeMutationService';
+import { getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
+import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
 import { storeTreePreviewSnapshot } from '@/server/utils/agent/knowledgeTrees/tools/treePreviewSnapshotRepository';
 import {
   assertWritableRuntimeTree,
@@ -10,7 +12,7 @@ import {
 export const previewAddToTreeToolDefinition = {
   type: 'function',
   name: 'preview_save_to_tree',
-  description: 'Preview existing-note merge (default when offered) or separate new-note creation when the user explicitly requests saving text in the current message, or accepts the save offer for an already-delivered broad answer. Never invent or expand saved content. A prior yes to broaden is not consent to preview saving. The server caches the preview for separate confirmation; output includes previewId and destinations only.',
+  description: 'Preview existing-note merge (default when offered) or separate new-note creation for current user text, an accepted prior broad answer, or a completed upload note when the server authorizes its preview. Never invent or expand saved content. The server caches the preview for separate confirmation; output includes previewId and destinations only.',
   strict: true,
   parameters: {
     type: 'object',
@@ -21,16 +23,16 @@ export const previewAddToTreeToolDefinition = {
       },
       originalQuestion: {
         type: 'string',
-        description: 'For current_user_text, a short topic question for placing the supplied text; for prior_broad_answer, the question that led to that answer. Stored in the cached preview snapshot for confirmation.',
+        description: 'For current_user_text or completed_upload_note, a short topic question for placing the text; for prior_broad_answer, the question that led to that answer. Stored in the cached preview snapshot for confirmation.',
       },
       broaderAnswer: {
         type: 'string',
-        description: 'For current_user_text, a verbatim factual excerpt of the current user message excluding the save request. For prior_broad_answer, the already-delivered answer cleaned without adding facts. This is stored only in the preview snapshot.',
+        description: 'For current_user_text, a verbatim factual excerpt of the current user message excluding the save request. For prior_broad_answer, the already-delivered answer cleaned without adding facts. For completed_upload_note, use an empty string; the server supplies the note.',
       },
       contentSource: {
         type: 'string',
-        enum: ['current_user_text', 'prior_broad_answer'],
-        description: 'Whether the text to save comes from the current user message or an already-delivered broad answer whose save offer the user accepted.',
+        enum: ['current_user_text', 'prior_broad_answer', 'completed_upload_note'],
+        description: 'Whether the text comes from the current user message, an accepted broad answer, or a server-authorized completed upload note.',
       },
     },
     required: ['toolName', 'originalQuestion', 'broaderAnswer', 'contentSource'],
@@ -38,14 +40,28 @@ export const previewAddToTreeToolDefinition = {
   },
 };
 
-export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug, currentUserMessage }) {
+export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug, currentUserMessage, previewUploadId = null }) {
   return async ({ toolName, originalQuestion, broaderAnswer, contentSource }) => {
+    if (previewUploadId && contentSource !== 'completed_upload_note') {
+      throw new Error('Only the completed upload note can be previewed in this turn.');
+    }
+    let noteText = broaderAnswer;
     if (contentSource === 'current_user_text') {
       const content = String(broaderAnswer ?? '').trim();
       const message = String(currentUserMessage ?? '').trim();
       if (!content || content === message || !message.includes(content)) {
         throw new Error('The note text must be taken from the current user message. Provide the text to save and preview again.');
       }
+    } else if (contentSource === 'completed_upload_note') {
+      const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+      if (!previewUploadId || !ownerObjectId) {
+        throw new Error('A completed upload must be authorized for this preview.');
+      }
+      const upload = await getOwnedChatUpload({ uploadId: previewUploadId, ownerObjectId });
+      if (upload?.status !== 'succeeded' || !String(upload.note ?? '').trim()) {
+        throw new Error('The completed upload note is not available for preview.');
+      }
+      noteText = String(upload.note).trim();
     } else if (contentSource !== 'prior_broad_answer') {
       throw new Error('A valid source for the note text is required.');
     }
@@ -70,7 +86,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
     const preview = await previewLeafFromChat({
       treeInstanceId: Number.parseInt(resolvedTreeId, 10),
       originalQuestion,
-      broaderAnswer,
+      broaderAnswer: noteText,
       onModelCall: includeDebug ? (call) => selectionCalls.push(call) : undefined,
     });
 

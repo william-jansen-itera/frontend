@@ -133,6 +133,7 @@
       "Reject": "Afvis", "Rejecting": "Afviser...", "RejectAll": "Afvis alle"
     },
     "Chat": {
+      "Upload": { "Attach": "Vedhæft fil", "Remove": "Fjern fil", "Staging": "Uploader fil...", "Processing": "Behandler fil...", "StageFailed": "Filen kunne ikke uploades.", "InvalidSize": "Vælg en ikke-tom fil på højst 10 MB.", "DefaultPrompt": "Behandl {fileName}, og lav en midlertidig placeringsnote.", "NotStarted": "Filbehandlingen blev ikke startet.", "TimedOut": "Filbehandlingen tager længere tid end forventet. Prøv igen senere." },
       "Prompt": "Spørgsmål", "AgentPaused": "Agent (sat på pause)", "NoFamilies": "Ingen agentfamilier tilgængelige", "Visibility": { "Public": "Offentlig", "Private": "Privat", "Both": "Begge" },
       "NoChatFamilies": "Ingen chatfamilier tilgængelige lige nu", "AskAbout": "Spørg agenten om {topic}", "AskAboutMany": "Spørg agenten om {topics} eller {last}",
       "Highlight": "Vis uddrag fra kilden", "GroundingNodes": "Kildenoder", "NodeLabel": "Node: {name}",

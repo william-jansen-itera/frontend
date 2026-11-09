@@ -158,6 +158,7 @@ export function validateReportedAnswerState(
     allowBroadMode,
     allowPersistence,
     requirePersistenceOfferForBroad,
+    requirePersistenceAction,
   });
 
   if (!knowledgeMode) {

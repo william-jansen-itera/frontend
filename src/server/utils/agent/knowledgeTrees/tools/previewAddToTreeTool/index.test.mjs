@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const exportsByModule = {
   treeMutationService: ['previewLeafFromChat'],
+  chatUploadRepository: ['getOwnedChatUpload'],
+  treeCatalog: ['getAuditMetadata'],
   treePreviewSnapshotRepository: ['storeTreePreviewSnapshot'],
   persistenceToolShared: ['assertWritableRuntimeTree', 'buildPersistenceToolHandlerResult', 'buildTreePreviewToolOutput'],
 };
@@ -21,9 +23,11 @@ registerHooks({
 
 const { createPreviewAddToTreeHandler, previewAddToTreeToolDefinition } = await import('./index.js');
 
-function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvesting collects runoff.', writable = true } = {}) {
+function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvesting collects runoff.', writable = true, previewUploadId = null, upload = null } = {}) {
   const calls = [];
   globalThis.__previewMocks = {
+    getAuditMetadata: () => ({ updatedByObjectId: 'owner' }),
+    getOwnedChatUpload: async (request) => { calls.push(['upload', request]); return upload; },
     assertWritableRuntimeTree: async (request) => {
       calls.push(['access', request]);
       if (!writable) throw new Error('Not writable');
@@ -40,6 +44,7 @@ function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvestin
     includedTrees: [{ id: 7, name: 'Knowledge' }],
     principal: { userId: 'owner' },
     currentUserMessage,
+    previewUploadId,
   });
   return { calls, handler };
 }
@@ -74,6 +79,30 @@ test('an accepted prior broad answer remains previewable without appearing in th
   assert.deepEqual(calls.map(([name]) => name), ['access', 'preview', 'snapshot']);
 });
 
+test('completed upload preview uses the owned server note, not agent-supplied content', async () => {
+  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: { status: 'succeeded', note: 'Verified note.' } });
+  await handler({ ...directRequest, broaderAnswer: 'Invented content.', contentSource: 'completed_upload_note' });
+  assert.deepEqual(calls.map(([name]) => name), ['upload', 'access', 'preview', 'snapshot']);
+  assert.deepEqual(calls[0][1], { uploadId: 'owned-upload', ownerObjectId: 'owner' });
+  assert.equal(calls[2][1].broaderAnswer, 'Verified note.');
+});
+
+test('completed upload preview rejects missing authorization and unfinished uploads', async () => {
+  const unauthorized = prepare({ upload: { status: 'succeeded', note: 'Verified note.' } });
+  await assert.rejects(unauthorized.handler({ ...directRequest, contentSource: 'completed_upload_note' }), /authorized/);
+  assert.deepEqual(unauthorized.calls, []);
+  const unfinished = prepare({ previewUploadId: 'owned-upload', upload: { status: 'running' } });
+  await assert.rejects(unfinished.handler({ ...directRequest, contentSource: 'completed_upload_note' }), /not available/);
+  assert.deepEqual(unfinished.calls.map(([name]) => name), ['upload']);
+});
+
+test('completed upload preview cannot substitute user text or a prior answer', async () => {
+  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: { status: 'succeeded', note: 'Verified note.' } });
+  await assert.rejects(handler(directRequest), /Only the completed upload note/);
+  await assert.rejects(handler({ ...directRequest, contentSource: 'prior_broad_answer' }), /Only the completed upload note/);
+  assert.deepEqual(calls, []);
+});
+
 test('invalid source and nonwritable tree cannot create a preview snapshot', async () => {
   const { calls, handler } = prepare({ writable: false });
   await assert.rejects(handler({ ...directRequest, contentSource: 'other' }), /valid source/);
@@ -84,5 +113,5 @@ test('invalid source and nonwritable tree cannot create a preview snapshot', asy
 
 test('the published preview tool requires an explicit content source', () => {
   assert.ok(previewAddToTreeToolDefinition.parameters.required.includes('contentSource'));
-  assert.deepEqual(previewAddToTreeToolDefinition.parameters.properties.contentSource.enum, ['current_user_text', 'prior_broad_answer']);
+  assert.deepEqual(previewAddToTreeToolDefinition.parameters.properties.contentSource.enum, ['current_user_text', 'prior_broad_answer', 'completed_upload_note']);
 });

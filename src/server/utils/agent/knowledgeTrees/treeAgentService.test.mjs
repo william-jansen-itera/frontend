@@ -40,27 +40,29 @@ test('only the Knowledge Trees response format requires a persistence action', (
   assert.ok(treeSchema.required.includes('persistenceAction'));
   assert.deepEqual(treeSchema.properties.persistenceAction.enum, ['none', 'previewed', 'revised', 'saved']);
   assert.ok(!defaultSchema.required.includes('persistenceAction'));
+  assert.ok(!Object.hasOwn(treeSchema.properties, 'shouldPreviewUploadedNote'));
 });
 
-async function getValidator() {
+async function getValidator(uploadId = null, previewUploadId = null) {
   let validator;
   globalThis.__treeServiceMocks = {
     appendDebugStep: () => {},
     getProjectClient: () => ({ getOpenAIClient: () => ({}) }),
     getPublishedKnowledgeTreesPromptAgent: async () => ({ name: 'test-agent' }),
-    buildRuntimeTreeToolContext: async () => ({ handlerMap: new Map(), toolPolicies: new Map(), includedTrees: [] }),
+    buildRuntimeTreeToolContext: async () => ({ handlerMap: new Map(['process_upload', 'preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree'].map((name) => [name, () => {}])), toolPolicies: new Map(), includedTrees: [] }),
     buildVisibilityScopeContext: () => ({}),
     buildVisibilityScopeInstruction: () => '',
     buildAllowedToolInstruction: () => '',
     buildInitialAgentInput: () => [],
     runAgentFamilyExecution: async (options) => {
+      if (previewUploadId) assert.deepEqual([...options.handlerMap.keys()], ['preview_save_to_tree']);
       validator = options.finalResponseValidator;
       return { response: {}, toolInvocations: [], modelCalls: [] };
     },
     buildKnowledgeTreesFamilyResult: async () => ({ familyResult: {} }),
     buildKnowledgeTreesResponse: () => ({}),
   };
-  await invokeKnowledgeTreesAgent({ message: 'Yes, save it.' });
+  await invokeKnowledgeTreesAgent({ message: 'Yes, save it.', uploadId, previewUploadId });
   return validator;
 }
 
@@ -156,6 +158,18 @@ test('missing action field is rejected, and a turn without persistence has none'
   assert.match(await validator({ response: savedResponse('Saved.'), toolInvocations: [] }), /persistenceAction="none"/);
 });
 
+test('an attached upload requires a successful process_upload call before replying', async () => {
+  const uploadId = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  const validator = await getValidator(uploadId);
+  const response = savedResponse('Processing is underway.', 'Reporting the upload status.', 'none');
+  assert.match(await validator({ response, toolInvocations: [] }), /Call process_upload/);
+  assert.match(await validator({ response, toolInvocations: [{ toolName: 'process_upload', output: { error: 'Queue unavailable' } }] }), /Call process_upload/);
+  assert.equal(await validator({
+    response,
+    toolInvocations: [{ toolName: 'process_upload', output: { toolResultType: 'temporary_upload_note', data: { uploadId, status: 'queued' } } }],
+  }), null);
+});
+
 test('a revised preview requires revised status and its latest destination', async () => {
   const validator = await getValidator();
   const toolInvocations = [{
@@ -185,4 +199,45 @@ test('successful confirm requires the returned note and link verbatim', async ()
     response: savedResponse('The prism has volume 12. [View note](/notes?treeId=29&nodeId=4)'),
     toolInvocations,
   }), null);
+});
+
+test('completed upload turn can report completion without preview and never exposes confirmation tools', async () => {
+  const validator = await getValidator(null, 'c125d350-4cae-4ad4-a69c-419324125e00');
+  const response = savedResponse('Processing complete.', 'Reporting upload status.', 'none');
+  assert.equal(await validator({ response, toolInvocations: [] }), null);
+  assert.equal(await validator({ response, toolInvocations: [{ toolName: 'preview_save_to_tree', output: { error: 'Not ready' } }] }), null);
+  assert.equal(await validator({
+    response: savedResponse('Preview at geometri > Rumfang?\n\n<!-- Preview ID: test-id -->', 'Reporting the preview.', 'previewed'),
+    toolInvocations: [{ toolName: 'preview_save_to_tree', output: { toolResultType: 'tree_note_preview', data: { previewId: 'test-id', defaultSavePath: 'geometri > Rumfang' } } }],
+  }), null);
+  const toolInvocations = [{
+    toolName: 'preview_save_to_tree',
+    output: { toolResultType: 'tree_note_preview', data: { previewId: 'test-id', defaultSavePath: 'Knowledge > Note' } },
+  }];
+  assert.equal(await validator({
+    response: savedResponse('Place at Knowledge > Note?\n\n<!-- Preview ID: test-id -->', 'Reporting the upload preview.', 'previewed'),
+    toolInvocations,
+  }), null);
+
+  const handlerMap = new Map([
+    ['preview_save_to_tree', () => {}], ['process_upload', () => {}],
+    ['revise_save_preview', () => {}], ['confirm_save_to_tree', () => {}],
+  ]);
+  globalThis.__treeServiceMocks.buildRuntimeTreeToolContext = async () => ({ handlerMap, toolPolicies: new Map(), includedTrees: [] });
+  globalThis.__treeServiceMocks.buildInitialAgentInput = ({ allowedToolInstruction, normalizedHistory }) => {
+    assert.doesNotMatch(allowedToolInstruction, /Verified note/);
+    assert.match(normalizedHistory[0].content, /Verified note/);
+    assert.equal(normalizedHistory[0].role, 'user');
+    return [];
+  };
+  globalThis.__treeServiceMocks.runAgentFamilyExecution = async () => ({ response: {}, toolInvocations: [], modelCalls: [] });
+  await invokeKnowledgeTreesAgent({
+    message: 'Preview upload.',
+    previewUploadId: 'c125d350-4cae-4ad4-a69c-419324125e00',
+    previewUploadContext: { note: 'Verified note.' },
+  });
+  assert.equal(handlerMap.has('preview_save_to_tree'), true);
+  assert.equal(handlerMap.has('process_upload'), false);
+  assert.equal(handlerMap.has('revise_save_preview'), false);
+  assert.equal(handlerMap.has('confirm_save_to_tree'), false);
 });

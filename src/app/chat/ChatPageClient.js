@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { Paperclip, X } from "lucide-react";
 import { useAuth } from "@/app/useAuth";
 import styles from "./page.module.css";
 import { AgentAnswerContent } from "./AgentAnswerContent";
@@ -26,6 +27,7 @@ const KNOWLEDGE_MODE_GROUNDED = "grounded";
 const KNOWLEDGE_MODE_BROAD = "broad";
 const DEFAULT_CHAT_FAMILY = "knowledgeTrees";
 const DEFAULT_CHAT_VISIBILITY = "private";
+const UPLOAD_COMPLETION_MESSAGE = "The upload has finished processing and is ready for a save preview if the original human request calls for one.";
 let fallbackTurnSequence = 0;
 let fallbackRequestSequence = 0;
 
@@ -45,6 +47,72 @@ function createRequestId() {
 
   fallbackRequestSequence += 1;
   return `request-${fallbackRequestSequence}`;
+}
+
+async function waitForUploadNote(uploadId, onStatus) {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const response = await fetch(`/api/chat/uploads/${encodeURIComponent(uploadId)}`, { cache: "no-store" });
+    const payload = await parseApiResponseBody(response);
+    if (!response.ok) {
+      throw new Error(payload?.error || `Could not read upload status (${response.status})`);
+    }
+    if (payload.status === "succeeded") {
+      return String(payload.note || "").trim();
+    }
+    if (payload.status === "failed" || payload.status === "expired") {
+      throw new Error(payload.failureSummary || `File processing ${payload.status}.`);
+    }
+    onStatus(payload.status);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  throw new Error("File processing is taking longer than expected. Try again later.");
+}
+
+async function continueCompletedUpload(uploadId, visibility, history) {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-chat-request-id": createRequestId() },
+    body: JSON.stringify({
+      message: UPLOAD_COMPLETION_MESSAGE,
+      history,
+      family: "knowledgeTrees",
+      visibility,
+      previewUploadId: uploadId,
+    }),
+  });
+  const payload = await parseApiResponseBody(response);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Could not continue completed upload (${response.status})`);
+  }
+  return payload;
+}
+
+function createUploadCompletionTurn() {
+  return {
+    id: createTurnId(), question: UPLOAD_COMPLETION_MESSAGE, isBrowserAutomated: true,
+    answer: "", debug: null, error: null, familyPayload: null, citations: [],
+    toolsUsed: [], toolInvocations: [], approvalRequired: null,
+    knowledgeMode: KNOWLEDGE_MODE_GROUNDED, isPersistenceOffer: false,
+    isPermissionToBroadenRequest: false, createdAt: Date.now(), isPending: true,
+  };
+}
+
+function finishUploadCompletionTurn(turn, completion, uploadId) {
+  return {
+    ...turn,
+    answer: String(completion?.answer ?? "").trim(),
+    debug: completion?.debug ?? null,
+    familyPayload: completion?.familyPayload ?? null,
+    citations: Array.isArray(completion?.citations) ? completion.citations : [],
+    toolsUsed: completion?.toolsUsed || [],
+    toolInvocations: completion?.toolInvocations || [],
+    knowledgeMode: String(completion?.knowledgeMode ?? completion?.familyPayload?.knowledgeMode ?? KNOWLEDGE_MODE_GROUNDED).trim() || KNOWLEDGE_MODE_GROUNDED,
+    isPersistenceOffer: completion?.isPersistenceOffer === true,
+    isPermissionToBroadenRequest: completion?.isPermissionToBroadenRequest === true,
+    availableUploadId: completion?.toolInvocations?.some((invocation) => invocation.toolName === "preview_save_to_tree" && invocation.resultCount > 0) ? null : uploadId,
+    isPending: false,
+  };
 }
 
 function renderHighlightedText(text, keyPrefix) {
@@ -83,11 +151,10 @@ function buildHistoryFromTurns(turns) {
   return turns.flatMap((turn) => {
     const messages = [];
     const userHistoryText = String(turn?.question ?? "").trim();
-
     const assistantHistoryText = String(turn?.answer ?? "").trim();
 
     if (userHistoryText) {
-      messages.push({ role: "user", content: userHistoryText });
+      messages.push({ role: "user", content: turn.isBrowserAutomated ? `Browser (automated): ${userHistoryText}` : userHistoryText });
     }
 
     if (assistantHistoryText) {
@@ -778,6 +845,8 @@ export default function ChatPageClient({ includeDebug }) {
     defaultValue: DEFAULT_CHAT_VISIBILITY,
   });
   const [prompt, setPrompt] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [turns, setTurns] = useState([]);
   const [selectedTurnId, setSelectedTurnId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -785,6 +854,8 @@ export default function ChatPageClient({ includeDebug }) {
   const [availableChatFamilies, setAvailableChatFamilies] = useState([]);
   const [chatFamily, setChatFamily] = useState(null);
   const chatFeedRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const recoveredOwnerRef = useRef(null);
   const approvalRequestRef = useRef(false);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
@@ -799,6 +870,60 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugEmpty = showTurnInspector && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
   const shouldShowVisibilityControl = chatFamily === "knowledgeTrees";
+
+  useEffect(() => {
+    const ownerId = user?.objectId;
+    if (!ownerId || recoveredOwnerRef.current === ownerId) return;
+    recoveredOwnerRef.current = ownerId;
+    const storageKey = `chat-upload-pending:${ownerId}`;
+    let pending;
+    try {
+      pending = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+    } catch {
+      sessionStorage.removeItem(storageKey);
+      return;
+    }
+    if (!pending?.uploadId || !pending?.question) return;
+    const turnId = createTurnId();
+    let completionTurnId = null;
+    setTurns((currentTurns) => [...currentTurns, {
+      id: turnId, question: pending.question, originalQuestion: pending.question,
+      answer: pending.uploadProcessingAnswer || "",
+      debug: null, error: null, familyPayload: null, citations: [],
+      toolsUsed: [], toolInvocations: [], approvalRequired: null,
+      knowledgeMode: KNOWLEDGE_MODE_GROUNDED, isPersistenceOffer: false,
+      isPermissionToBroadenRequest: false, createdAt: pending.createdAt || Date.now(), isPending: false,
+    }]);
+    setSelectedTurnId(turnId);
+    setUploadStatus(t("Upload.Processing"));
+    setIsSubmitting(true);
+    waitForUploadNote(pending.uploadId, () => {})
+      .then(() => {
+        const completionTurn = createUploadCompletionTurn();
+        completionTurnId = completionTurn.id;
+        setTurns((currentTurns) => [...currentTurns, completionTurn]);
+        setSelectedTurnId(completionTurnId);
+        return continueCompletedUpload(pending.uploadId, pending.visibility || "public", [
+          ...(pending.history || []),
+          { role: "user", content: pending.question },
+          ...(pending.uploadProcessingAnswer ? [{ role: "assistant", content: pending.uploadProcessingAnswer }] : []),
+        ]);
+      })
+      .then((completion) => {
+        sessionStorage.removeItem(storageKey);
+        setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
+          ? finishUploadCompletionTurn(turn, completion, pending.uploadId) : turn));
+      })
+      .catch((error) => {
+        setRequestError(error.message);
+        setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
+          ? { ...turn, error: error.message, isPending: false } : turn));
+      })
+      .finally(() => {
+        setUploadStatus("");
+        setIsSubmitting(false);
+      });
+  }, [user?.objectId, t]);
 
   const loadAvailableFamilies = async () => {
     const payload = await fetchAvailableChatFamilies();
@@ -823,6 +948,7 @@ export default function ChatPageClient({ includeDebug }) {
 
   const handleChatFamilyChange = (event) => {
     const nextFamily = normalizeChatFamilySelection(event.target.value, availableChatFamilies, defaultChatFamily);
+    setSelectedFile(null);
     setChatFamily(nextFamily);
     const nextSearchParams = new URLSearchParams(searchParams.toString());
     setChatFamilySearchParam(nextSearchParams, nextFamily, availableChatFamilies, defaultChatFamily);
@@ -916,8 +1042,9 @@ export default function ChatPageClient({ includeDebug }) {
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [availableChatFamilies, chatFamily, defaultChatFamily, pathname, requestedFamilyParam, router, searchParams]);
 
-  async function submitTurn({ question, message }) {
+  async function submitTurn({ question, message, file }) {
     const turnId = createTurnId();
+    let completionTurnId = null;
     const history = buildHistoryFromTurns(turns);
     const requestId = createRequestId();
     const requestStartedAt = new Date().toISOString();
@@ -948,6 +1075,20 @@ export default function ChatPageClient({ includeDebug }) {
     ]));
 
     try {
+      let uploadId = !file && chatFamily === "knowledgeTrees" ? turns.at(-1)?.availableUploadId ?? null : null;
+      if (file) {
+        setUploadStatus(t("Upload.Staging"));
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadResponse = await fetch("/api/chat/uploads", { method: "POST", body: formData });
+        const uploadPayload = await parseApiResponseBody(uploadResponse);
+        if (!uploadResponse.ok) {
+          throw new Error(uploadPayload?.error || t("Upload.StageFailed"));
+        }
+        uploadId = uploadPayload.uploadId;
+        setSelectedFile(null);
+        setUploadStatus(t("Upload.Processing"));
+      }
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -959,6 +1100,7 @@ export default function ChatPageClient({ includeDebug }) {
           history,
           family: chatFamily,
           visibility,
+          ...(uploadId ? { uploadId } : {}),
         }),
       });
 
@@ -969,6 +1111,12 @@ export default function ChatPageClient({ includeDebug }) {
           message: payload?.error || `Chat request failed (${response.status})`,
           debug: payload?.debug ?? null,
         };
+      }
+      if (uploadId && !payload?.toolInvocations?.some((invocation) => invocation.toolName === "process_upload" && invocation.resultCount > 0)) {
+        throw new Error(t("Upload.NotStarted"));
+      }
+      if (uploadId && user?.objectId) {
+        sessionStorage.setItem(`chat-upload-pending:${user.objectId}`, JSON.stringify({ uploadId, question, visibility, history: history.slice(-8), uploadProcessingAnswer: String(payload?.answer ?? "").trim(), createdAt: Date.now() }));
       }
       setTurns((currentTurns) => currentTurns.map((turn) => (
         turn.id === turnId
@@ -990,12 +1138,28 @@ export default function ChatPageClient({ includeDebug }) {
           }
           : turn
       )));
+      if (uploadId) {
+        await waitForUploadNote(uploadId, () => setUploadStatus(t("Upload.Processing")));
+        const completionTurn = createUploadCompletionTurn();
+        completionTurnId = completionTurn.id;
+        setTurns((currentTurns) => [...currentTurns, completionTurn]);
+        setSelectedTurnId(completionTurnId);
+        const completion = await continueCompletedUpload(uploadId, visibility, [
+          ...history,
+          { role: "user", content: question },
+          { role: "assistant", content: String(payload?.answer ?? "").trim() },
+        ]);
+        if (user?.objectId) sessionStorage.removeItem(`chat-upload-pending:${user.objectId}`);
+        setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
+          ? finishUploadCompletionTurn(turn, completion, uploadId)
+          : turn));
+      }
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error?.message || "Chat request failed");
 
       setRequestError(messageText);
       setTurns((currentTurns) => currentTurns.map((turn) => (
-        turn.id === turnId
+        turn.id === (completionTurnId ?? turnId) && (completionTurnId || !turn.answer)
           ? {
             ...turn,
             answer: "",
@@ -1013,6 +1177,7 @@ export default function ChatPageClient({ includeDebug }) {
       )));
     } finally {
       setIsSubmitting(false);
+      setUploadStatus("");
     }
   }
 
@@ -1110,14 +1275,15 @@ export default function ChatPageClient({ includeDebug }) {
 
     const message = prompt.trim();
 
-    if (!message || isSubmitting || turns.some((turn) => turn.approvalRequired) || !isVisibilityReady || !chatFamily) {
+    if ((!message && !(shouldShowVisibilityControl && selectedFile)) || isSubmitting || turns.some((turn) => turn.approvalRequired) || !isVisibilityReady || !chatFamily) {
       return;
     }
 
     setPrompt("");
     await submitTurn({
-      question: message,
-      message,
+      question: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
+      message: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
+      file: shouldShowVisibilityControl ? selectedFile : null,
     });
   }
 
@@ -1165,16 +1331,49 @@ export default function ChatPageClient({ includeDebug }) {
                   </select>
                 </label>
               ) : null}
+              {shouldShowVisibilityControl ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className={styles.visuallyHidden}
+                    accept=".docx,.html,.jpeg,.jpg,.pdf,.png,.pptx,.txt,.xlsx"
+                    aria-label={t("Upload.Attach")}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      if (file && (file.size < 1 || file.size > 10 * 1024 * 1024)) {
+                        setRequestError(t("Upload.InvalidSize"));
+                      } else {
+                        setRequestError(null);
+                        setSelectedFile(file);
+                      }
+                      event.target.value = "";
+                    }}
+                  />
+                  <button type="button" className={styles.fileAction} title={t("Upload.Attach")} aria-label={t("Upload.Attach")} disabled={isSubmitting} onClick={() => fileInputRef.current?.click()}>
+                    <Paperclip size={18} aria-hidden="true" />
+                  </button>
+                </>
+              ) : null}
               <button
                 type="submit"
                 form="chat-prompt-form"
                 className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
-                disabled={isSubmitting || turns.some((turn) => turn.approvalRequired) || !prompt.trim() || !isVisibilityReady || !chatFamily}
+                disabled={isSubmitting || turns.some((turn) => turn.approvalRequired) || (!prompt.trim() && !(shouldShowVisibilityControl && selectedFile)) || !isVisibilityReady || !chatFamily}
               >
                 {t(isSubmitting ? "Thinking" : "Send")}
               </button>
             </div>
             <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
+              {selectedFile && shouldShowVisibilityControl ? (
+                <div className={styles.selectedFile}>
+                  <span>{selectedFile.name}</span>
+                  <button type="button" className={styles.fileAction} title={t("Upload.Remove")} aria-label={t("Upload.Remove")} onClick={() => setSelectedFile(null)} disabled={isSubmitting}>
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              ) : null}
+              {uploadStatus ? <p role="status" className={styles.uploadStatus}>{uploadStatus}</p> : null}
               <label className={styles.composerField}>
                 <textarea
                   value={prompt}
@@ -1187,7 +1386,7 @@ export default function ChatPageClient({ includeDebug }) {
                   })}
                   className={styles.textArea}
                   rows={4}
-                  disabled={availableChatFamilies.length === 0}
+                  disabled={isSubmitting || availableChatFamilies.length === 0}
                 />
               </label>
             </form>
@@ -1288,7 +1487,7 @@ export default function ChatPageClient({ includeDebug }) {
                       </div>
 
                       <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
-                        <p className={styles.messageLabel}>{userMessageLabel}</p>
+                        <p className={styles.messageLabel}>{turn.isBrowserAutomated ? "Browser (automated)" : userMessageLabel}</p>
                         <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>
                       </div>
 

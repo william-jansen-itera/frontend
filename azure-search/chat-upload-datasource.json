@@ -1,0 +1,8 @@
+{
+  "name": "chat-upload-datasource",
+  "type": "azureblob",
+  "credentials": {
+    "connectionString": "DefaultEndpointsProtocol=https;AccountName=<storage-account>;AccountKey=<account-key>;EndpointSuffix=core.windows.net"
+  },
+  "container": { "name": "chat-uploads" }
+}

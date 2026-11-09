@@ -1,0 +1,26 @@
+{
+  "name": "chat-upload-indexer",
+  "dataSourceName": "chat-upload-datasource",
+  "targetIndexName": "chat-upload-index",
+  "skillsetName": "chat-upload-skillset",
+  "fieldMappings": [
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "id", "mappingFunction": { "name": "base64Encode" } },
+    { "sourceFieldName": "uploadid", "targetFieldName": "uploadId" },
+    { "sourceFieldName": "applicationidentifier", "targetFieldName": "appIdentifier" },
+    { "sourceFieldName": "ownerobjectid", "targetFieldName": "ownerObjectId" },
+    { "sourceFieldName": "originalfilename", "targetFieldName": "fileName" },
+    { "sourceFieldName": "content", "targetFieldName": "content" }
+  ],
+  "outputFieldMappings": [
+    { "sourceFieldName": "/document/normalized_images/*/ocrText", "targetFieldName": "ocrText" }
+  ],
+  "parameters": {
+    "maxFailedItems": 0,
+    "maxFailedItemsPerBatch": 0,
+    "configuration": {
+      "dataToExtract": "contentAndMetadata",
+      "imageAction": "generateNormalizedImages",
+      "indexedFileNameExtensions": ".docx,.html,.jpeg,.jpg,.pdf,.png,.pptx,.txt,.xlsx"
+    }
+  }
+}

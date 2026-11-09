@@ -1,0 +1,21 @@
+{
+  "name": "chat-upload-skillset",
+  "description": "OCR text in temporary chat uploads and embedded document images.",
+  "cognitiveServices": {
+    "@odata.type": "#Microsoft.Azure.Search.AIServicesByKey",
+    "description": "Foundry resource for OCR enrichment billing.",
+    "subdomainUrl": "https://mds-foundry-20260810.services.ai.azure.com",
+    "key": "<foundry-resource-key>"
+  },
+  "skills": [
+    {
+      "@odata.type": "#Microsoft.Skills.Vision.OcrSkill",
+      "name": "extract-ocr-text",
+      "context": "/document/normalized_images/*",
+      "defaultLanguageCode": "unk",
+      "detectOrientation": true,
+      "inputs": [{ "name": "image", "source": "/document/normalized_images/*" }],
+      "outputs": [{ "name": "text", "targetName": "ocrText" }]
+    }
+  ]
+}

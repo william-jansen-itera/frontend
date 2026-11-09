@@ -1293,3 +1293,50 @@ h6.messageHeading { font-size: 1rem; }
     width: 100%;
   }
 }
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.fileAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-control-radius);
+  background: transparent;
+  color: #0f766e;
+  cursor: pointer;
+}
+
+.fileAction:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selectedFile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.selectedFile span {
+  overflow-wrap: anywhere;
+}
+
+.uploadStatus {
+  margin: 0;
+  color: #0f766e;
+  font-size: 0.9rem;
+}
