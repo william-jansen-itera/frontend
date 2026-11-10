@@ -79,12 +79,13 @@ test('an accepted prior broad answer remains previewable without appearing in th
   assert.deepEqual(calls.map(([name]) => name), ['access', 'preview', 'snapshot']);
 });
 
-test('completed upload preview uses the owned server note, not agent-supplied content', async () => {
-  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: { status: 'succeeded', note: 'Verified note.' } });
+test('completed upload preview uses the owned server note and caption, not agent-supplied content', async () => {
+  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: { status: 'succeeded', note: 'Verified note.', caption: 'Filtered image caption.' } });
   await handler({ ...directRequest, broaderAnswer: 'Invented content.', contentSource: 'completed_upload_note', uploadId: 'owned-upload' });
   assert.deepEqual(calls.map(([name]) => name), ['upload', 'access', 'preview', 'snapshot']);
   assert.deepEqual(calls[0][1], { uploadId: 'owned-upload', ownerObjectId: 'owner' });
   assert.equal(calls[2][1].broaderAnswer, 'Verified note.');
+  assert.equal(calls[2][1].placementCaption, 'Filtered image caption.');
 });
 
 test('completed upload preview rejects missing authorization and unfinished uploads', async () => {

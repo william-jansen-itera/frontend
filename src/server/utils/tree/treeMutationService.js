@@ -358,7 +358,7 @@ async function shortlistPlacementLeaves({ leaves, selectionContext, parentBreadc
   return shortlist;
 }
 
-async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer, onModelCall }) {
+async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer, placementCaption = '', onModelCall }) {
   const normalizedOriginalQuestion = String(originalQuestion ?? '').trim();
   const normalizedBroaderAnswer = String(broaderAnswer ?? '').trim();
 
@@ -372,7 +372,7 @@ async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broa
     throw new Error(`Tree depth is not configured for ${treeName}.`);
   }
 
-  const selectionContext = { treeName, originalQuestion: normalizedOriginalQuestion, broaderAnswer: normalizedBroaderAnswer, onModelCall };
+  const selectionContext = { treeName, originalQuestion: normalizedOriginalQuestion, broaderAnswer: normalizedBroaderAnswer, placementCaption, onModelCall };
   const roots = candidates.filter((candidate) => candidate.depth === 0);
   const [rootId] = await selectChatPlacementCandidates({ ...selectionContext, candidates: roots, stage: 'root' });
   const nodeById = new Map(flatData.map((node) => [String(node.id), node]));
@@ -458,6 +458,7 @@ async function resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broa
     treeName,
     originalQuestion: normalizedOriginalQuestion,
     broaderAnswer: normalizedBroaderAnswer,
+    placementCaption,
     anchorBreadcrumbTitles: selectedCandidate?.breadcrumbTitles ?? [],
     requiredPathTitleCount,
   });
@@ -606,8 +607,8 @@ function buildPreviewDestinations(preview, mergeTarget = null) {
   };
 }
 
-export async function previewLeafFromChat({ treeInstanceId, originalQuestion, broaderAnswer, onModelCall }) {
-  const placement = await resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer, onModelCall });
+export async function previewLeafFromChat({ treeInstanceId, originalQuestion, broaderAnswer, placementCaption = '', onModelCall }) {
+  const placement = await resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer, placementCaption, onModelCall });
   if (placement.broaderAnswer.length > 4000) {
     throw new Error('The cleaned answer is too long to save as one note. Shorten it before previewing.');
   }

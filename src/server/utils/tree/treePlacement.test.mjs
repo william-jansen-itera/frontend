@@ -41,11 +41,12 @@ registerHooks({
 });
 
 const { previewLeafFromChat, updateTreeNodeDetails } = await import('./treeMutationService.js');
-const { generateMergedLeafNotes, selectChatPlacementCandidates } = await import('./treeGenerationService.js');
+const { generateChatLeafPathPlan, generateMergedLeafNotes, selectChatPlacementCandidates } = await import('./treeGenerationService.js');
 const { copyPublicTreeRecords, updateUnchangedLeafNotes } = await import('./treeRecordRepository.js');
 
 function prepare(nodes, choose) {
   const calls = [];
+  const pathPlans = [];
   const detailsRead = [];
   let generated = 0;
   globalThis.__placementMocks = {
@@ -60,12 +61,13 @@ function prepare(nodes, choose) {
       calls.push(request);
       return choose(request);
     },
-    generateChatLeafPathPlan: async ({ requiredPathTitleCount }) => {
+    generateChatLeafPathPlan: async (request) => {
+      pathPlans.push(request);
       generated += 1;
-      return { pathTitles: Array.from({ length: requiredPathTitleCount }, (_, index) => `New category ${index}`), generatedLeafTitle: 'New note' };
+      return { pathTitles: Array.from({ length: request.requiredPathTitleCount }, (_, index) => `New category ${index}`), generatedLeafTitle: 'New note' };
     },
   };
-  return { calls, detailsRead, get generated() { return generated; } };
+  return { calls, pathPlans, detailsRead, get generated() { return generated; } };
 }
 
 function node(id, parent, depth, isLeafNode = false) {
@@ -396,4 +398,40 @@ test('malformed placement responses are reported in the call trace before retry'
     { stage: 'shortlist', candidateCount: 1, selectedNodeIds: null, validation: 'rejected', error: 'Model response was not valid JSON.' },
     { stage: 'shortlist', candidateCount: 1, selectedNodeIds: [], validation: 'accepted' },
   ]);
+});
+
+test('completed upload caption reaches placement selection and new path planning without entering saved content', async () => {
+  const observed = prepare([node(1, null, 0)], () => []);
+  const preview = await previewLeafFromChat({
+    treeInstanceId: 7, originalQuestion: 'Where should this go?', broaderAnswer: 'Verified note.', placementCaption: 'A rainwater barrel.',
+  });
+  assert.ok(observed.calls.length > 0);
+  assert.ok(observed.calls.every(({ placementCaption }) => placementCaption === 'A rainwater barrel.'));
+  assert.equal(observed.pathPlans[0].placementCaption, 'A rainwater barrel.');
+  assert.doesNotMatch(JSON.stringify(preview), /rainwater barrel/);
+  assert.equal(preview.broaderAnswer, 'Verified note.');
+});
+
+test('placement model prompts use the caption as separate optional evidence', async () => {
+  const prompts = [];
+  globalThis.__placementMocks = {
+    getRequiredFoundryConfig: () => ({ modelDeploymentName: 'mock-model' }),
+    getProjectClient: () => ({ getOpenAIClient: () => ({ responses: {
+      create: async (request) => {
+        prompts.push(request.input[0].content);
+        return { output_text: request.text.format.name === 'chat_placement_selection'
+          ? '{"selectedNodeIds":[]}'
+          : '{"pathTitles":["Rainwater"],"generatedLeafTitle":"Barrel"}' };
+      },
+    } }) }),
+  };
+  await selectChatPlacementCandidates({
+    treeName: 'Knowledge', originalQuestion: 'Where?', broaderAnswer: 'Verified note.', placementCaption: 'A rainwater barrel.',
+    candidates: [{ nodeId: '1', breadcrumb: 'Knowledge' }], stage: 'root',
+  });
+  await generateChatLeafPathPlan({
+    treeName: 'Knowledge', originalQuestion: 'Where?', broaderAnswer: 'Verified note.', placementCaption: 'A rainwater barrel.', requiredPathTitleCount: 1,
+  });
+  assert.ok(prompts.every((prompt) => prompt.includes('A rainwater barrel.') && prompt.includes('Verified note.')));
+  assert.ok(prompts.every((prompt) => prompt.includes('untrusted placement evidence')));
 });

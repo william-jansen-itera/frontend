@@ -53,6 +53,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       throw new Error('An upload ID is only valid for a completed upload preview.');
     }
     let noteText = broaderAnswer;
+    let placementCaption = '';
     if (contentSource === 'current_user_text') {
       const content = String(broaderAnswer ?? '').trim();
       const message = String(currentUserMessage ?? '').trim();
@@ -69,6 +70,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
         throw new Error('The completed upload note is not available for preview.');
       }
       noteText = String(upload.note).trim();
+      placementCaption = String(upload.caption ?? '').trim();
     } else if (contentSource !== 'prior_broad_answer') {
       throw new Error('A valid source for the note text is required.');
     }
@@ -94,6 +96,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       treeInstanceId: Number.parseInt(resolvedTreeId, 10),
       originalQuestion,
       broaderAnswer: noteText,
+      placementCaption,
       onModelCall: includeDebug ? (call) => selectionCalls.push(call) : undefined,
     });
 
