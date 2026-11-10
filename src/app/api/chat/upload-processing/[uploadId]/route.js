@@ -23,6 +23,7 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       uploadId: String(upload.id), fileName: upload.fileName, status: upload.status,
       note: upload.status === 'succeeded' ? upload.note : null,
+      caption: upload.status === 'succeeded' ? upload.caption : null,
       failureSummary: upload.status === 'failed' ? upload.failureSummary : null,
       expiresAt: upload.expiresAt,
     });

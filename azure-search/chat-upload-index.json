@@ -7,6 +7,9 @@
     { "name": "ownerObjectId", "type": "Edm.String", "filterable": true, "searchable": false },
     { "name": "fileName", "type": "Edm.String", "searchable": true },
     { "name": "content", "type": "Edm.String", "searchable": true },
-    { "name": "ocrText", "type": "Collection(Edm.String)", "searchable": true }
+    { "name": "ocrText", "type": "Collection(Edm.String)", "searchable": true },
+    { "name": "imageDescription", "type": "Collection(Edm.String)", "searchable": true },
+    { "name": "imageDescriptionConfidence", "type": "Collection(Edm.Double)", "searchable": false },
+    { "name": "imageDescriptionFiltered", "type": "Collection(Edm.String)", "searchable": true }
   ]
 }

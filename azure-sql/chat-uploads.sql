@@ -12,6 +12,7 @@ BEGIN
     status NVARCHAR(20) NOT NULL CONSTRAINT CK_chat_uploads_status
       CHECK (status IN ('staged', 'queued', 'running', 'succeeded', 'failed', 'purging')),
     note NVARCHAR(1000) NULL,
+    caption NVARCHAR(2000) NULL,
     failure_summary NVARCHAR(500) NULL,
     attempts INT NOT NULL CONSTRAINT DF_chat_uploads_attempts DEFAULT 0,
     attempt_token UNIQUEIDENTIFIER NULL,
@@ -27,4 +28,9 @@ BEGIN
     ON dbo.chat_uploads(application_instance_id, owner_object_id, created_at DESC);
   CREATE INDEX IX_chat_uploads_expiry ON dbo.chat_uploads(expires_at, status);
   CREATE INDEX IX_chat_uploads_recovery ON dbo.chat_uploads(status, lease_until);
+END;
+
+IF COL_LENGTH('dbo.chat_uploads', 'caption') IS NULL
+BEGIN
+  ALTER TABLE dbo.chat_uploads ADD caption NVARCHAR(2000) NULL;
 END;

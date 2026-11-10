@@ -1,9 +1,9 @@
 {
   "name": "chat-upload-skillset",
-  "description": "OCR text in temporary chat uploads and embedded document images.",
+  "description": "OCR and image descriptions in temporary chat uploads and embedded document images.",
   "cognitiveServices": {
     "@odata.type": "#Microsoft.Azure.Search.AIServicesByKey",
-    "description": "Foundry resource for OCR enrichment billing.",
+    "description": "Foundry resource for image enrichment billing.",
     "subdomainUrl": "https://mds-foundry-20260810.services.ai.azure.com",
     "key": "<foundry-resource-key>"
   },
@@ -16,6 +16,29 @@
       "detectOrientation": true,
       "inputs": [{ "name": "image", "source": "/document/normalized_images/*" }],
       "outputs": [{ "name": "text", "targetName": "ocrText" }]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Vision.ImageAnalysisSkill",
+      "name": "describe-images",
+      "context": "/document/normalized_images/*",
+      "visualFeatures": ["description"],
+      "inputs": [{ "name": "image", "source": "/document/normalized_images/*" }],
+      "outputs": [{ "name": "description", "targetName": "imageDescription" }]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+      "name": "custom-skill-processor",
+      "uri": "https://mds-functions-william.azurewebsites.net/api/custom-skill-processor?code=<custom-skill-function-key>",
+      "httpMethod": "POST",
+      "timeout": "PT30S",
+      "batchSize": 1,
+      "degreeOfParallelism": 2,
+      "context": "/document/normalized_images/*",
+      "inputs": [
+        { "name": "textValues", "source": "/document/normalized_images/*/imageDescription/captions/*/text" },
+        { "name": "confidenceValues", "source": "/document/normalized_images/*/imageDescription/captions/*/confidence" }
+      ],
+      "outputs": [{ "name": "filteredValues", "targetName": "filteredDescriptions" }]
     }
   ]
 }

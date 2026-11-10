@@ -35,7 +35,7 @@ export async function getOwnedChatUpload({ uploadId, ownerObjectId }) {
     .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
     .query(`
       SELECT TOP 1 u.id, u.file_name AS fileName, u.content_type AS contentType,
-        u.byte_size AS byteSize, u.status, u.note, u.failure_summary AS failureSummary,
+        u.byte_size AS byteSize, u.status, u.note, u.caption, u.failure_summary AS failureSummary,
         u.expires_at AS expiresAt
       FROM dbo.chat_uploads u
       INNER JOIN dbo.application_instance ai ON ai.id = u.application_instance_id
