@@ -42,7 +42,7 @@ function buildAnswerStateValidationError(message, retryInstruction) {
   return new Error(`${message} ${retryInstruction}`.trim());
 }
 
-function buildStructuredResponseRetryInstruction({ allowBroadMode, allowPersistence, requirePersistenceOfferForBroad, requirePersistenceAction = false }) {
+function buildStructuredResponseRetryInstruction({ allowBroadMode, allowPersistence, requirePersistenceOfferForBroad, requirePersistenceAction = false, requireWaitingForContinuation = false }) {
   const validStates = !allowBroadMode
     ? [
       `- grounded answer: knowledgeMode="${KNOWLEDGE_MODE_GROUNDED}", isPermissionToBroadenRequest=false, isPersistenceOffer=false`,
@@ -66,9 +66,10 @@ function buildStructuredResponseRetryInstruction({ allowBroadMode, allowPersiste
         ];
 
   return [
-    `Return a JSON object with exactly these fields: answer, knowledgeMode, isPermissionToBroadenRequest, isPersistenceOffer, explanation${requirePersistenceAction ? ', persistenceAction' : ''}.`,
+    `Return a JSON object with exactly these fields: answer, knowledgeMode, isPermissionToBroadenRequest, isPersistenceOffer, explanation${requirePersistenceAction ? ', persistenceAction' : ''}${requireWaitingForContinuation ? ', isWaitingForContinuation' : ''}.`,
     'Use a non-empty string for answer and explanation.',
     ...(requirePersistenceAction ? ['Set persistenceAction to none, previewed, revised, or saved to match the successful persistence tool used in this turn.'] : []),
+    ...(requireWaitingForContinuation ? ['Set isWaitingForContinuation to true only when this reply should show the waiting UI until another turn starts; otherwise set it to false.'] : []),
     ...validStates,
   ].join(' ');
 }
@@ -82,6 +83,7 @@ export function buildStructuredAnswerStateResponseFormat({
   allowPersistence = true,
   requirePersistenceOfferForBroad = false,
   requirePersistenceAction = false,
+  requireWaitingForContinuation = false,
 } = {}) {
   const stateDescription = !allowBroadMode
     ? 'Only grounded answers are valid for this family.'
@@ -128,8 +130,14 @@ export function buildStructuredAnswerStateResponseFormat({
               description: 'The latest successful persistence action in this turn, or none if no persistence tool succeeded.',
             },
           } : {}),
+          ...(requireWaitingForContinuation ? {
+            isWaitingForContinuation: {
+              type: 'boolean',
+              description: 'Whether this reply should show the waiting UI until the next turn starts.',
+            },
+          } : {}),
         },
-        required: ['answer', 'knowledgeMode', 'isPermissionToBroadenRequest', 'isPersistenceOffer', 'explanation', ...(requirePersistenceAction ? ['persistenceAction'] : [])],
+        required: ['answer', 'knowledgeMode', 'isPermissionToBroadenRequest', 'isPersistenceOffer', 'explanation', ...(requirePersistenceAction ? ['persistenceAction'] : []), ...(requireWaitingForContinuation ? ['isWaitingForContinuation'] : [])],
         additionalProperties: false,
       },
     },
@@ -143,6 +151,7 @@ export function validateReportedAnswerState(
     allowPersistence = true,
     requirePersistenceOfferForBroad = false,
     requirePersistenceAction = false,
+    requireWaitingForContinuation = false,
   } = {},
 ) {
   const knowledgeMode = normalizeKnowledgeMode(state?.knowledgeMode);
@@ -153,6 +162,7 @@ export function validateReportedAnswerState(
     allowBroadMode,
     requirePersistenceOfferForBroad,
     requirePersistenceAction,
+    requireWaitingForContinuation,
   });
   const retryInstruction = buildStructuredResponseRetryInstruction({
     allowBroadMode,
@@ -221,12 +231,17 @@ export function validateReportedAnswerState(
     throw buildAnswerStateValidationError('Invalid persistenceAction: report none, previewed, revised, or saved.', retryInstruction);
   }
 
+  if (requireWaitingForContinuation && typeof state?.isWaitingForContinuation !== 'boolean') {
+    throw buildAnswerStateValidationError('Invalid isWaitingForContinuation: report true or false.', retryInstruction);
+  }
+
   return {
     knowledgeMode,
     isPermissionToBroadenRequest,
     isPersistenceOffer,
     explanation,
     ...(requirePersistenceAction ? { persistenceAction: state.persistenceAction } : {}),
+    ...(requireWaitingForContinuation ? { isWaitingForContinuation: state.isWaitingForContinuation } : {}),
   };
 }
 
@@ -237,6 +252,7 @@ export function parseStructuredAnswerStateResponse(
     allowPersistence = true,
     requirePersistenceOfferForBroad = false,
     requirePersistenceAction = false,
+    requireWaitingForContinuation = false,
   } = {},
 ) {
   const rawText = String(response?.output_text ?? '').trim();
@@ -265,6 +281,7 @@ export function parseStructuredAnswerStateResponse(
     allowPersistence,
     requirePersistenceOfferForBroad,
     requirePersistenceAction,
+    requireWaitingForContinuation,
   });
 
   return {
@@ -278,12 +295,14 @@ export function buildStructuredAnswerStateFinalResponseValidator({
   allowPersistence = true,
   requirePersistenceOfferForBroad = false,
   requirePersistenceAction = false,
+  requireWaitingForContinuation = false,
 } = {}) {
   const retryInstruction = buildStructuredResponseRetryInstruction({
     allowBroadMode,
     allowPersistence,
     requirePersistenceOfferForBroad,
     requirePersistenceAction,
+    requireWaitingForContinuation,
   });
 
   return async ({ response, debug }) => {
@@ -295,6 +314,7 @@ export function buildStructuredAnswerStateFinalResponseValidator({
         allowPersistence,
         requirePersistenceOfferForBroad,
         requirePersistenceAction,
+        requireWaitingForContinuation,
       });
       return null;
     } catch (error) {

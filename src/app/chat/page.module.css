@@ -78,7 +78,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: end;
-  padding: 1.35rem 1.35rem 0.8rem;
+  padding: 1.35rem 1.35rem 0;
 }
 
 .composerField {
@@ -261,7 +261,7 @@
 }
 
 .chatFeed {
-  padding-top: 0.15rem;
+  padding-top: 1rem;
   display: grid;
   gap: 1rem;
 }
@@ -563,6 +563,18 @@
 .turnCardPending {
   gap: 0.6rem;
   padding: 0.9rem;
+}
+
+.turnCardWaiting {
+  animation: pendingResponsePanelPulse 2.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turnCardWaiting {
+    animation: none;
+    border-color: rgba(3, 105, 161, 0.42);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
+  }
 }
 
 .turnCard:hover,

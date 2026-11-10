@@ -105,6 +105,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     allowPersistence: true,
     requirePersistenceOfferForBroad: true,
     requirePersistenceAction: true,
+    requireWaitingForContinuation: true,
   });
   const validateFinalResponse = async ({ response, toolInvocations, debug: validationDebug }) => {
     if (uploadId && !toolInvocations.some(({ toolName, output }) =>
@@ -119,6 +120,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
       allowPersistence: true,
       requirePersistenceOfferForBroad: true,
       requirePersistenceAction: true,
+      requireWaitingForContinuation: true,
     });
     const lastAction = toolInvocations.findLast(({ toolName }) =>
       ['preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree'].includes(toolName));
@@ -153,6 +155,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
           allowPersistence: true,
           requirePersistenceOfferForBroad: true,
           requirePersistenceAction: true,
+          requireWaitingForContinuation: true,
         }),
       },
       initialInput,

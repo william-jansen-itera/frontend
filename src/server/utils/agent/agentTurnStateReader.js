@@ -83,6 +83,7 @@ export function readAgentTurnState({
   const knowledgeMode = structuredAnswerState?.knowledgeMode ?? null;
   const isPermissionToBroadenRequest = structuredAnswerState?.isPermissionToBroadenRequest === true;
   const isPersistenceOffer = structuredAnswerState?.isPersistenceOffer === true;
+  const isWaitingForContinuation = structuredAnswerState?.isWaitingForContinuation === true;
   const answerStateExplanation = String(structuredAnswerState?.explanation ?? '').trim() || null;
   const usedBroaderKnowledge = knowledgeMode === KNOWLEDGE_MODE_BROAD;
   const isGrounded = !usedBroaderKnowledge;
@@ -93,6 +94,7 @@ export function readAgentTurnState({
       isPermissionToBroadenRequest,
       isPersistenceOffer,
       ...(answerStateOptions?.requirePersistenceAction ? { persistenceAction: structuredAnswerState.persistenceAction } : {}),
+      ...(answerStateOptions?.requireWaitingForContinuation ? { isWaitingForContinuation } : {}),
       explanation: answerStateExplanation,
       responseToolInvocations,
     });
@@ -105,6 +107,7 @@ export function readAgentTurnState({
     usedBroaderKnowledge,
     isPermissionToBroadenRequest,
     isPersistenceOffer,
+    isWaitingForContinuation,
     responseToolInvocations,
   };
 }

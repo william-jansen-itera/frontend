@@ -34,12 +34,15 @@ const { invokeKnowledgeTreesAgent } = await import('./treeAgentService.js');
 const { buildStructuredAnswerStateResponseFormat } = await import('../agentAnswerState.js');
 const { readAgentTurnState } = await import('../agentTurnStateReader.js');
 
-test('only the Knowledge Trees response format requires a persistence action', () => {
-  const treeSchema = buildStructuredAnswerStateResponseFormat({ requirePersistenceAction: true }).format.schema;
+test('only the Knowledge Trees response format requires persistence and waiting fields', () => {
+  const treeSchema = buildStructuredAnswerStateResponseFormat({ requirePersistenceAction: true, requireWaitingForContinuation: true }).format.schema;
   const defaultSchema = buildStructuredAnswerStateResponseFormat().format.schema;
   assert.ok(treeSchema.required.includes('persistenceAction'));
+  assert.ok(treeSchema.required.includes('isWaitingForContinuation'));
+  assert.equal(treeSchema.properties.isWaitingForContinuation.type, 'boolean');
   assert.deepEqual(treeSchema.properties.persistenceAction.enum, ['none', 'previewed', 'revised', 'saved']);
   assert.ok(!defaultSchema.required.includes('persistenceAction'));
+  assert.ok(!defaultSchema.required.includes('isWaitingForContinuation'));
   assert.ok(!Object.hasOwn(treeSchema.properties, 'shouldPreviewUploadedNote'));
 });
 
@@ -66,7 +69,7 @@ async function getValidator(uploadId = null, previewUploadId = null) {
   return validator;
 }
 
-function savedResponse(answer, explanation = 'Reporting the note saved by confirm_save_to_tree.', persistenceAction = 'saved') {
+function savedResponse(answer, explanation = 'Reporting the note saved by confirm_save_to_tree.', persistenceAction = 'saved', isWaitingForContinuation = false) {
   return {
     output_text: JSON.stringify({
       answer,
@@ -75,6 +78,7 @@ function savedResponse(answer, explanation = 'Reporting the note saved by confir
       isPersistenceOffer: false,
       explanation,
       persistenceAction,
+      isWaitingForContinuation,
     }),
   };
 }
@@ -85,10 +89,11 @@ test('persistence action appears beside the Knowledge Trees debug classification
   readAgentTurnState({
     finalResponse: savedResponse('Saved.'),
     finalToolInvocations: [],
-    answerStateOptions: { requirePersistenceAction: true },
+    answerStateOptions: { requirePersistenceAction: true, requireWaitingForContinuation: true },
     debug: treeDebug,
   });
   assert.equal(treeDebug.turnClassification.persistenceAction, 'saved');
+  assert.equal(treeDebug.turnClassification.isWaitingForContinuation, false);
   assert.equal(treeDebug.turnClassification.knowledgeMode, 'grounded');
 
   const defaultDebug = {};
@@ -98,6 +103,7 @@ test('persistence action appears beside the Knowledge Trees debug classification
     debug: defaultDebug,
   });
   assert.ok(!Object.hasOwn(defaultDebug.turnClassification, 'persistenceAction'));
+  assert.ok(!Object.hasOwn(defaultDebug.turnClassification, 'isWaitingForContinuation'));
 });
 
 test('a preview result cannot be presented as a completed save', async () => {
@@ -156,6 +162,25 @@ test('missing action field is rejected, and a turn without persistence has none'
   delete missingAction.persistenceAction;
   assert.match(await validator({ response: { output_text: JSON.stringify(missingAction) }, toolInvocations: [] }), /Invalid persistenceAction/);
   assert.match(await validator({ response: savedResponse('Saved.'), toolInvocations: [] }), /persistenceAction="none"/);
+});
+
+test('waiting is the agent decision, not inferred from upload status', async () => {
+  const validator = await getValidator();
+  const waitingResponse = savedResponse('I will continue.', 'Waiting for the next turn.', 'none', true);
+  assert.equal(await validator({ response: waitingResponse, toolInvocations: [] }), null);
+  assert.equal(readAgentTurnState({
+    finalResponse: waitingResponse,
+    finalToolInvocations: [],
+    answerStateOptions: { requirePersistenceAction: true, requireWaitingForContinuation: true },
+  }).isWaitingForContinuation, true);
+  const missingWaiting = JSON.parse(savedResponse('Not waiting.', 'Finished.', 'none').output_text);
+  delete missingWaiting.isWaitingForContinuation;
+  assert.match(await validator({ response: { output_text: JSON.stringify(missingWaiting) }, toolInvocations: [] }), /Invalid isWaitingForContinuation/);
+  assert.match(await validator({ response: savedResponse('Not waiting.', 'Finished.', 'none', 'false'), toolInvocations: [] }), /Invalid isWaitingForContinuation/);
+  const uploadId = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  const uploadValidator = await getValidator(uploadId);
+  const queuedUpload = [{ toolName: 'process_upload', output: { toolResultType: 'temporary_upload_note', data: { uploadId, status: 'queued' } } }];
+  assert.equal(await uploadValidator({ response: savedResponse('Processing.', 'Reporting status.', 'none', false), toolInvocations: queuedUpload }), null);
 });
 
 test('an attached upload requires a successful process_upload call before replying', async () => {

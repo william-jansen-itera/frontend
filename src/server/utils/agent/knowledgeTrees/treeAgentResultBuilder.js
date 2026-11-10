@@ -109,6 +109,7 @@ export async function buildKnowledgeTreesFamilyResult({
         allowPersistence: true,
         requirePersistenceOfferForBroad: true,
         requirePersistenceAction: true,
+        requireWaitingForContinuation: true,
       },
       debug,
     }),
@@ -118,6 +119,7 @@ export async function buildKnowledgeTreesFamilyResult({
     knowledgeMode,
     isPersistenceOffer,
     isPermissionToBroadenRequest,
+    isWaitingForContinuation,
     responseToolInvocations,
   } = turnClassification;
   const enrichedResponseToolInvocations = await enrichToolInvocationsWithTreeAccess(responseToolInvocations, principal);
@@ -136,6 +138,7 @@ export async function buildKnowledgeTreesFamilyResult({
       knowledgeMode,
       isPersistenceOffer,
       isPermissionToBroadenRequest,
+      isWaitingForContinuation,
       visibilityScope: serializeDebugValue(visibilityScope),
     };
     debug.agentOutput = buildAgentOutputDebug({
@@ -154,6 +157,7 @@ export async function buildKnowledgeTreesFamilyResult({
       knowledgeMode,
       isPersistenceOffer,
       isPermissionToBroadenRequest,
+      isWaitingForContinuation,
       visibilityScope,
       responseToolInvocations: enrichedResponseToolInvocations,
     },
@@ -184,6 +188,7 @@ export function buildKnowledgeTreesResponse({ familyResult, agent, principal, de
     knowledgeMode: familyResult?.familyPayload?.knowledgeMode ?? null,
     isPersistenceOffer: familyResult?.familyPayload?.isPersistenceOffer ?? false,
     isPermissionToBroadenRequest: familyResult?.familyPayload?.isPermissionToBroadenRequest ?? false,
+    isWaitingForContinuation: familyResult?.familyPayload?.isWaitingForContinuation ?? false,
     citations: Array.isArray(familyResult.citations) ? familyResult.citations : [],
     familyPayload: familyResult.familyPayload ?? null,
     principal: principal

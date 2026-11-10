@@ -54,7 +54,7 @@ function createRequestId() {
   return `request-${fallbackRequestSequence}`;
 }
 
-async function waitForUploadNote(uploadId, onStatus) {
+async function waitForUploadNote(uploadId) {
   const deadline = Date.now() + 10 * 60 * 1000;
   while (Date.now() < deadline) {
     const response = await fetch(`/api/chat/upload-processing/${encodeURIComponent(uploadId)}`, { cache: "no-store" });
@@ -68,7 +68,6 @@ async function waitForUploadNote(uploadId, onStatus) {
     if (payload.status === "failed" || payload.status === "expired") {
       throw new Error(payload.failureSummary || `File processing ${payload.status}.`);
     }
-    onStatus(payload.status);
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
   throw new Error("File processing is taking longer than expected. Try again later.");
@@ -99,7 +98,7 @@ function createUploadCompletionTurn(uploadId, note, caption) {
     answer: "", debug: null, error: null, familyPayload: null, citations: [],
     toolsUsed: [], toolInvocations: [], approvalRequired: null,
     knowledgeMode: KNOWLEDGE_MODE_GROUNDED, isPersistenceOffer: false,
-    isPermissionToBroadenRequest: false, createdAt: Date.now(), isPending: true,
+    isPermissionToBroadenRequest: false, isWaitingForContinuation: false, createdAt: Date.now(), isPending: true,
   };
 }
 
@@ -115,6 +114,7 @@ function finishUploadCompletionTurn(turn, completion, uploadId) {
     knowledgeMode: String(completion?.knowledgeMode ?? completion?.familyPayload?.knowledgeMode ?? KNOWLEDGE_MODE_GROUNDED).trim() || KNOWLEDGE_MODE_GROUNDED,
     isPersistenceOffer: completion?.isPersistenceOffer === true,
     isPermissionToBroadenRequest: completion?.isPermissionToBroadenRequest === true,
+    isWaitingForContinuation: completion?.isWaitingForContinuation === true,
     availableUploadId: completion?.toolInvocations?.some((invocation) => invocation.toolName === "preview_save_to_tree" && invocation.resultCount > 0) ? null : uploadId,
     isPending: false,
   };
@@ -860,7 +860,6 @@ export default function ChatPageClient({ includeDebug }) {
   const [chatFamily, setChatFamily] = useState(null);
   const chatFeedRef = useRef(null);
   const fileInputRef = useRef(null);
-  const recoveredOwnerRef = useRef(null);
   const approvalRequestRef = useRef(false);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
@@ -875,61 +874,6 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugEmpty = showTurnInspector && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
   const shouldShowVisibilityControl = chatFamily === "knowledgeTrees";
-
-  useEffect(() => {
-    const ownerId = user?.objectId;
-    if (!ownerId || recoveredOwnerRef.current === ownerId) return;
-    recoveredOwnerRef.current = ownerId;
-    const storageKey = `chat-upload-pending:${ownerId}`;
-    let pending;
-    try {
-      pending = JSON.parse(sessionStorage.getItem(storageKey) || "null");
-    } catch {
-      sessionStorage.removeItem(storageKey);
-      return;
-    }
-    if (!pending?.uploadId || !pending?.question) return;
-    const turnId = createTurnId();
-    let completionTurnId = null;
-    setTurns((currentTurns) => [...currentTurns, {
-      id: turnId, question: pending.question, originalQuestion: pending.question,
-      answer: pending.uploadProcessingAnswer || "",
-      debug: null, error: null, familyPayload: null, citations: [],
-      toolsUsed: [], toolInvocations: [], approvalRequired: null,
-      knowledgeMode: KNOWLEDGE_MODE_GROUNDED, isPersistenceOffer: false,
-      isPermissionToBroadenRequest: false, createdAt: pending.createdAt || Date.now(), isPending: false,
-    }]);
-    setSelectedTurnId(turnId);
-    setUploadStatus(t("Upload.Processing"));
-    setIsSubmitting(true);
-    waitForUploadNote(pending.uploadId, () => {})
-      .then(({ note, caption }) => {
-        setUploadStatus("");
-        const completionTurn = createUploadCompletionTurn(pending.uploadId, note, caption);
-        completionTurnId = completionTurn.id;
-        setTurns((currentTurns) => [...currentTurns, completionTurn]);
-        setSelectedTurnId(completionTurnId);
-        return continueCompletedUpload(pending.uploadId, note, caption, pending.visibility || "public", [
-          ...(pending.history || []),
-          { role: "user", content: pending.question },
-          ...(pending.uploadProcessingAnswer ? [{ role: "assistant", content: pending.uploadProcessingAnswer }] : []),
-        ]);
-      })
-      .then((completion) => {
-        sessionStorage.removeItem(storageKey);
-        setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
-          ? finishUploadCompletionTurn(turn, completion, pending.uploadId) : turn));
-      })
-      .catch((error) => {
-        setRequestError(error.message);
-        setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
-          ? { ...turn, error: error.message, isPending: false } : turn));
-      })
-      .finally(() => {
-        setUploadStatus("");
-        setIsSubmitting(false);
-      });
-  }, [user?.objectId, t]);
 
   const loadAvailableFamilies = async () => {
     const payload = await fetchAvailableChatFamilies();
@@ -1059,7 +1003,7 @@ export default function ChatPageClient({ includeDebug }) {
     setRequestError(null);
     setSelectedTurnId(turnId);
     setTurns((currentTurns) => ([
-      ...currentTurns,
+      ...currentTurns.map((turn) => ({ ...turn, isWaitingForContinuation: false })),
       {
         id: turnId,
         question,
@@ -1075,6 +1019,7 @@ export default function ChatPageClient({ includeDebug }) {
         knowledgeMode: KNOWLEDGE_MODE_GROUNDED,
         isPersistenceOffer: false,
         isPermissionToBroadenRequest: false,
+        isWaitingForContinuation: false,
         createdAt: Date.now(),
         isPending: true,
       },
@@ -1121,9 +1066,7 @@ export default function ChatPageClient({ includeDebug }) {
       if (uploadId && !payload?.toolInvocations?.some((invocation) => invocation.toolName === "process_upload" && invocation.resultCount > 0)) {
         throw new Error(t("Upload.NotStarted"));
       }
-      if (uploadId && user?.objectId) {
-        sessionStorage.setItem(`chat-upload-pending:${user.objectId}`, JSON.stringify({ uploadId, question, visibility, history: history.slice(-8), uploadProcessingAnswer: String(payload?.answer ?? "").trim(), createdAt: Date.now() }));
-      }
+      setUploadStatus("");
       setTurns((currentTurns) => currentTurns.map((turn) => (
         turn.id === turnId
           ? {
@@ -1138,6 +1081,7 @@ export default function ChatPageClient({ includeDebug }) {
             knowledgeMode: String(payload?.knowledgeMode ?? payload?.familyPayload?.knowledgeMode ?? KNOWLEDGE_MODE_GROUNDED).trim() || KNOWLEDGE_MODE_GROUNDED,
             isPersistenceOffer: payload?.isPersistenceOffer === true,
             isPermissionToBroadenRequest: payload?.isPermissionToBroadenRequest === true,
+            isWaitingForContinuation: payload?.isWaitingForContinuation === true,
             originalQuestion: turn.originalQuestion,
             error: null,
             isPending: false,
@@ -1145,18 +1089,16 @@ export default function ChatPageClient({ includeDebug }) {
           : turn
       )));
       if (uploadId) {
-        const { note, caption } = await waitForUploadNote(uploadId, () => setUploadStatus(t("Upload.Processing")));
-        setUploadStatus("");
+        const { note, caption } = await waitForUploadNote(uploadId);
         const completionTurn = createUploadCompletionTurn(uploadId, note, caption);
         completionTurnId = completionTurn.id;
-        setTurns((currentTurns) => [...currentTurns, completionTurn]);
+        setTurns((currentTurns) => [...currentTurns.map((turn) => ({ ...turn, isWaitingForContinuation: false })), completionTurn]);
         setSelectedTurnId(completionTurnId);
         const completion = await continueCompletedUpload(uploadId, note, caption, visibility, [
           ...history,
           { role: "user", content: question },
           { role: "assistant", content: String(payload?.answer ?? "").trim() },
         ]);
-        if (user?.objectId) sessionStorage.removeItem(`chat-upload-pending:${user.objectId}`);
         setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
           ? finishUploadCompletionTurn(turn, completion, uploadId)
           : turn));
@@ -1419,7 +1361,7 @@ export default function ChatPageClient({ includeDebug }) {
                   return (
                     <article
                       key={turn.id}
-                      className={`${styles.turnCard} ${isCompactTurnState ? styles.turnCardPending : ""} ${isSelected ? styles.turnCardSelected : ""}`}
+                      className={`${styles.turnCard} ${isCompactTurnState ? styles.turnCardPending : ""} ${isSelected ? styles.turnCardSelected : ""} ${turn.isWaitingForContinuation ? styles.turnCardWaiting : ""}`}
                       onClick={() => setSelectedTurnId(turn.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
@@ -1432,7 +1374,7 @@ export default function ChatPageClient({ includeDebug }) {
                     >
                       <div className={styles.turnMetaRow}>
                         <span className={styles.turnTimestamp}>{formatTimestamp(turn.createdAt)}</span>
-                        <span className={styles.turnStatus}>{t(turn.isPending ? "Status.Pending" : turn.error ? "Status.Error" : "Status.Complete")}</span>
+                        <span className={styles.turnStatus} role={turn.isWaitingForContinuation ? "status" : undefined}>{t(turn.isPending ? "Status.Pending" : turn.isWaitingForContinuation ? "Status.Waiting" : turn.error ? "Status.Error" : "Status.Complete")}</span>
                       </div>
 
                       {!turn.isPending && !turn.error ? (
