@@ -35,6 +35,7 @@ export async function buildEmailFamilyResult({
   );
   const {
     answer,
+    responseLanguage,
     knowledgeMode,
     isPersistenceOffer,
     isPermissionToBroadenRequest,
@@ -56,6 +57,7 @@ export async function buildEmailFamilyResult({
     toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
     citations: [],
     familyPayload: {
+      responseLanguage,
       knowledgeMode,
       isPersistenceOffer,
       isPermissionToBroadenRequest,
@@ -78,6 +80,7 @@ export function buildEmailResponse({ familyResult, principal, debug }) {
     schemaVersion: familyResult.schemaVersion,
     sourceToolFamily: familyResult.sourceToolFamily,
     answer: familyResult.answer,
+    responseLanguage: familyResult?.familyPayload?.responseLanguage ?? null,
     agent: buildEmailAgentDescriptor(),
     toolsUsed: familyResult.toolsUsed,
     toolInvocations: responseToolInvocations,

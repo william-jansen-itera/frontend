@@ -1,6 +1,6 @@
 import { getProjectClient } from '@/server/utils/foundryAgentClient';
 import { buildAgentPersonalCacheContext } from '@/server/utils/agent/agentPersonalCache';
-import { buildInitialAgentInput } from '@/server/utils/agent/agentConversationInput';
+import { buildInitialAgentInput, buildReplyLanguageInstruction } from '@/server/utils/agent/agentConversationInput';
 import { readAgentTurnState } from '@/server/utils/agent/agentTurnStateReader';
 import {
   attachDebugToError,
@@ -201,6 +201,7 @@ function normalizeHistory(history) {
 export async function invokeEmailAgent({
   message,
   history = [],
+  language = 'en',
   principal = null,
   includeDebug = false,
   requestId = null,
@@ -249,6 +250,7 @@ export async function invokeEmailAgent({
   const normalizedHistory = normalizeHistory(history);
   const initialInput = buildInitialAgentInput({
     allowedToolInstruction: null,
+    languageInstruction: buildReplyLanguageInstruction(language),
     normalizedHistory,
     normalizedMessage,
   });

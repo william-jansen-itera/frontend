@@ -107,6 +107,7 @@ export async function POST(request) {
     }) : routeDebug;
     const family = resolvedFamily.family;
     const visibility = String(payload?.visibility ?? '').trim() || 'public';
+    const language = ['en', 'da'].includes(payload?.language) ? payload.language : 'en';
 
     await logTrace(
       JSON.stringify({
@@ -161,6 +162,7 @@ export async function POST(request) {
       history,
       principal,
       visibility,
+      language,
       includeDebug,
       requestId,
       uploadId,

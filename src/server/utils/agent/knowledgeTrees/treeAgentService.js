@@ -4,7 +4,7 @@ import {
   buildStructuredAnswerStateResponseFormat,
   parseStructuredAnswerStateResponse,
 } from '@/server/utils/agent/agentAnswerState';
-import { buildInitialAgentInput } from '@/server/utils/agent/agentConversationInput';
+import { buildInitialAgentInput, buildReplyLanguageInstruction } from '@/server/utils/agent/agentConversationInput';
 import {
   attachDebugToError,
   createAgentDebugState,
@@ -51,7 +51,7 @@ function normalizeHistory(history) {
 // runs initial agent invocation
 // starts the tool loop
 // and classifies the grounded-vs-broad response mode
-export async function invokeKnowledgeTreesAgent({ message, history = [], principal = null, visibility = 'public', includeDebug = false, uploadId = null, previewUploadId = null }) {
+export async function invokeKnowledgeTreesAgent({ message, history = [], principal = null, visibility = 'public', language = 'en', includeDebug = false, uploadId = null, previewUploadId = null }) {
   const normalizedMessage = String(message ?? '').trim();
 
   if (!normalizedMessage) {
@@ -79,6 +79,10 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     includedTrees,
   });
   const normalizedHistory = normalizeHistory(history);
+  const automatedMessageLanguage = previewUploadId
+    ? normalizedMessage.startsWith('Browser (automated): ') ? 'en'
+      : normalizedMessage.startsWith('Browser (automatisk): ') ? 'da' : null
+    : null;
   const allowedToolInstruction = [
     buildVisibilityScopeInstruction({ visibility, includedTrees }),
     buildAllowedToolInstruction(includedTrees),
@@ -87,6 +91,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
   ].join('\n\n');
   const initialInput = buildInitialAgentInput({
     allowedToolInstruction,
+    languageInstruction: buildReplyLanguageInstruction(language, { isAutomatedCompletion: Boolean(previewUploadId), structuredAnswerState: true }),
     normalizedHistory,
     normalizedMessage,
   });
@@ -115,13 +120,25 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
     const stateError = await validateAnswerState({ response, toolInvocations, debug: validationDebug });
     if (stateError) return stateError;
 
-    const { answer, persistenceAction } = parseStructuredAnswerStateResponse(response, {
+    const { answer, persistenceAction, responseLanguage, languageReason } = parseStructuredAnswerStateResponse(response, {
       allowBroadMode: true,
       allowPersistence: true,
       requirePersistenceOfferForBroad: true,
       requirePersistenceAction: true,
       requireWaitingForContinuation: true,
     });
+    if (!responseLanguage || !languageReason) {
+      return 'Report a non-empty responseLanguage and languageReason based on the latest user message. Check that the language of your own answer prose matches the chosen language; rewrite your prose if needed without translating quoted text or uploaded evidence. Preserve the actual preview result and do not call the preview tool again.';
+    }
+    if (automatedMessageLanguage) {
+      const reportedLanguage = responseLanguage.trim().toLowerCase();
+      const matchesMessage = automatedMessageLanguage === 'en'
+        ? ['en', 'english', 'english (en)'].includes(reportedLanguage)
+        : ['da', 'danish', 'danish (da)', 'dansk'].includes(reportedLanguage);
+      if (!matchesMessage) {
+        return `The browser-generated message is in ${automatedMessageLanguage}, but you reported responseLanguage="${responseLanguage}". Rewrite your own answer prose in the message's language and report that language. Do not use the uploaded note to choose the reply language. Preserve quoted evidence, the preview path and marker; do not call the preview tool again.`;
+      }
+    }
     const lastAction = toolInvocations.findLast(({ toolName }) =>
       ['preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree'].includes(toolName));
     const successfulAction = lastAction?.output?.toolResultType === 'tree_note_preview'

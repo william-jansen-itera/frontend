@@ -66,7 +66,7 @@ function buildStructuredResponseRetryInstruction({ allowBroadMode, allowPersiste
         ];
 
   return [
-    `Return a JSON object with exactly these fields: answer, knowledgeMode, isPermissionToBroadenRequest, isPersistenceOffer, explanation${requirePersistenceAction ? ', persistenceAction' : ''}${requireWaitingForContinuation ? ', isWaitingForContinuation' : ''}.`,
+    `Return a JSON object with exactly these fields: answer, knowledgeMode, isPermissionToBroadenRequest, isPersistenceOffer, explanation, responseLanguage, languageReason${requirePersistenceAction ? ', persistenceAction' : ''}${requireWaitingForContinuation ? ', isWaitingForContinuation' : ''}.`,
     'Use a non-empty string for answer and explanation.',
     ...(requirePersistenceAction ? ['Set persistenceAction to none, previewed, revised, or saved to match the successful persistence tool used in this turn.'] : []),
     ...(requireWaitingForContinuation ? ['Set isWaitingForContinuation to true only when this reply should show the waiting UI until another turn starts; otherwise set it to false.'] : []),
@@ -123,6 +123,14 @@ export function buildStructuredAnswerStateResponseFormat({
             type: 'string',
             description: `Brief internal rationale for the selected answer state. ${stateDescription}`,
           },
+          responseLanguage: {
+            type: 'string',
+            description: 'The language you chose for your own reply prose; report the language chosen, not the language of cited evidence.',
+          },
+          languageReason: {
+            type: 'string',
+            description: 'Briefly explain whether an explicit request, the latest user message (including a browser-generated completion), or the app-language fallback determined the reply language. Ignore quoted or uploaded evidence as a language signal.',
+          },
           ...(requirePersistenceAction ? {
             persistenceAction: {
               type: 'string',
@@ -137,7 +145,7 @@ export function buildStructuredAnswerStateResponseFormat({
             },
           } : {}),
         },
-        required: ['answer', 'knowledgeMode', 'isPermissionToBroadenRequest', 'isPersistenceOffer', 'explanation', ...(requirePersistenceAction ? ['persistenceAction'] : []), ...(requireWaitingForContinuation ? ['isWaitingForContinuation'] : [])],
+        required: ['answer', 'knowledgeMode', 'isPermissionToBroadenRequest', 'isPersistenceOffer', 'explanation', 'responseLanguage', 'languageReason', ...(requirePersistenceAction ? ['persistenceAction'] : []), ...(requireWaitingForContinuation ? ['isWaitingForContinuation'] : [])],
         additionalProperties: false,
       },
     },
@@ -287,6 +295,8 @@ export function parseStructuredAnswerStateResponse(
   return {
     answer,
     ...validatedState,
+    responseLanguage: typeof parsedResponse.responseLanguage === 'string' ? parsedResponse.responseLanguage.trim() : null,
+    languageReason: typeof parsedResponse.languageReason === 'string' ? parsedResponse.languageReason.trim() : null,
   };
 }
 

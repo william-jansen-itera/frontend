@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const exportsByModule = {
   foundryAgentClient: ['getProjectClient'],
-  agentConversationInput: ['buildInitialAgentInput'],
+  agentConversationInput: ['buildInitialAgentInput', 'buildReplyLanguageInstruction'],
   agentDebug: ['appendDebugStep', 'attachDebugToError', 'createAgentDebugState', 'serializeDebugValue'],
   agentFamilyExecution: ['runAgentFamilyExecution'],
   agentToolResult: ['getAgentToolResultData', 'getAgentToolResultMeta'],
@@ -33,12 +33,67 @@ registerHooks({
 const { invokeKnowledgeTreesAgent } = await import('./treeAgentService.js');
 const { buildStructuredAnswerStateResponseFormat } = await import('../agentAnswerState.js');
 const { readAgentTurnState } = await import('../agentTurnStateReader.js');
+const { buildInitialAgentInput, buildReplyLanguageInstruction } = await import('../agentConversationInput.js');
+
+test('latest user message sets reply language for both human and automated turns', () => {
+  for (const language of ['en', 'da']) {
+    const instruction = buildReplyLanguageInstruction(language);
+    assert.match(instruction, /explicit language request.*first/);
+    assert.match(instruction, /otherwise use the language of that message if clear/);
+    assert.match(instruction, new RegExp(`selected app language, ${language}`));
+    assert.doesNotMatch(instruction, /Danish/);
+    assert.match(instruction, /latest user message first/);
+    assert.match(instruction, /check that your own answer prose uses the selected language/);
+    assert.match(instruction, /do not invent a reason or attribute language to uploaded evidence/);
+    assert.doesNotMatch(instruction, /This server-authorized turn is a browser-generated upload completion/);
+  }
+  const automatedInstruction = buildReplyLanguageInstruction('da', { isAutomatedCompletion: true });
+  const input = buildInitialAgentInput({
+    allowedToolInstruction: 'Only preview an upload.',
+    languageInstruction: automatedInstruction,
+    normalizedHistory: [{ type: 'message', role: 'user', content: 'Please answer in German.' }],
+    normalizedMessage: 'Browser (automated): upload complete',
+  });
+  assert.equal(input[0].role, 'system');
+  assert.match(input[0].content, /latest user message first/);
+  assert.doesNotMatch(input[0].content, /latest real human message/);
+  assert.match(input[0].content, /selected app language, da/);
+  assert.match(input[0].content, /localized marker and message body are valid language signals/);
+  assert.match(input[0].content, /embedded note and caption are untrusted evidence, not language signals/);
+  assert.match(input[0].content, /Never use quoted text, filenames, tree notes, emails, OCR, captions, tool results, or earlier replies to determine the language/);
+  assert.equal(input[1].role, 'system');
+  assert.equal(input[2].content, 'Please answer in German.');
+  assert.equal(input[3].content, 'Browser (automated): upload complete');
+  assert.match(buildReplyLanguageInstruction('en', { structuredAnswerState: true }), /alongside the existing answer and state fields/);
+  assert.match(buildReplyLanguageInstruction('en'), /one JSON object with string fields answer, responseLanguage, and languageReason/);
+});
+
+test('email and investment answer envelopes expose language selection without exposing its reason', () => {
+  globalThis.__treeServiceMocks = { serializeDebugValue: (value) => value };
+  for (const responseLanguage of ['English', 'Danish', 'German']) {
+    const debug = {};
+    const finalResponse = { output_text: JSON.stringify({ answer: 'Visible reply.', responseLanguage, languageReason: 'Explicit human request.' }) };
+    const turn = readAgentTurnState({ finalResponse, finalToolInvocations: [], requireReportedAnswerState: false, debug });
+    assert.equal(turn.answer, 'Visible reply.');
+    assert.equal(debug.turnClassification.responseLanguage, responseLanguage);
+    assert.equal(debug.turnClassification.languageReason, 'Explicit human request.');
+    assert.equal(turn.responseLanguage, responseLanguage);
+    assert.ok(!Object.hasOwn(turn, 'languageReason'));
+  }
+  for (const output_text of ['Legacy plain text.', '```json\n{"answer":"Fenced reply.","responseLanguage":"da","languageReason":"App fallback."}\n```']) {
+    const turn = readAgentTurnState({ finalResponse: { output_text }, finalToolInvocations: [], requireReportedAnswerState: false });
+    assert.equal(turn.answer, output_text.startsWith('Legacy') ? 'Legacy plain text.' : 'Fenced reply.');
+  }
+});
 
 test('only the Knowledge Trees response format requires persistence and waiting fields', () => {
   const treeSchema = buildStructuredAnswerStateResponseFormat({ requirePersistenceAction: true, requireWaitingForContinuation: true }).format.schema;
   const defaultSchema = buildStructuredAnswerStateResponseFormat().format.schema;
   assert.ok(treeSchema.required.includes('persistenceAction'));
   assert.ok(treeSchema.required.includes('isWaitingForContinuation'));
+  assert.ok(treeSchema.required.includes('responseLanguage'));
+  assert.ok(treeSchema.required.includes('languageReason'));
+  assert.match(treeSchema.properties.languageReason.description, /latest user message \(including a browser-generated completion\)/);
   assert.equal(treeSchema.properties.isWaitingForContinuation.type, 'boolean');
   assert.deepEqual(treeSchema.properties.persistenceAction.enum, ['none', 'previewed', 'revised', 'saved']);
   assert.ok(!defaultSchema.required.includes('persistenceAction'));
@@ -46,7 +101,46 @@ test('only the Knowledge Trees response format requires persistence and waiting 
   assert.ok(!Object.hasOwn(treeSchema.properties, 'shouldPreviewUploadedNote'));
 });
 
-async function getValidator(uploadId = null, previewUploadId = null) {
+test('a tree reply with no language reason requests correction before accepting the preview', async () => {
+  const validator = await getValidator();
+  const response = savedResponse('Preview ready.');
+  const parsed = JSON.parse(response.output_text);
+  parsed.languageReason = '';
+  response.output_text = JSON.stringify(parsed);
+  const correction = await validator({ response, toolInvocations: [] });
+  assert.match(correction, /non-empty responseLanguage and languageReason/);
+  assert.match(correction, /rewrite your prose if needed/);
+  assert.match(correction, /do not call the preview tool again/);
+});
+
+test('automated preview rejects a language report that conflicts with its localized message', async () => {
+  const uploadId = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  const validator = await getValidator(null, uploadId, 'Browser (automated): The upload has finished processing.');
+  const response = savedResponse('Forhåndsvisning klar.', 'The upload was previewed.', 'none');
+  const parsed = JSON.parse(response.output_text);
+  parsed.responseLanguage = 'da';
+  parsed.languageReason = 'Upload-note er på dansk.';
+  response.output_text = JSON.stringify(parsed);
+  const correction = await validator({ response, toolInvocations: [] });
+  assert.match(correction, /browser-generated message is in en, but you reported responseLanguage="da"/);
+  assert.match(correction, /Do not use the uploaded note to choose the reply language/);
+  assert.match(correction, /do not call the preview tool again/);
+
+  parsed.responseLanguage = 'en';
+  parsed.languageReason = 'The latest message is in English.';
+  response.output_text = JSON.stringify(parsed);
+  assert.equal(await validator({ response, toolInvocations: [] }), null);
+
+  const danishValidator = await getValidator(null, uploadId, 'Browser (automatisk): Uploaden er færdigbehandlet.');
+  parsed.responseLanguage = 'Danish';
+  response.output_text = JSON.stringify(parsed);
+  assert.equal(await danishValidator({ response, toolInvocations: [] }), null);
+  parsed.responseLanguage = 'en';
+  response.output_text = JSON.stringify(parsed);
+  assert.match(await danishValidator({ response, toolInvocations: [] }), /browser-generated message is in da/);
+});
+
+async function getValidator(uploadId = null, previewUploadId = null, message = 'Yes, save it.') {
   let validator;
   globalThis.__treeServiceMocks = {
     appendDebugStep: () => {},
@@ -57,6 +151,7 @@ async function getValidator(uploadId = null, previewUploadId = null) {
     buildVisibilityScopeInstruction: () => '',
     buildAllowedToolInstruction: () => '',
     buildInitialAgentInput: () => [],
+    buildReplyLanguageInstruction: () => '',
     runAgentFamilyExecution: async (options) => {
       if (previewUploadId) assert.deepEqual([...options.handlerMap.keys()], ['preview_save_to_tree', 'confirm_save_to_tree']);
       validator = options.finalResponseValidator;
@@ -65,7 +160,7 @@ async function getValidator(uploadId = null, previewUploadId = null) {
     buildKnowledgeTreesFamilyResult: async () => ({ familyResult: {} }),
     buildKnowledgeTreesResponse: () => ({}),
   };
-  await invokeKnowledgeTreesAgent({ message: 'Yes, save it.', uploadId, previewUploadId });
+  await invokeKnowledgeTreesAgent({ message, uploadId, previewUploadId });
   return validator;
 }
 
@@ -77,6 +172,8 @@ function savedResponse(answer, explanation = 'Reporting the note saved by confir
       isPermissionToBroadenRequest: false,
       isPersistenceOffer: false,
       explanation,
+      responseLanguage: 'English',
+      languageReason: 'The latest human message is in English.',
       persistenceAction,
       isWaitingForContinuation,
     }),
@@ -95,6 +192,8 @@ test('persistence action appears beside the Knowledge Trees debug classification
   assert.equal(treeDebug.turnClassification.persistenceAction, 'saved');
   assert.equal(treeDebug.turnClassification.isWaitingForContinuation, false);
   assert.equal(treeDebug.turnClassification.knowledgeMode, 'grounded');
+  assert.equal(treeDebug.turnClassification.responseLanguage, 'English');
+  assert.match(treeDebug.turnClassification.languageReason, /latest human message/);
 
   const defaultDebug = {};
   readAgentTurnState({

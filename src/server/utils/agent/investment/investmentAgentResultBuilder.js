@@ -205,6 +205,7 @@ export async function buildInvestmentFamilyResult({
   });
   const {
     answer,
+    responseLanguage,
     knowledgeMode,
     isPersistenceOffer,
     isPermissionToBroadenRequest,
@@ -242,6 +243,7 @@ export async function buildInvestmentFamilyResult({
     toolsUsed: Array.from(new Set(responseToolInvocations.map((invocation) => invocation.toolName))),
     citations,
     familyPayload: {
+      responseLanguage,
       knowledgeMode,
       isPersistenceOffer,
       isPermissionToBroadenRequest,
@@ -265,6 +267,7 @@ export function buildInvestmentResponse({ familyResult, principal, debug }) {
     schemaVersion: familyResult.schemaVersion,
     sourceToolFamily: familyResult.sourceToolFamily,
     answer: familyResult.answer,
+    responseLanguage: familyResult?.familyPayload?.responseLanguage ?? null,
     agent: buildInvestmentAgentDescriptor(),
     toolsUsed: familyResult.toolsUsed,
     toolInvocations: responseToolInvocations,

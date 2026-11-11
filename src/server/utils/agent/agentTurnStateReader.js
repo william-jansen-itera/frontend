@@ -30,6 +30,26 @@ function extractAnswerText(response) {
     .join('\n\n');
 }
 
+function parseAnswerEnvelope(rawText) {
+  const jsonText = rawText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1]?.trim() ?? rawText;
+  if (!jsonText.startsWith('{') || !jsonText.endsWith('}')) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    return typeof parsed?.answer === 'string' && parsed.answer.trim()
+      ? {
+        answer: parsed.answer.trim(),
+        responseLanguage: typeof parsed.responseLanguage === 'string' ? parsed.responseLanguage.trim() : null,
+        languageReason: typeof parsed.languageReason === 'string' ? parsed.languageReason.trim() : null,
+      }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function getToolInvocationResultCount(invocation) {
   const metaResultCount = Number(getAgentToolResultMeta(invocation?.output)?.resultCount);
 
@@ -73,7 +93,9 @@ export function readAgentTurnState({
       return null;
     }
   })();
-  const answer = structuredAnswerState?.answer ?? extractAnswerText(finalResponse);
+  const rawAnswer = extractAnswerText(finalResponse);
+  const answerEnvelope = !structuredAnswerState && !requireReportedAnswerState ? parseAnswerEnvelope(rawAnswer) : null;
+  const answer = structuredAnswerState?.answer ?? answerEnvelope?.answer ?? rawAnswer;
   const responseToolInvocations = buildResponseToolInvocations(finalToolInvocations);
 
   if (!structuredAnswerState && requireReportedAnswerState) {
@@ -85,6 +107,8 @@ export function readAgentTurnState({
   const isPersistenceOffer = structuredAnswerState?.isPersistenceOffer === true;
   const isWaitingForContinuation = structuredAnswerState?.isWaitingForContinuation === true;
   const answerStateExplanation = String(structuredAnswerState?.explanation ?? '').trim() || null;
+  const responseLanguage = structuredAnswerState?.responseLanguage ?? answerEnvelope?.responseLanguage ?? null;
+  const languageReason = structuredAnswerState?.languageReason ?? answerEnvelope?.languageReason ?? null;
   const usedBroaderKnowledge = knowledgeMode === KNOWLEDGE_MODE_BROAD;
   const isGrounded = !usedBroaderKnowledge;
 
@@ -96,12 +120,15 @@ export function readAgentTurnState({
       ...(answerStateOptions?.requirePersistenceAction ? { persistenceAction: structuredAnswerState.persistenceAction } : {}),
       ...(answerStateOptions?.requireWaitingForContinuation ? { isWaitingForContinuation } : {}),
       explanation: answerStateExplanation,
+      responseLanguage,
+      languageReason,
       responseToolInvocations,
     });
   }
 
   return {
     answer,
+    responseLanguage,
     knowledgeMode,
     isGrounded,
     usedBroaderKnowledge,

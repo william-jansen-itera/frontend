@@ -116,6 +116,7 @@ export async function buildKnowledgeTreesFamilyResult({
   );
   const {
     answer,
+    responseLanguage,
     knowledgeMode,
     isPersistenceOffer,
     isPermissionToBroadenRequest,
@@ -154,6 +155,7 @@ export async function buildKnowledgeTreesFamilyResult({
     toolsUsed: Array.from(new Set(enrichedResponseToolInvocations.map((invocation) => invocation.toolName))),
     citations,
     familyPayload: {
+      responseLanguage,
       knowledgeMode,
       isPersistenceOffer,
       isPermissionToBroadenRequest,
@@ -178,6 +180,7 @@ export function buildKnowledgeTreesResponse({ familyResult, agent, principal, de
     schemaVersion: familyResult.schemaVersion,
     sourceToolFamily: familyResult.sourceToolFamily,
     answer: familyResult.answer,
+    responseLanguage: familyResult?.familyPayload?.responseLanguage ?? null,
     agent: {
       id: agent.id,
       name: agent.name,
