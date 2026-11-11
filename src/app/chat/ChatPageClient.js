@@ -995,6 +995,7 @@ export default function ChatPageClient({ includeDebug }) {
   async function submitTurn({ question, message, file }) {
     const turnId = createTurnId();
     let completionTurnId = null;
+    let stagedUpload = false;
     const history = buildHistoryFromTurns(turns);
     const requestId = createRequestId();
     const requestStartedAt = new Date().toISOString();
@@ -1037,7 +1038,7 @@ export default function ChatPageClient({ includeDebug }) {
           throw new Error(uploadPayload?.error || t("Upload.StageFailed"));
         }
         uploadId = uploadPayload.uploadId;
-        setSelectedFile(null);
+        stagedUpload = true;
         setUploadStatus(t("Upload.Processing"));
       }
       const response = await fetch("/api/chat", {
@@ -1066,7 +1067,6 @@ export default function ChatPageClient({ includeDebug }) {
       if (uploadId && !payload?.toolInvocations?.some((invocation) => invocation.toolName === "process_upload" && invocation.resultCount > 0)) {
         throw new Error(t("Upload.NotStarted"));
       }
-      setUploadStatus("");
       setTurns((currentTurns) => currentTurns.map((turn) => (
         turn.id === turnId
           ? {
@@ -1127,6 +1127,7 @@ export default function ChatPageClient({ includeDebug }) {
     } finally {
       setIsSubmitting(false);
       setUploadStatus("");
+      if (stagedUpload) setSelectedFile(null);
     }
   }
 
@@ -1325,10 +1326,10 @@ export default function ChatPageClient({ includeDebug }) {
               {uploadStatus ? <p role="status" className={styles.visuallyHidden}>{uploadStatus}</p> : null}
               <label className={styles.composerField}>
                 <textarea
-                  value={prompt}
+                  value={uploadStatus || prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   onKeyDown={handlePromptKeyDown}
-                  placeholder={uploadStatus || buildChatPlaceholder(availableChatFamilies, {
+                  placeholder={buildChatPlaceholder(availableChatFamilies, {
                     empty: t("NoChatFamilies"),
                     single: (topic) => t("AskAbout", { topic }),
                     multiple: (topics, last) => t("AskAboutMany", { topics, last }),
@@ -1435,10 +1436,12 @@ export default function ChatPageClient({ includeDebug }) {
                         </div>
                       </div>
 
-                      <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
-                        <p className={styles.messageLabel}>{turn.isBrowserAutomated ? "Browser (automated)" : userMessageLabel}</p>
-                        <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>
-                      </div>
+                      {(!turn.isBrowserAutomated || includeDebug) ? (
+                        <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
+                          <p className={styles.messageLabel}>{turn.isBrowserAutomated ? "Browser (automated)" : userMessageLabel}</p>
+                          <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>
+                        </div>
+                      ) : null}
 
                       {!turn.isPending && !turn.error ? <CitationBreadcrumbs citations={turn.citations} visibility={visibility} /> : null}
                     </article>

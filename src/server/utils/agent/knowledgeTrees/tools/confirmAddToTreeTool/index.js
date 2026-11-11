@@ -1,4 +1,7 @@
-import { createLeafNodeFromChat, mergeLeafNodeFromChat } from '@/server/utils/tree/treeMutationService';
+import { createLeafNodeFromChat, createTreeNodeAttachment, mergeLeafNodeFromChat, normalizeUpdatedByMetadata } from '@/server/utils/tree/treeMutationService';
+import { getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
+import { readVerifiedStagingFile } from '@/server/utils/agent/knowledgeTrees/stagingBlob';
+import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
 import { consumeTreePreviewSnapshot, getTreePreviewSnapshot } from '@/server/utils/agent/knowledgeTrees/tools/treePreviewSnapshotRepository';
 import {
   assertWritableRuntimeTree,
@@ -35,11 +38,29 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
     }
 
     const offeredPreview = await getTreePreviewSnapshot({ previewId, principal });
+    if (!['note', 'attachment'].includes(offeredPreview.saveKind) ||
+        (offeredPreview.saveKind === 'attachment' && !offeredPreview.uploadId)) {
+      throw new Error('The preview has no classified save action. Request a new preview.');
+    }
     const createAvailable = Boolean(offeredPreview.createPath) &&
       offeredPreview.createPath.toLowerCase() !== offeredPreview.mergeTarget?.breadcrumb?.toLowerCase();
     if ((saveMode !== 'merge_existing' || !offeredPreview.mergeTarget) &&
         (saveMode !== 'create_leaf' || !createAvailable)) {
       throw new Error('That save mode was not offered for this preview. Request a new preview.');
+    }
+    let attachmentFile = null;
+    if (offeredPreview.uploadId) {
+      const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+      const upload = ownerObjectId && await getOwnedChatUpload({ uploadId: offeredPreview.uploadId, ownerObjectId });
+      if (!upload || upload.status !== 'succeeded' || upload.saveKind !== offeredPreview.saveKind ||
+          upload.fileName !== offeredPreview.fileName || upload.byteSize !== offeredPreview.byteSize ||
+          upload.sha256 !== offeredPreview.sha256 ||
+          (upload.saveKind === 'note' && upload.extractedNoteText !== offeredPreview.extractedNoteText)) {
+        throw new Error('The owned upload has changed or expired. Preview again.');
+      }
+      if (upload.saveKind === 'attachment') {
+        attachmentFile = await readVerifiedStagingFile({ upload, ownerObjectId });
+      }
     }
     const preview = await consumeTreePreviewSnapshot({ previewId, principal });
     const resolvedTreeId = String(preview?.treeId ?? '').trim();
@@ -49,7 +70,17 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
     }
 
     const writableTree = await assertWritableRuntimeTree({ treeId: resolvedTreeId, principal });
-    const savedLeaf = saveMode === 'merge_existing'
+    const savedLeaf = attachmentFile && saveMode === 'merge_existing'
+      ? {
+        treeId: resolvedTreeId,
+        updatedNodeId: preview.mergeTarget.nodeId,
+        details: await createTreeNodeAttachment({
+          treeInstanceId: Number.parseInt(resolvedTreeId, 10), nodeId: preview.mergeTarget.nodeId,
+          files: [attachmentFile], updatedBy: normalizeUpdatedByMetadata(principal),
+          expectedTarget: preview.mergeTarget,
+        }),
+      }
+      : saveMode === 'merge_existing'
       ? await mergeLeafNodeFromChat({
         treeInstanceId: Number.parseInt(resolvedTreeId, 10),
         principal,
@@ -61,13 +92,18 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
       principal,
       toolName: confirmAddToTreeToolDefinition.name,
       originalQuestion: preview.originalQuestion,
-      broaderAnswer: preview.broaderAnswer,
+      broaderAnswer: attachmentFile
+        ? [preview.placementNote && `Placement note:\n${preview.placementNote}`,
+          preview.placementCaption && `Image caption:\n${preview.placementCaption}`].filter(Boolean).join('\n\n')
+        : preview.broaderAnswer,
       placementMode: preview.placementMode,
       selectedAnchorNodeId: preview.selectedAnchorNodeId,
       selectedAnchorBreadcrumb: preview.selectedAnchorBreadcrumb,
       generatedPathTitles: preview.generatedPathTitles,
       plannedLeafParentBreadcrumb: preview.plannedLeafParentBreadcrumb,
       generatedLeafTitle: preview.generatedLeafTitle,
+      attachmentFile,
+      preserveNoteWhitespace: preview.saveKind === 'note' && Boolean(preview.uploadId),
     });
     const noteSearchParams = new URLSearchParams({
       treeId: String(savedLeaf.treeId),
@@ -78,14 +114,16 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
     const toolOutput = {
       ...savedLeaf,
       saveMode,
+      saveKind: preview.saveKind,
+      fileName: attachmentFile?.name ?? null,
       treeName: preview.treeName,
-      noteLink: `[View note](/notes?${noteSearchParams.toString()})`,
+      noteLink: `[View ${attachmentFile ? 'attachment' : 'note'}](/notes?${noteSearchParams.toString()})`,
     };
     delete toolOutput.flatData;
 
     return buildPersistenceToolHandlerResult({
       toolName: confirmAddToTreeToolDefinition.name,
-      toolResultType: saveMode === 'merge_existing' ? 'tree_note_updated' : 'tree_note_created',
+      toolResultType: attachmentFile ? 'tree_attachment_saved' : saveMode === 'merge_existing' ? 'tree_note_updated' : 'tree_note_created',
       toolOutput,
       untrustedDataPaths: [
         'treeName', 'selectedAnchorBreadcrumb', 'plannedLeafParentBreadcrumb',

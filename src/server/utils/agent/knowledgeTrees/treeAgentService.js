@@ -126,7 +126,7 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
       ['preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree'].includes(toolName));
     const successfulAction = lastAction?.output?.toolResultType === 'tree_note_preview'
       ? lastAction.toolName === 'revise_save_preview' ? 'revised' : 'previewed'
-      : ['tree_note_updated', 'tree_note_created'].includes(lastAction?.output?.toolResultType) &&
+      : ['tree_note_updated', 'tree_note_created', 'tree_attachment_saved'].includes(lastAction?.output?.toolResultType) &&
         lastAction?.toolName === 'confirm_save_to_tree' ? 'saved' : 'none';
     if (persistenceAction !== successfulAction) {
       return `The reported persistenceAction does not match the latest persistence tool result. If the current user message explicitly confirms the latest preview, call confirm_save_to_tree with that preview's exact ID and approved save mode before replying. Only report persistenceAction="saved" after that call succeeds in this turn. Otherwise report persistenceAction="${successfulAction}" and rewrite answer and explanation to match the observed tool result; when confirm_save_to_tree did not succeed, explicitly say the note was not saved and remove any saved-note text, destination, or link. Do not copy the rejected answer.`;
@@ -136,7 +136,14 @@ export async function invokeKnowledgeTreesAgent({ message, history = [], princip
          !answer.includes(lastAction.output.data.defaultSavePath))) {
       return 'Report the actual defaultSavePath and end the answer with the exact Preview ID marker from the latest preview tool result. Do not claim the note was saved; ask for separate confirmation.';
     }
-    if (successfulAction === 'saved' &&
+    if (successfulAction === 'saved' && lastAction.output.toolResultType === 'tree_attachment_saved' &&
+      (!lastAction.output.data?.noteLink || !lastAction.output.data?.fileName ||
+       !answer.includes(lastAction.output.data.noteLink) || !answer.includes(lastAction.output.data.fileName) ||
+       (lastAction.output.data.saveMode === 'create_leaf' && lastAction.output.data.details?.notes &&
+        !answer.includes(lastAction.output.data.details.notes)))) {
+      return 'Report the confirmed file name and exact noteLink, and for a new leaf include its complete saved notes when present.';
+    }
+    if (successfulAction === 'saved' && lastAction.output.toolResultType !== 'tree_attachment_saved' &&
         (!lastAction.output.data?.noteLink || !lastAction.output.data?.details?.notes ||
          !answer.includes(lastAction.output.data.noteLink) || !answer.includes(lastAction.output.data.details.notes))) {
       return 'The saved-note answer must contain the exact noteLink and complete details.notes from the successful confirm_save_to_tree result. Do not invent a link or note text.';

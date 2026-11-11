@@ -12,7 +12,7 @@ import {
 export const previewAddToTreeToolDefinition = {
   type: 'function',
   name: 'preview_save_to_tree',
-  description: 'Preview existing-note merge (default when offered) or separate new-note creation for current user text, an accepted prior broad answer, or a completed upload note when the server authorizes its preview. Never invent or expand saved content. The server caches the preview for separate confirmation; output includes previewId and destinations only.',
+  description: 'Preview a note from current text, a prior answer or a classified completed upload, or preview attaching the original completed upload file. An existing leaf receives the file without changing notes; a new leaf receives the file and available labeled placement note/caption. Requires later human confirmation.',
   strict: true,
   parameters: {
     type: 'object',
@@ -44,7 +44,7 @@ export const previewAddToTreeToolDefinition = {
   },
 };
 
-export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug, currentUserMessage, previewUploadId = null }) {
+export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug, currentUserMessage, currentUploadId = null, previewUploadId = null }) {
   return async ({ toolName, originalQuestion, broaderAnswer, contentSource, uploadId }) => {
     if (previewUploadId && contentSource !== 'completed_upload_note') {
       throw new Error('Only the completed upload note can be previewed in this turn.');
@@ -54,6 +54,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
     }
     let noteText = broaderAnswer;
     let placementCaption = '';
+    let uploadPayload = null;
     if (contentSource === 'current_user_text') {
       const content = String(broaderAnswer ?? '').trim();
       const message = String(currentUserMessage ?? '').trim();
@@ -62,15 +63,33 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       }
     } else if (contentSource === 'completed_upload_note') {
       const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
-      if (!previewUploadId || uploadId !== previewUploadId || !ownerObjectId) {
+      if ((!previewUploadId && !currentUploadId) || uploadId !== (previewUploadId || currentUploadId) || !ownerObjectId) {
         throw new Error('A completed upload must be authorized for this preview.');
       }
       const upload = await getOwnedChatUpload({ uploadId, ownerObjectId });
-      if (upload?.status !== 'succeeded' || !String(upload.note ?? '').trim()) {
-        throw new Error('The completed upload note is not available for preview.');
+      if (upload?.status !== 'succeeded' || !['note', 'attachment'].includes(upload.saveKind) ||
+          (upload.saveKind === 'note' && (!String(upload.extractedNoteText ?? '').trim() || upload.extractedNoteText.length > 4000))) {
+        throw new Error('The completed upload classification is not available for preview. Upload the file again.');
       }
-      noteText = String(upload.note).trim();
+      noteText = String(upload.note ?? '').trim();
       placementCaption = String(upload.caption ?? '').trim();
+      if (!noteText && !placementCaption) {
+        if (previewUploadId || !String(currentUserMessage ?? '').trim() ||
+            !String(currentUserMessage).toLowerCase().includes(String(originalQuestion ?? '').trim().toLowerCase())) {
+          throw new Error('This attachment needs a human-provided topic and path before previewing.');
+        }
+        noteText = String(originalQuestion).trim();
+      }
+      uploadPayload = {
+        saveKind: upload.saveKind,
+        uploadId,
+        fileName: upload.fileName,
+        byteSize: upload.byteSize,
+        sha256: upload.sha256,
+        placementNote: String(upload.note ?? '').trim(),
+        placementCaption,
+        ...(upload.saveKind === 'note' ? { extractedNoteText: upload.extractedNoteText } : {}),
+      };
     } else if (contentSource !== 'prior_broad_answer') {
       throw new Error('A valid source for the note text is required.');
     }
@@ -92,13 +111,16 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
     }
 
     const selectionCalls = [];
-    const preview = await previewLeafFromChat({
+    const placementPreview = await previewLeafFromChat({
       treeInstanceId: Number.parseInt(resolvedTreeId, 10),
       originalQuestion,
       broaderAnswer: noteText,
       placementCaption,
       onModelCall: includeDebug ? (call) => selectionCalls.push(call) : undefined,
     });
+    const preview = uploadPayload
+      ? { ...placementPreview, ...uploadPayload, broaderAnswer: uploadPayload.saveKind === 'note' ? uploadPayload.extractedNoteText : uploadPayload.placementNote }
+      : { ...placementPreview, saveKind: 'note' };
 
     const previewId = randomUUID();
     await storeTreePreviewSnapshot({ previewId, preview, principal });
@@ -107,7 +129,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       toolName: previewAddToTreeToolDefinition.name,
       toolResultType: 'tree_note_preview',
       toolOutput: buildTreePreviewToolOutput(previewId, preview),
-      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath'],
+      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath', 'fileName', 'createLeafNotes'],
       includeDebug,
       debug: { placementSelection: { modelCallCount: selectionCalls.length, calls: selectionCalls } },
     });

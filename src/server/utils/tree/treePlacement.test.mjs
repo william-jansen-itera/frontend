@@ -40,7 +40,7 @@ registerHooks({
   },
 });
 
-const { previewLeafFromChat, updateTreeNodeDetails } = await import('./treeMutationService.js');
+const { createLeafNodeFromChat, previewLeafFromChat, updateTreeNodeDetails } = await import('./treeMutationService.js');
 const { generateChatLeafPathPlan, generateMergedLeafNotes, selectChatPlacementCandidates } = await import('./treeGenerationService.js');
 const { copyPublicTreeRecords, updateUnchangedLeafNotes } = await import('./treeRecordRepository.js');
 
@@ -73,6 +73,35 @@ function prepare(nodes, choose) {
 function node(id, parent, depth, isLeafNode = false) {
   return { id: String(id), parent: parent === null ? null : String(parent), _depth: depth, name: `Topic ${id}`, isLeafNode };
 }
+
+test('new attachment leaf rolls back node and metadata and deletes its blob on failure', async () => {
+  const calls = [];
+  globalThis.__placementMocks = {
+    withSqlConnection: async (action) => action(),
+    sql: { Transaction: class {
+      async begin() { calls.push('begin'); }
+      async commit() { calls.push('commit'); }
+      async rollback() { calls.push('rollback'); }
+    } },
+    queryTreeSummary: async () => ({ treeName: 'Knowledge' }),
+    queryTreeData: async () => [],
+    createTreeNodeRecord: async () => ({ createdNodeId: '4', isLeafNode: true }),
+    queryTreeNode: async () => ({ isLeafNode: true }),
+    updateTreeNodeText: async () => 1,
+    upsertTreeNodeDetails: async () => {},
+    getAuditMetadata: () => ({ updatedByObjectId: 'owner' }),
+    uploadNodeAttachment: async () => { calls.push('upload'); return { blobName: 'permanent-blob', contentType: 'image/png', byteSize: 4 }; },
+    createAttachmentMetadataRecord: async () => { calls.push('metadata'); throw new Error('metadata unavailable'); },
+    deleteNodeAttachmentBlobIfExists: async () => { calls.push('delete'); },
+  };
+  const file = { name: 'photo.png', type: 'image/png', size: 4, arrayBuffer: async () => Buffer.from('file') };
+  await assert.rejects(createLeafNodeFromChat({
+    treeInstanceId: 7, principal: {}, toolName: 'confirm_save_to_tree', originalQuestion: 'photo',
+    broaderAnswer: 'Image caption:\nA harbor.', placementMode: 'full_path_from_root',
+    generatedLeafTitle: 'Photo', generatedPathTitles: [], attachmentFile: file,
+  }), /metadata unavailable/);
+  assert.deepEqual(calls, ['begin', 'upload', 'metadata', 'rollback', 'delete']);
+});
 
 test('model merge may rewrite the existing note', async () => {
   globalThis.__placementMocks = {

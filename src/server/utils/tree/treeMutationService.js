@@ -1034,6 +1034,8 @@ export async function createLeafNodeFromChat({
   generatedPathTitles,
   plannedLeafParentBreadcrumb,
   generatedLeafTitle,
+  attachmentFile = null,
+  preserveNoteWhitespace = false,
 }) {
   const resolvedPlacement = placementMode && generatedLeafTitle
     ? {
@@ -1048,7 +1050,7 @@ export async function createLeafNodeFromChat({
       plannedLeafParentBreadcrumb: String(plannedLeafParentBreadcrumb ?? '').trim(),
       generatedLeafTitle: String(generatedLeafTitle ?? '').trim(),
       originalQuestion: String(originalQuestion ?? '').trim(),
-      broaderAnswer: String(broaderAnswer ?? '').trim(),
+      broaderAnswer: preserveNoteWhitespace ? String(broaderAnswer ?? '') : String(broaderAnswer ?? '').trim(),
     }
     : await resolveChatLeafPlacement({ treeInstanceId, originalQuestion, broaderAnswer });
 
@@ -1057,7 +1059,7 @@ export async function createLeafNodeFromChat({
   }
 
   const notes = resolvedPlacement.broaderAnswer;
-  if (!notes || notes.length > 4000) {
+  if ((!notes.trim() && !attachmentFile) || notes.length > 4000) {
     throw new Error('The cleaned answer must be non-empty and at most 4000 characters. Preview again.');
   }
 
@@ -1071,6 +1073,8 @@ export async function createLeafNodeFromChat({
       throw new Error('The new note path already exists. Preview again and choose a different path.');
     }
     const transaction = new sql.Transaction();
+    let uploadedAttachment = null;
+    let committed = false;
 
     try {
       await transaction.begin();
@@ -1092,9 +1096,31 @@ export async function createLeafNodeFromChat({
         transaction,
       });
 
-      await transaction.commit();
+      if (attachmentFile) {
+        validateAttachmentFile(attachmentFile);
+        uploadedAttachment = await uploadNodeAttachment({
+          treeId: treeInstanceId,
+          nodeId: placementResult.createdLeafNode.createdNodeId,
+          file: attachmentFile,
+          updatedBy: normalizeUpdatedByMetadata(principal),
+        });
+        await createAttachmentMetadataRecord(placementResult.createdLeafNode.createdNodeId, {
+          originalFileName: attachmentFile.name,
+          contentType: uploadedAttachment.contentType,
+          byteSize: uploadedAttachment.byteSize,
+          blobName: uploadedAttachment.blobName,
+          blobUrl: uploadedAttachment.blobUrl,
+          updatedByObjectId: normalizeUpdatedByMetadata(principal).updatedByObjectId,
+          updatedByUserDetails: normalizeUpdatedByMetadata(principal).updatedByUserDetails,
+        }, transaction);
+      }
 
-      const indexerRun = await requestIndexerRefreshForMutation(treeInstanceId, 'chat add');
+      await transaction.commit();
+      committed = true;
+
+      const indexerRun = attachmentFile
+        ? await requestIndexerRefreshForMutation(treeInstanceId, 'chat add').catch(() => null)
+        : await requestIndexerRefreshForMutation(treeInstanceId, 'chat add');
 
       return {
         treeId: String(treeInstanceId),
@@ -1106,13 +1132,19 @@ export async function createLeafNodeFromChat({
         plannedLeafParentBreadcrumb: resolvedPlacement.plannedLeafParentBreadcrumb,
         createdIntermediateNodes: placementResult.createdIntermediateNodes,
         generatedLeafTitle: resolvedPlacement.generatedLeafTitle,
-        flatData: await queryTreeData(treeInstanceId),
-        details: await queryNodeDetails(treeInstanceId, placementResult.createdLeafNode.createdNodeId),
+        flatData: attachmentFile ? await queryTreeData(treeInstanceId).catch(() => []) : await queryTreeData(treeInstanceId),
+        details: attachmentFile
+          ? await queryNodeDetails(treeInstanceId, placementResult.createdLeafNode.createdNodeId)
+            .catch(() => ({ notes, attachments: [{ fileName: attachmentFile.name, blobUrl: uploadedAttachment.blobUrl }] }))
+          : await queryNodeDetails(treeInstanceId, placementResult.createdLeafNode.createdNodeId),
         indexerRun,
       };
     } catch (error) {
-      if (transaction._aborted !== true) {
-        await transaction.rollback();
+      if (committed) throw error;
+      try {
+        if (transaction._aborted !== true) await transaction.rollback();
+      } finally {
+        if (uploadedAttachment) await deleteNodeAttachmentBlobIfExists(uploadedAttachment.blobName);
       }
 
       throw error;
@@ -1184,8 +1216,26 @@ export async function mergeLeafNodeFromChat({ treeInstanceId, principal, preview
   });
 }
 
-export async function createTreeNodeAttachment({ treeInstanceId, nodeId, files, updatedBy = null }) {
+export async function assertUnchangedAttachmentTarget({ treeInstanceId, target }) {
+  if (!target?.nodeId || !target.notesFingerprint) {
+    throw new Error('No existing leaf was offered for the attachment. Preview again.');
+  }
+  const node = await queryTreeNode(treeInstanceId, target.nodeId);
+  const current = await queryTreeNodeDetailRecord(treeInstanceId, target.nodeId);
+  const flatData = await queryTreeData(treeInstanceId);
+  const breadcrumbs = buildBreadcrumbByNodeId(flatData);
+  const positionedNode = flatData.find((item) => String(item.id) === target.nodeId);
+  if (!node?.isLeafNode || !current || !positionedNode ||
+      (breadcrumbs.get(target.nodeId) ?? '') !== target.breadcrumb ||
+      String(positionedNode.parent ?? '') !== target.parentId || node.name !== target.title ||
+      fingerprintNotes(current.notes) !== target.notesFingerprint) {
+    throw new Error('The existing leaf changed. Preview again before attaching the file.');
+  }
+}
+
+export async function createTreeNodeAttachment({ treeInstanceId, nodeId, files, updatedBy = null, expectedTarget = null }) {
   return withSqlConnection(async () => {
+    if (expectedTarget) await assertUnchangedAttachmentTarget({ treeInstanceId, target: expectedTarget });
     await assertLeafNode(treeInstanceId, nodeId);
     const configuredTree = await assertConfiguredTree(treeInstanceId, { allowPrivate: true });
 

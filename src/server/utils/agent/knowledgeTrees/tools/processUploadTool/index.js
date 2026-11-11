@@ -35,13 +35,22 @@ export function createProcessUploadHandler({ principal, currentUploadId }) {
     if (!upload) throw new Error('Upload was not found or has expired.');
 
     if (await queueOwnedChatUpload({ uploadId, ownerObjectId })) {
+      let queueStep = 'configure';
       try {
         const connection = process.env.CHAT_UPLOAD_STORAGE_CONNECTION_STRING;
         if (!connection) throw new Error('Upload queue storage is not configured.');
         const queue = new QueueClient(connection, 'chat-upload-jobs');
+        queueStep = 'create';
         await queue.createIfNotExists();
+        queueStep = 'send';
         await queue.sendMessage(Buffer.from(JSON.stringify({ uploadId })).toString('base64'));
       } catch (error) {
+        console.error('Chat upload queue failed', {
+          uploadId,
+          step: queueStep,
+          code: typeof error?.code === 'string' && /^[a-z0-9_]{1,80}$/i.test(error.code) ? error.code : undefined,
+          statusCode: Number.isInteger(error?.statusCode) ? error.statusCode : undefined,
+        });
         await failQueuedChatUpload(uploadId);
         throw new Error('Could not queue chat upload processing.', { cause: error });
       }

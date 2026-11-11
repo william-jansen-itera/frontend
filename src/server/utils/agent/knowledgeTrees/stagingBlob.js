@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { getRequiredApplicationIdentifier } from '@/server/utils/applicationIdentifier';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { DefaultAzureCredential } from '@azure/identity';
@@ -34,4 +35,29 @@ export async function uploadStagingBlob({ uploadId, ownerObjectId, fileName, con
 
 export async function deleteStagingBlob(blobName) {
   return getStagingContainer().getBlobClient(blobName).deleteIfExists({ deleteSnapshots: 'include' });
+}
+
+export async function readVerifiedStagingFile({ upload, ownerObjectId }) {
+  if (!upload?.blobName || upload.status !== 'succeeded' ||
+      !Number.isSafeInteger(upload.byteSize) || upload.byteSize < 1 || upload.byteSize > 10 * 1024 * 1024) {
+    throw new Error('The original upload is no longer available. Preview again.');
+  }
+  const blob = getStagingContainer().getBlobClient(upload.blobName);
+  const properties = await blob.getProperties();
+  if (properties.contentLength !== upload.byteSize ||
+      properties.metadata?.uploadid?.toLowerCase() !== String(upload.id).toLowerCase() ||
+      properties.metadata?.ownerobjectid !== ownerObjectId ||
+      properties.metadata?.applicationidentifier !== getRequiredApplicationIdentifier()) {
+    throw new Error('The staged file no longer matches the owned upload. Preview again.');
+  }
+  const bytes = await blob.downloadToBuffer();
+  if (bytes.length !== upload.byteSize || createHash('sha256').update(bytes).digest('hex') !== upload.sha256) {
+    throw new Error('The original uploaded file changed. Preview again.');
+  }
+  return {
+    name: upload.fileName,
+    type: upload.contentType,
+    size: bytes.length,
+    arrayBuffer: async () => bytes,
+  };
 }

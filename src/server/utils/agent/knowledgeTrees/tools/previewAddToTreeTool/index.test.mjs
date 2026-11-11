@@ -3,10 +3,10 @@ import { registerHooks } from 'node:module';
 import test from 'node:test';
 
 const exportsByModule = {
-  treeMutationService: ['previewLeafFromChat'],
+  treeMutationService: ['previewLeafFromChat', 'reviseLeafPreviewPath'],
   chatUploadRepository: ['getOwnedChatUpload'],
   treeCatalog: ['getAuditMetadata'],
-  treePreviewSnapshotRepository: ['storeTreePreviewSnapshot'],
+  treePreviewSnapshotRepository: ['storeTreePreviewSnapshot', 'getTreePreviewSnapshot', 'replaceTreePreviewSnapshot'],
   persistenceToolShared: ['assertWritableRuntimeTree', 'buildPersistenceToolHandlerResult', 'buildTreePreviewToolOutput'],
 };
 
@@ -22,8 +22,9 @@ registerHooks({
 });
 
 const { createPreviewAddToTreeHandler, previewAddToTreeToolDefinition } = await import('./index.js');
+const { createReviseTreePreviewHandler } = await import('../reviseTreePreviewTool/index.js');
 
-function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvesting collects runoff.', writable = true, previewUploadId = null, upload = null } = {}) {
+function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvesting collects runoff.', writable = true, previewUploadId = null, currentUploadId = null, upload = null } = {}) {
   const calls = [];
   globalThis.__previewMocks = {
     getAuditMetadata: () => ({ updatedByObjectId: 'owner' }),
@@ -45,6 +46,7 @@ function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvestin
     principal: { userId: 'owner' },
     currentUserMessage,
     previewUploadId,
+    currentUploadId,
   });
   return { calls, handler };
 }
@@ -61,6 +63,7 @@ test('direct text previews verbatim content and stores only a preview snapshot',
   const result = await handler(directRequest);
   assert.deepEqual(calls.map(([name]) => name), ['access', 'preview', 'snapshot']);
   assert.equal(calls[1][1].broaderAnswer, directRequest.broaderAnswer);
+  assert.equal(calls[2][1].preview.saveKind, 'note');
   assert.equal(calls[2][1].previewId, result.toolOutput.previewId);
   assert.ok(result.toolOutput.previewId);
 });
@@ -79,13 +82,29 @@ test('an accepted prior broad answer remains previewable without appearing in th
   assert.deepEqual(calls.map(([name]) => name), ['access', 'preview', 'snapshot']);
 });
 
-test('completed upload preview uses the owned server note and caption, not agent-supplied content', async () => {
-  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: { status: 'succeeded', note: 'Verified note.', caption: 'Filtered image caption.' } });
+test('completed upload preview uses the owned extracted text and placement evidence, not agent-supplied content', async () => {
+  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: {
+    status: 'succeeded', saveKind: 'note', extractedNoteText: 'Original\ntext.', note: 'Verified note.', caption: 'Filtered image caption.',
+  } });
   await handler({ ...directRequest, broaderAnswer: 'Invented content.', contentSource: 'completed_upload_note', uploadId: 'owned-upload' });
   assert.deepEqual(calls.map(([name]) => name), ['upload', 'access', 'preview', 'snapshot']);
   assert.deepEqual(calls[0][1], { uploadId: 'owned-upload', ownerObjectId: 'owner' });
   assert.equal(calls[2][1].broaderAnswer, 'Verified note.');
   assert.equal(calls[2][1].placementCaption, 'Filtered image caption.');
+  assert.equal(calls[3][1].preview.broaderAnswer, 'Original\ntext.');
+  assert.equal(calls[3][1].preview.saveKind, 'note');
+});
+
+test('attachment preview freezes upload identity and placement evidence without replacing node notes', async () => {
+  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: {
+    status: 'succeeded', saveKind: 'attachment', fileName: 'image.png', byteSize: 4, sha256: 'hash',
+    note: 'A lighthouse.', caption: 'Harbor at dusk.',
+  } });
+  await handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' });
+  assert.equal(calls[3][1].preview.saveKind, 'attachment');
+  assert.equal(calls[3][1].preview.uploadId, 'owned-upload');
+  assert.equal(calls[3][1].preview.placementCaption, 'Harbor at dusk.');
+  assert.equal(calls[3][1].preview.broaderAnswer, 'A lighthouse.');
 });
 
 test('completed upload preview rejects missing authorization and unfinished uploads', async () => {
@@ -122,4 +141,34 @@ test('the published preview tool requires an explicit content source', () => {
   assert.ok(previewAddToTreeToolDefinition.parameters.required.includes('contentSource'));
   assert.ok(previewAddToTreeToolDefinition.parameters.required.includes('uploadId'));
   assert.deepEqual(previewAddToTreeToolDefinition.parameters.properties.contentSource.enum, ['current_user_text', 'prior_broad_answer', 'completed_upload_note']);
+});
+
+test('sparse attachment requires a human topic and does not invent saved notes', async () => {
+  const upload = { status: 'succeeded', saveKind: 'attachment', fileName: 'photo.png', byteSize: 4, sha256: 'hash' };
+  const automated = prepare({ previewUploadId: 'owned-upload', upload });
+  await assert.rejects(automated.handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' }), /human-provided topic/);
+  const human = prepare({ currentUploadId: 'owned-upload', currentUserMessage: 'Please save the harbor photo', upload });
+  await human.handler({ ...directRequest, originalQuestion: 'harbor photo', contentSource: 'completed_upload_note', uploadId: 'owned-upload' });
+  assert.equal(human.calls[2][1].broaderAnswer, 'harbor photo');
+  assert.equal(human.calls[3][1].preview.placementNote, '');
+  assert.equal(human.calls[3][1].preview.broaderAnswer, '');
+});
+
+test('path revision preserves the classified attachment payload', async () => {
+  const { calls } = prepare();
+  const frozen = {
+    treeId: '7', saveKind: 'attachment', uploadId: 'owned-upload', fileName: 'photo.png',
+    byteSize: 4, sha256: 'hash', placementNote: 'Lighthouse.', placementCaption: 'Harbor.', broaderAnswer: 'Lighthouse.',
+  };
+  globalThis.__previewMocks.getTreePreviewSnapshot = async () => frozen;
+  globalThis.__previewMocks.reviseLeafPreviewPath = async () => ({ ...frozen, generatedLeafTitle: 'New photo',
+    saveKind: 'note', uploadId: 'other-upload', placementCaption: 'Altered caption.' });
+  globalThis.__previewMocks.replaceTreePreviewSnapshot = async (args) => { calls.push(['replace', args]); };
+  await createReviseTreePreviewHandler({ includedTreeIds: new Set(['7']), principal: {}, includeDebug: false })({
+    previewId: 'old', requestedPath: 'Knowledge > New photo',
+  });
+  const revised = calls.find(([name]) => name === 'replace')[1].preview;
+  assert.equal(revised.saveKind, 'attachment');
+  assert.equal(revised.uploadId, 'owned-upload');
+  assert.equal(revised.placementCaption, 'Harbor.');
 });

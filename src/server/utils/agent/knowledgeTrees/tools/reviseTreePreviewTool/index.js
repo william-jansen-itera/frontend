@@ -42,11 +42,17 @@ export function createReviseTreePreviewHandler({ includedTreeIds, principal, inc
     }
 
     await assertWritableRuntimeTree({ treeId, principal });
-    const revisedPreview = await reviseLeafPreviewPath({
+    const revisedPlacement = await reviseLeafPreviewPath({
       treeInstanceId: Number.parseInt(treeId, 10),
       preview,
       requestedPath,
     });
+    const revisedPreview = { ...revisedPlacement,
+      saveKind: preview.saveKind, uploadId: preview.uploadId, fileName: preview.fileName,
+      byteSize: preview.byteSize, sha256: preview.sha256, extractedNoteText: preview.extractedNoteText,
+      placementNote: preview.placementNote, placementCaption: preview.placementCaption,
+      broaderAnswer: preview.broaderAnswer,
+    };
     const revisedPreviewId = randomUUID();
     await replaceTreePreviewSnapshot({ previousPreviewId: previewId, previewId: revisedPreviewId, preview: revisedPreview, principal });
 
@@ -54,7 +60,7 @@ export function createReviseTreePreviewHandler({ includedTreeIds, principal, inc
       toolName: reviseTreePreviewToolDefinition.name,
       toolResultType: 'tree_note_preview',
       toolOutput: buildTreePreviewToolOutput(revisedPreviewId, revisedPreview),
-      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath'],
+      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath', 'fileName', 'createLeafNotes'],
       includeDebug,
     });
   };

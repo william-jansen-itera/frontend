@@ -5,7 +5,7 @@ import test from 'node:test';
 registerHooks({
   resolve(specifier, context, nextResolve) {
     const exports = {
-      '@azure/storage-queue': 'export class QueueClient { constructor(connection, queueName) { globalThis.uploadMocks.connection = connection; globalThis.uploadMocks.queueName = queueName; } async createIfNotExists() {} async sendMessage(message) { globalThis.uploadMocks.sent.push(message); } }',
+      '@azure/storage-queue': 'export class QueueClient { constructor(connection, queueName) { globalThis.uploadMocks.connection = connection; globalThis.uploadMocks.queueName = queueName; } async createIfNotExists() { if (globalThis.uploadMocks.createError) throw globalThis.uploadMocks.createError; } async sendMessage(message) { if (globalThis.uploadMocks.sendError) throw globalThis.uploadMocks.sendError; globalThis.uploadMocks.sent.push(message); } }',
       '@/server/utils/agent/agentToolResult': 'export const buildAgentToolResult = (result) => result; export const buildUntrustedContentMeta = () => ({});',
       '@/server/utils/tree/treeCatalog': 'export const getAuditMetadata = (principal) => ({ updatedByObjectId: principal.objectId });',
       '@/server/utils/agent/knowledgeTrees/chatUploadRepository': 'export const getOwnedChatUpload = (...args) => globalThis.uploadMocks.get(...args); export const queueOwnedChatUpload = (...args) => globalThis.uploadMocks.queue(...args); export const failQueuedChatUpload = (...args) => globalThis.uploadMocks.fail(...args);',
@@ -59,4 +59,23 @@ test('queues once, and returns existing status on a repeat call', async () => {
   globalThis.uploadMocks.get = async () => ({ status: 'queued', fileName: 'file.txt' });
   assert.equal((await handler({ uploadId })).data.status, 'queued');
   assert.equal(globalThis.uploadMocks.sent.length, 1);
+});
+
+test('marks a failed enqueue and logs only safe queue diagnostics', async () => {
+  const queueError = Object.assign(new Error('secret connection detail'), { code: 'AuthorizationFailure', statusCode: 403 });
+  globalThis.uploadMocks.sendError = queueError;
+  const originalError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args);
+  try {
+    await assert.rejects(createProcessUploadHandler({ principal, currentUploadId: uploadId })({ uploadId }), (error) => {
+      assert.equal(error.message, 'Could not queue chat upload processing.');
+      assert.equal(error.cause, queueError);
+      return true;
+    });
+  } finally {
+    console.error = originalError;
+  }
+  assert.deepEqual(globalThis.uploadMocks.failed, [uploadId]);
+  assert.deepEqual(logged, [['Chat upload queue failed', { uploadId, step: 'send', code: 'AuthorizationFailure', statusCode: 403 }]]);
 });
