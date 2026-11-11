@@ -62,12 +62,12 @@ test('confirmed short upload merges the frozen extracted text', async () => {
   assert.equal(result.toolResultType, 'tree_note_updated');
 });
 
-test('new attachment leaf gets labeled note and caption with the verified original file', async () => {
+test('new attachment leaf keeps the model text and caption with the verified original file', async () => {
   const { calls, handler } = prepare({ saveKind: 'attachment' });
   const result = await handler({ previewId: 'id', saveMode: 'create_leaf' });
   assert.deepEqual(calls.slice(0, 3), ['lookup', 'verify', 'consume']);
   const created = calls.find((call) => Array.isArray(call) && call[0] === 'create')[1];
-  assert.equal(created.broaderAnswer, 'Placement note:\nPlacement facts.\n\nImage caption:\nFiltered caption.');
+  assert.equal(created.broaderAnswer, 'Placement facts.\n\nFiltered caption.');
   assert.equal(created.attachmentFile.name, 'file.pdf');
   assert.equal(result.toolResultType, 'tree_attachment_saved');
 });

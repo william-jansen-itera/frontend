@@ -16,8 +16,7 @@ export function buildTreePreviewToolOutput(previewId, preview) {
     noteLength: preview.saveKind === 'attachment' ? null : String(preview.broaderAnswer ?? '').length,
     fileName: preview.saveKind === 'attachment' ? preview.fileName : null,
     createLeafNotes: preview.saveKind === 'attachment'
-      ? [preview.placementNote && `Placement note:\n${preview.placementNote}`,
-        preview.placementCaption && `Image caption:\n${preview.placementCaption}`].filter(Boolean).join('\n\n') || null
+      ? [preview.placementNote, preview.placementCaption].filter(Boolean).join('\n\n') || null
       : null,
     existingLeafNotesUnchanged: preview.saveKind === 'attachment',
     createPath,

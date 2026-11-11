@@ -93,8 +93,7 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
       toolName: confirmAddToTreeToolDefinition.name,
       originalQuestion: preview.originalQuestion,
       broaderAnswer: attachmentFile
-        ? [preview.placementNote && `Placement note:\n${preview.placementNote}`,
-          preview.placementCaption && `Image caption:\n${preview.placementCaption}`].filter(Boolean).join('\n\n')
+        ? [preview.placementNote, preview.placementCaption].filter(Boolean).join('\n\n')
         : preview.broaderAnswer,
       placementMode: preview.placementMode,
       selectedAnchorNodeId: preview.selectedAnchorNodeId,

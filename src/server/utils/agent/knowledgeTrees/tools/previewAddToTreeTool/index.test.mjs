@@ -5,7 +5,8 @@ import test from 'node:test';
 const exportsByModule = {
   treeMutationService: ['previewLeafFromChat', 'reviseLeafPreviewPath'],
   chatUploadRepository: ['getOwnedChatUpload'],
-  treeCatalog: ['getAuditMetadata'],
+  treeCatalog: ['getAuditMetadata', 'assertTreeAccess'],
+  agentToolResult: ['buildAgentToolResult', 'buildUntrustedContentMeta'],
   treePreviewSnapshotRepository: ['storeTreePreviewSnapshot', 'getTreePreviewSnapshot', 'replaceTreePreviewSnapshot'],
   persistenceToolShared: ['assertWritableRuntimeTree', 'buildPersistenceToolHandlerResult', 'buildTreePreviewToolOutput'],
 };
@@ -23,6 +24,7 @@ registerHooks({
 
 const { createPreviewAddToTreeHandler, previewAddToTreeToolDefinition } = await import('./index.js');
 const { createReviseTreePreviewHandler } = await import('../reviseTreePreviewTool/index.js');
+const { buildTreePreviewToolOutput: buildActualPreviewOutput } = await import('../persistenceToolShared.js');
 
 function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvesting collects runoff.', writable = true, previewUploadId = null, currentUploadId = null, upload = null } = {}) {
   const calls = [];
@@ -98,13 +100,22 @@ test('completed upload preview uses the owned extracted text and placement evide
 test('attachment preview freezes upload identity and placement evidence without replacing node notes', async () => {
   const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: {
     status: 'succeeded', saveKind: 'attachment', fileName: 'image.png', byteSize: 4, sha256: 'hash',
-    note: 'A lighthouse.', caption: 'Harbor at dusk.',
+    note: 'Placement Note: A lighthouse.', caption: 'Harbor at dusk.',
   } });
   await handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' });
   assert.equal(calls[3][1].preview.saveKind, 'attachment');
   assert.equal(calls[3][1].preview.uploadId, 'owned-upload');
   assert.equal(calls[3][1].preview.placementCaption, 'Harbor at dusk.');
-  assert.equal(calls[3][1].preview.broaderAnswer, 'A lighthouse.');
+  assert.equal(calls[2][1].broaderAnswer, 'Placement Note: A lighthouse.');
+  assert.equal(calls[3][1].preview.placementNote, 'Placement Note: A lighthouse.');
+  assert.equal(calls[3][1].preview.broaderAnswer, 'Placement Note: A lighthouse.');
+});
+
+test('attachment preview output leaves model note and caption text unchanged', () => {
+  const output = buildActualPreviewOutput('preview-id', {
+    saveKind: 'attachment', placementNote: 'Placement Note: A lighthouse.', placementCaption: 'Harbor at dusk.',
+  });
+  assert.equal(output.createLeafNotes, 'Placement Note: A lighthouse.\n\nHarbor at dusk.');
 });
 
 test('completed upload preview rejects missing authorization and unfinished uploads', async () => {

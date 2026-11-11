@@ -71,7 +71,8 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
           (upload.saveKind === 'note' && (!String(upload.extractedNoteText ?? '').trim() || upload.extractedNoteText.length > 4000))) {
         throw new Error('The completed upload classification is not available for preview. Upload the file again.');
       }
-      noteText = String(upload.note ?? '').trim();
+      const placementNote = String(upload.note ?? '').trim();
+      noteText = placementNote;
       placementCaption = String(upload.caption ?? '').trim();
       if (!noteText && !placementCaption) {
         if (previewUploadId || !String(currentUserMessage ?? '').trim() ||
@@ -86,7 +87,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
         fileName: upload.fileName,
         byteSize: upload.byteSize,
         sha256: upload.sha256,
-        placementNote: String(upload.note ?? '').trim(),
+        placementNote,
         placementCaption,
         ...(upload.saveKind === 'note' ? { extractedNoteText: upload.extractedNoteText } : {}),
       };
