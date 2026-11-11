@@ -1008,6 +1008,7 @@ export default function ChatPageClient({ includeDebug }) {
       {
         id: turnId,
         question,
+        attachedFileName: file?.name ?? null,
         originalQuestion: question,
         answer: "",
         debug: null,
@@ -1316,7 +1317,7 @@ export default function ChatPageClient({ includeDebug }) {
             </div>
             <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
               {selectedFile && shouldShowVisibilityControl ? (
-                <div className={styles.selectedFile}>
+                <div className={`${styles.selectedFile} ${isSubmitting ? styles.selectedFileSubmitted : ""}`} aria-hidden={isSubmitting}>
                   <span>{selectedFile.name}</span>
                   <button type="button" className={styles.fileAction} title={t("Upload.Remove")} aria-label={t("Upload.Remove")} onClick={() => setSelectedFile(null)} disabled={isSubmitting}>
                     <X size={16} aria-hidden="true" />
@@ -1440,6 +1441,12 @@ export default function ChatPageClient({ includeDebug }) {
                         <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
                           <p className={styles.messageLabel}>{turn.isBrowserAutomated ? "Browser (automated)" : userMessageLabel}</p>
                           <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>
+                          {turn.attachedFileName ? (
+                            <div className={styles.turnAttachment}>
+                              <Paperclip size={16} aria-hidden="true" />
+                              <span>{turn.attachedFileName}</span>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
 

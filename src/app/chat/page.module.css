@@ -620,6 +620,26 @@
   background: linear-gradient(135deg, rgba(204, 251, 241, 0.92), rgba(219, 234, 254, 0.9));
 }
 
+.turnAttachment {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  min-width: 0;
+  margin-top: 0.65rem;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.turnAttachment svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+.turnAttachment span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .messageBubbleAgent {
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
 }
@@ -1341,6 +1361,10 @@ h6.messageHeading { font-size: 1rem; }
   min-width: 0;
   color: #334155;
   font-size: 0.9rem;
+}
+
+.selectedFileSubmitted {
+  visibility: hidden;
 }
 
 .selectedFile span {
