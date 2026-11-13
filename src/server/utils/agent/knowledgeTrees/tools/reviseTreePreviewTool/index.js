@@ -51,6 +51,8 @@ export function createReviseTreePreviewHandler({ includedTreeIds, principal, inc
       saveKind: preview.saveKind, uploadId: preview.uploadId, fileName: preview.fileName,
       byteSize: preview.byteSize, sha256: preview.sha256, extractedNoteText: preview.extractedNoteText,
       placementNote: preview.placementNote, placementCaption: preview.placementCaption,
+      userDescription: preview.userDescription, userClarification: preview.userClarification,
+      incomingNotes: preview.incomingNotes,
       broaderAnswer: preview.broaderAnswer,
     };
     const revisedPreviewId = randomUUID();
@@ -60,7 +62,7 @@ export function createReviseTreePreviewHandler({ includedTreeIds, principal, inc
       toolName: reviseTreePreviewToolDefinition.name,
       toolResultType: 'tree_note_preview',
       toolOutput: buildTreePreviewToolOutput(revisedPreviewId, revisedPreview),
-      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath', 'fileName', 'createLeafNotes'],
+      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath', 'fileName', 'createLeafNotes', 'incomingNotes'],
       includeDebug,
     });
   };

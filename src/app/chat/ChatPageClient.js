@@ -43,8 +43,8 @@ function getAgentChatTranslator(responseLanguage, appLanguage, appTranslator) {
       : null;
   return selectedLanguage && selectedLanguage !== appLanguage ? chatTranslators[selectedLanguage] : appTranslator;
 }
-function buildUploadCompletionMessage(uploadId, note, caption, t) {
-  return t("Upload.AutomatedCompletion", { uploadId, evidence: JSON.stringify({ note, caption }) });
+function buildUploadCompletionMessage(uploadId, note, caption, fileName, t) {
+  return t("Upload.AutomatedCompletion", { uploadId, evidence: JSON.stringify({ note, caption, fileName }) });
 }
 
 let fallbackTurnSequence = 0;
@@ -77,7 +77,7 @@ async function waitForUploadNote(uploadId) {
       throw new Error(payload?.error || `Could not read upload status (${response.status})`);
     }
     if (payload.status === "succeeded") {
-      return { note: String(payload.note || "").trim(), caption: String(payload.caption || "").trim() || null };
+      return { note: String(payload.note || "").trim(), caption: String(payload.caption || "").trim() || null, fileName: String(payload.fileName || "").trim() };
     }
     if (payload.status === "failed" || payload.status === "expired") {
       throw new Error(payload.failureSummary || `File processing ${payload.status}.`);
@@ -102,7 +102,9 @@ async function continueCompletedUpload(uploadId, message, label, language, visib
   });
   const payload = await parseApiResponseBody(response);
   if (!response.ok) {
-    throw new Error(payload?.error || `Could not continue completed upload (${response.status})`);
+    const error = new Error(payload?.error || `Could not continue completed upload (${response.status})`);
+    error.debug = payload?.debug ?? null;
+    throw error;
   }
   return payload;
 }
@@ -116,7 +118,6 @@ function createUploadCompletionTurn(message, label, responseLanguage) {
     isPermissionToBroadenRequest: false, isWaitingForContinuation: false, createdAt: Date.now(), isPending: true,
   };
 }
-
 function finishUploadCompletionTurn(turn, completion, uploadId) {
   return {
     ...turn,
@@ -277,7 +278,7 @@ function buildTimingDebugEntries({ timings, toolCalls }) {
     : [];
 
   const extraTimingEntries = Object.entries(timings ?? {})
-    .filter(([key, value]) => !["requestStartedAt", "requestCompletedAt", "totalDurationMs", "modelCalls", "phases"].includes(key))
+    .filter(([key]) => !["requestStartedAt", "requestCompletedAt", "totalDurationMs", "modelCalls", "phases"].includes(key))
     .filter(([, value]) => value && typeof value === "object" && !Array.isArray(value) && ("startedAt" in value || "durationMs" in value))
     .map(([key, value]) => ({
       key: `extra-${key}`,
@@ -332,35 +333,6 @@ function buildTimingDebugJson({ timings, toolCalls, orderedEntries }) {
       Object.entries(timings ?? {}).filter(([key]) => !["requestStartedAt", "requestCompletedAt", "totalDurationMs", "modelCalls", "phases"].includes(key)),
     ),
   };
-}
-
-function formatDateTimeTimestamp(value) {
-  if (!value) {
-    return "n/a";
-  }
-
-  const dateValue = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(dateValue.getTime())) {
-    return "n/a";
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(dateValue);
-}
-
-function getErrorMessage(error, fallbackMessage) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return fallbackMessage;
 }
 
 function getCitationBreadcrumbParts(citation) {
@@ -892,19 +864,6 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugCompactState = isDebugEmpty || isDebugPending;
   const shouldShowVisibilityControl = chatFamily === "knowledgeTrees";
 
-  const loadAvailableFamilies = async () => {
-    const payload = await fetchAvailableChatFamilies();
-    const nextFamilies = Array.isArray(payload?.families) ? payload.families : [];
-    const nextDefaultFamily = resolvePreferredDefaultChatFamily(nextFamilies, payload?.defaultFamily);
-
-    setAvailableChatFamilies(nextFamilies);
-    setChatFamily((currentFamily) => normalizeChatFamilySelection(
-      requestedFamilyParam || currentFamily,
-      nextFamilies,
-      nextDefaultFamily,
-    ));
-  };
-
   const handleVisibilityChange = (event) => {
     const nextVisibility = setVisibility(event.target.value);
     const nextSearchParams = new URLSearchParams(searchParams.toString());
@@ -1009,14 +968,14 @@ export default function ChatPageClient({ includeDebug }) {
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [availableChatFamilies, chatFamily, defaultChatFamily, pathname, requestedFamilyParam, router, searchParams]);
 
-  async function submitTurn({ question, message, file }) {
+  async function submitTurn({ question, message, file, hasTypedUploadMessage = false }) {
     const turnId = createTurnId();
     const submittedLanguage = language;
     let completionTurnId = null;
+    let uploadId = null;
     let stagedUpload = false;
     const history = buildHistoryFromTurns(turns);
     const requestId = createRequestId();
-    const requestStartedAt = new Date().toISOString();
 
     setIsSubmitting(true);
     setRequestError(null);
@@ -1047,7 +1006,7 @@ export default function ChatPageClient({ includeDebug }) {
     ]));
 
     try {
-      let uploadId = !file && chatFamily === "knowledgeTrees" ? turns.at(-1)?.availableUploadId ?? null : null;
+      const pendingUploadId = !file && chatFamily === "knowledgeTrees" ? turns.at(-1)?.availableUploadId ?? null : null;
       if (file) {
         setUploadStatus(t("Upload.Staging"));
         const formData = new FormData();
@@ -1073,7 +1032,8 @@ export default function ChatPageClient({ includeDebug }) {
           family: chatFamily,
           language: submittedLanguage,
           visibility,
-          ...(uploadId ? { uploadId } : {}),
+          ...(uploadId ? { uploadId, hasTypedUploadMessage } : {}),
+          ...(pendingUploadId ? { pendingUploadId } : {}),
         }),
       });
 
@@ -1104,6 +1064,7 @@ export default function ChatPageClient({ includeDebug }) {
             isPersistenceOffer: payload?.isPersistenceOffer === true,
             isPermissionToBroadenRequest: payload?.isPermissionToBroadenRequest === true,
             isWaitingForContinuation: payload?.isWaitingForContinuation === true,
+            availableUploadId: pendingUploadId && !payload?.toolInvocations?.some((invocation) => invocation.toolName === "preview_save_to_tree" && invocation.resultCount > 0) ? pendingUploadId : null,
             originalQuestion: turn.originalQuestion,
             error: null,
             isPending: false,
@@ -1111,9 +1072,9 @@ export default function ChatPageClient({ includeDebug }) {
           : turn
       )));
       if (uploadId) {
-        const { note, caption } = await waitForUploadNote(uploadId);
+        const { note, caption, fileName } = await waitForUploadNote(uploadId);
         const completionTranslator = getAgentChatTranslator(payload?.responseLanguage, submittedLanguage, t);
-        const completionMessage = buildUploadCompletionMessage(uploadId, note, caption, completionTranslator);
+        const completionMessage = buildUploadCompletionMessage(uploadId, note, caption, fileName, completionTranslator);
         const completionTurn = createUploadCompletionTurn(
           completionMessage, completionTranslator("Upload.AutomatedLabel"), payload?.responseLanguage ?? submittedLanguage,
         );
@@ -1146,6 +1107,7 @@ export default function ChatPageClient({ includeDebug }) {
             knowledgeMode: KNOWLEDGE_MODE_GROUNDED,
             isPersistenceOffer: false,
             isPermissionToBroadenRequest: false,
+            availableUploadId: completionTurnId && uploadId ? uploadId : null,
             isPending: false,
           }
           : turn
@@ -1261,6 +1223,7 @@ export default function ChatPageClient({ includeDebug }) {
       question: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
       message: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
       file: shouldShowVisibilityControl ? selectedFile : null,
+      hasTypedUploadMessage: Boolean(message && shouldShowVisibilityControl && selectedFile),
     });
   }
 

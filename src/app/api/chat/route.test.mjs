@@ -14,7 +14,10 @@ const modules = new Map([
   ['logging', 'export const logException = async () => {}; export const logStructuredTrace = async () => {}; export const logTrace = async () => {};'],
   ['auth', 'export const requireAuthenticatedPrincipal = () => ({ userId: "owner" });'],
   ['treeCatalog', 'export const getAuditMetadata = () => ({ updatedByObjectId: "00000000-0000-0000-0000-000000000001" });'],
-  ['chatUploadRepository', 'export const getOwnedChatUpload = async () => globalThis.__chatRouteUploadOwned ? { id: "owned" } : null;'],
+  ['chatUploadRepository', `
+    export const getOwnedChatUpload = async () => globalThis.__chatRouteUploadOwned ? { id: "owned", status: globalThis.__chatRouteUploadStatus || "succeeded" } : null;
+    export const bindChatUploadHumanMessage = async (options) => { globalThis.__chatRouteBindings.push(options); };
+  `],
 ]);
 
 registerHooks({
@@ -47,6 +50,7 @@ test('chat route forwards supported locales and defaults unsupported or missing 
 
 test('locale cannot bypass upload ownership for an automated completion', async () => {
   globalThis.__chatRouteCalls = [];
+  globalThis.__chatRouteBindings = [];
   globalThis.__chatRouteUploadOwned = false;
   const body = {
     family: 'knowledgeTrees',
@@ -66,4 +70,27 @@ test('locale cannot bypass upload ownership for an automated completion', async 
   body.message = 'Browser (automatisk): uploaden er færdigbehandlet';
   assert.equal((await POST(request())).status, 200);
   assert.equal(globalThis.__chatRouteCalls[1].message, body.message);
+});
+
+test('only the initial typed upload message is bound; an owned completed clarification does not reprocess', async () => {
+  globalThis.__chatRouteCalls = [];
+  globalThis.__chatRouteBindings = [];
+  globalThis.__chatRouteUploadOwned = true;
+  globalThis.__chatRouteUploadStatus = 'succeeded';
+  const uploadId = '00000000-0000-0000-0000-000000000002';
+  const request = (body) => new Request('http://localhost/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ family: 'knowledgeTrees', ...body }),
+  });
+  assert.equal((await POST(request({ message: 'A fishing trip', uploadId, hasTypedUploadMessage: true }))).status, 200);
+  assert.deepEqual(globalThis.__chatRouteBindings, [{ uploadId, ownerObjectId: '00000000-0000-0000-0000-000000000001', message: 'A fishing trip' }]);
+  assert.equal((await POST(request({ message: 'Default browser request', uploadId }))).status, 200);
+  assert.equal(globalThis.__chatRouteBindings.length, 1);
+  assert.equal((await POST(request({ message: 'It is a trout.', pendingUploadId: uploadId }))).status, 200);
+  assert.equal(globalThis.__chatRouteCalls.at(-1).pendingUploadId, uploadId);
+  assert.equal(globalThis.__chatRouteCalls.at(-1).uploadId, null);
+  assert.equal(globalThis.__chatRouteBindings.length, 1);
+  globalThis.__chatRouteUploadStatus = 'running';
+  assert.equal((await POST(request({ message: 'It is a trout.', pendingUploadId: uploadId }))).status, 404);
+  globalThis.__chatRouteUploadOwned = false;
+  assert.equal((await POST(request({ message: 'It is a trout.', pendingUploadId: uploadId }))).status, 404);
 });

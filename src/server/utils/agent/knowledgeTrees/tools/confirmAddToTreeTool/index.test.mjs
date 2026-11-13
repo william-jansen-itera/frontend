@@ -28,9 +28,12 @@ function prepare({ saveKind = 'note', mergeTarget = null, expired = false } = {}
   const calls = [];
   const preview = {
     treeId: '7', treeName: 'Knowledge', originalQuestion: 'Where does this belong?',
-    broaderAnswer: 'Original\ntext.', saveKind, uploadId: 'upload', fileName: 'file.pdf',
+    broaderAnswer: saveKind === 'note' ? 'Document extraction (verbatim):\nOriginal\ntext.' : 'Placement facts.',
+    saveKind, uploadId: 'upload', fileName: 'file.pdf',
     byteSize: 4, sha256: 'hash', extractedNoteText: saveKind === 'note' ? 'Original\ntext.' : undefined,
     placementNote: 'Placement facts.', placementCaption: 'Filtered caption.',
+    incomingNotes: saveKind === 'note' ? 'Document extraction (verbatim):\nOriginal\ntext.'
+      : 'Processed placement note:\nPlacement facts.\n\nGenerated image caption:\nFiltered caption.',
     createPath: 'Knowledge > New leaf', mergeTarget,
   };
   const upload = {
@@ -51,23 +54,24 @@ function prepare({ saveKind = 'note', mergeTarget = null, expired = false } = {}
     createTreeNodeAttachment: async (args) => { calls.push(['attach', args]); return { notes: 'Unchanged' }; },
     buildPersistenceToolHandlerResult: (args) => args,
   };
-  return { calls, preview, handler: createConfirmAddToTreeHandler({ includedTreeIds: new Set(['7']), principal: {}, includeDebug: false }) };
+  return { calls, preview, upload, handler: createConfirmAddToTreeHandler({ includedTreeIds: new Set(['7']), principal: {}, includeDebug: false }) };
 }
 
-test('confirmed short upload merges the frozen extracted text', async () => {
+test('confirmed short upload merges the frozen labeled incoming notes', async () => {
   const { calls, handler, preview } = prepare({ mergeTarget: { nodeId: '3', breadcrumb: 'Knowledge > Existing' } });
   const result = await handler({ previewId: 'id', saveMode: 'merge_existing' });
-  assert.equal(calls.find((call) => Array.isArray(call) && call[0] === 'merge')[1].preview.broaderAnswer, 'Original\ntext.');
+  assert.equal(calls.find((call) => Array.isArray(call) && call[0] === 'merge')[1].preview.incomingNotes, preview.incomingNotes);
+  assert.equal(preview.broaderAnswer, preview.incomingNotes);
   assert.equal(preview.placementNote, 'Placement facts.');
   assert.equal(result.toolResultType, 'tree_note_updated');
 });
 
-test('new attachment leaf keeps the model text and caption with the verified original file', async () => {
-  const { calls, handler } = prepare({ saveKind: 'attachment' });
+test('new attachment leaf saves the frozen incoming notes with the verified original file', async () => {
+  const { calls, preview, handler } = prepare({ saveKind: 'attachment' });
   const result = await handler({ previewId: 'id', saveMode: 'create_leaf' });
   assert.deepEqual(calls.slice(0, 3), ['lookup', 'verify', 'consume']);
   const created = calls.find((call) => Array.isArray(call) && call[0] === 'create')[1];
-  assert.equal(created.broaderAnswer, 'Placement facts.\n\nFiltered caption.');
+  assert.equal(created.broaderAnswer, preview.incomingNotes);
   assert.equal(created.attachmentFile.name, 'file.pdf');
   assert.equal(result.toolResultType, 'tree_attachment_saved');
 });
@@ -81,6 +85,28 @@ test('existing attachment leaf receives only the file, preserving its notes', as
   assert.equal(result.toolResultType, 'tree_attachment_saved');
 });
 
+test('new upload note and attachment leaf save the same frozen labeled notes shown at preview', async () => {
+  for (const saveKind of ['note', 'attachment']) {
+    const { calls, preview, upload, handler } = prepare({ saveKind });
+    preview.incomingNotes = 'User description:\nA river\n\nProcessed placement note:\nFreshwater fishing';
+    preview.userDescription = 'A river';
+    upload.originalHumanMessage = 'A river';
+    const created = await handler({ previewId: 'id', saveMode: 'create_leaf' });
+    assert.equal(calls.find((call) => Array.isArray(call) && call[0] === 'create')[1].broaderAnswer, preview.incomingNotes);
+    assert.equal(created.toolResultType, saveKind === 'note' ? 'tree_note_created' : 'tree_attachment_saved');
+  }
+});
+
+test('existing attachment leaf leaves notes unchanged even with frozen incoming notes', async () => {
+  const { calls, preview, handler } = prepare({ saveKind: 'attachment', mergeTarget: {
+    nodeId: '3', breadcrumb: 'Knowledge > Existing', notesFingerprint: 'fingerprint',
+  } });
+  preview.incomingNotes = 'User description:\nA river';
+  await handler({ previewId: 'id', saveMode: 'merge_existing' });
+  assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'attach'));
+  assert.ok(!calls.some((call) => Array.isArray(call) && call[0] === 'merge'));
+});
+
 test('expired upload fails before consuming the preview or writing', async () => {
   const { calls, handler } = prepare({ saveKind: 'attachment', expired: true });
   await assert.rejects(handler({ previewId: 'id', saveMode: 'create_leaf' }), /changed or expired/);
@@ -92,4 +118,13 @@ test('unclassified previews are rejected without consuming or writing', async ()
   delete preview.saveKind;
   await assert.rejects(handler({ previewId: 'id', saveMode: 'create_leaf' }), /no classified save action/);
   assert.deepEqual(calls, []);
+});
+
+test('upload previews without frozen incoming notes are rejected before consuming or writing', async () => {
+  for (const saveKind of ['note', 'attachment']) {
+    const { calls, preview, handler } = prepare({ saveKind });
+    delete preview.incomingNotes;
+    await assert.rejects(handler({ previewId: 'id', saveMode: 'create_leaf' }), /valid frozen incoming notes/);
+    assert.deepEqual(calls, []);
+  }
 });

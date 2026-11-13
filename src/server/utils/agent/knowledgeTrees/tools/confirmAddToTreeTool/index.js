@@ -42,6 +42,10 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
         (offeredPreview.saveKind === 'attachment' && !offeredPreview.uploadId)) {
       throw new Error('The preview has no classified save action. Request a new preview.');
     }
+    if (offeredPreview.uploadId && (typeof offeredPreview.incomingNotes !== 'string' ||
+        !offeredPreview.incomingNotes.trim() || offeredPreview.incomingNotes.length > 4000)) {
+      throw new Error('The upload preview has no valid frozen incoming notes. Preview again.');
+    }
     const createAvailable = Boolean(offeredPreview.createPath) &&
       offeredPreview.createPath.toLowerCase() !== offeredPreview.mergeTarget?.breadcrumb?.toLowerCase();
     if ((saveMode !== 'merge_existing' || !offeredPreview.mergeTarget) &&
@@ -55,6 +59,8 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
       if (!upload || upload.status !== 'succeeded' || upload.saveKind !== offeredPreview.saveKind ||
           upload.fileName !== offeredPreview.fileName || upload.byteSize !== offeredPreview.byteSize ||
           upload.sha256 !== offeredPreview.sha256 ||
+          String(upload.originalHumanMessage ?? '').trim() !== String(offeredPreview.userDescription ?? '').trim() &&
+            !String(upload.originalHumanMessage ?? '').includes(String(offeredPreview.userDescription ?? '')) ||
           (upload.saveKind === 'note' && upload.extractedNoteText !== offeredPreview.extractedNoteText)) {
         throw new Error('The owned upload has changed or expired. Preview again.');
       }
@@ -92,9 +98,7 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
       principal,
       toolName: confirmAddToTreeToolDefinition.name,
       originalQuestion: preview.originalQuestion,
-      broaderAnswer: attachmentFile
-        ? [preview.placementNote, preview.placementCaption].filter(Boolean).join('\n\n')
-        : preview.broaderAnswer,
+      broaderAnswer: preview.uploadId ? preview.incomingNotes : preview.broaderAnswer,
       placementMode: preview.placementMode,
       selectedAnchorNodeId: preview.selectedAnchorNodeId,
       selectedAnchorBreadcrumb: preview.selectedAnchorBreadcrumb,
@@ -102,7 +106,7 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
       plannedLeafParentBreadcrumb: preview.plannedLeafParentBreadcrumb,
       generatedLeafTitle: preview.generatedLeafTitle,
       attachmentFile,
-      preserveNoteWhitespace: preview.saveKind === 'note' && Boolean(preview.uploadId),
+      preserveNoteWhitespace: Boolean(preview.uploadId),
     });
     const noteSearchParams = new URLSearchParams({
       treeId: String(savedLeaf.treeId),

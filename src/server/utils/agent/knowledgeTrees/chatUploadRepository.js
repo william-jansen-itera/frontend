@@ -37,7 +37,8 @@ export async function getOwnedChatUpload({ uploadId, ownerObjectId }) {
       SELECT TOP 1 u.id, u.file_name AS fileName, u.content_type AS contentType,
         u.byte_size AS byteSize, u.sha256, u.blob_name AS blobName,
         u.save_kind AS saveKind, u.extracted_note_text AS extractedNoteText,
-        u.status, u.note, u.caption, u.failure_summary AS failureSummary,
+        u.status, u.note, u.caption, u.original_human_message AS originalHumanMessage,
+        u.failure_summary AS failureSummary,
         u.expires_at AS expiresAt
       FROM dbo.chat_uploads u
       INNER JOIN dbo.application_instance ai ON ai.id = u.application_instance_id
@@ -47,6 +48,42 @@ export async function getOwnedChatUpload({ uploadId, ownerObjectId }) {
     `));
 
   return result.recordset[0] ?? null;
+}
+
+export async function bindChatUploadHumanMessage({ uploadId, ownerObjectId, message }) {
+  const text = String(message ?? '').trim();
+  if (!text) {
+    throw new Error('A human upload message is required.');
+  }
+  const result = await withSqlConnection(() => new sql.Request()
+    .input('id', sql.UniqueIdentifier, uploadId)
+    .input('owner_object_id', sql.NVarChar(100), ownerObjectId)
+    .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+    .input('message', sql.NVarChar(sql.MAX), text)
+    .query(`
+      UPDATE u SET original_human_message = @message
+      FROM dbo.chat_uploads u
+      INNER JOIN dbo.application_instance ai ON ai.id = u.application_instance_id
+      WHERE u.id = @id AND u.owner_object_id = @owner_object_id
+        AND ai.app_identifier = @application_identifier
+        AND u.expires_at > SYSUTCDATETIME()
+        AND u.status = N'staged'
+        AND u.original_human_message IS NULL;
+
+      SELECT TOP 1 u.original_human_message AS originalHumanMessage
+      FROM dbo.chat_uploads u
+      INNER JOIN dbo.application_instance ai ON ai.id = u.application_instance_id
+      WHERE u.id = @id AND u.owner_object_id = @owner_object_id
+        AND ai.app_identifier = @application_identifier
+        AND u.expires_at > SYSUTCDATETIME();
+    `));
+  const storedMessage = result.recordset?.[0]?.originalHumanMessage;
+  if (storedMessage == null) {
+    throw new Error('The original upload message can only be bound before processing starts.');
+  }
+  if (storedMessage !== text) {
+    throw new Error('The original upload message cannot be changed.');
+  }
 }
 
 export async function queueOwnedChatUpload({ uploadId, ownerObjectId }) {

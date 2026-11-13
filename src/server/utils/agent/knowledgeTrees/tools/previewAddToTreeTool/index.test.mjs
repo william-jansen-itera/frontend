@@ -26,7 +26,7 @@ const { createPreviewAddToTreeHandler, previewAddToTreeToolDefinition } = await 
 const { createReviseTreePreviewHandler } = await import('../reviseTreePreviewTool/index.js');
 const { buildTreePreviewToolOutput: buildActualPreviewOutput } = await import('../persistenceToolShared.js');
 
-function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvesting collects runoff.', writable = true, previewUploadId = null, currentUploadId = null, upload = null } = {}) {
+function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvesting collects runoff.', writable = true, previewUploadId = null, currentUploadId = null, pendingUploadId = null, upload = null } = {}) {
   const calls = [];
   globalThis.__previewMocks = {
     getAuditMetadata: () => ({ updatedByObjectId: 'owner' }),
@@ -49,6 +49,7 @@ function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvestin
     currentUserMessage,
     previewUploadId,
     currentUploadId,
+    pendingUploadId,
   });
   return { calls, handler };
 }
@@ -93,7 +94,9 @@ test('completed upload preview uses the owned extracted text and placement evide
   assert.deepEqual(calls[0][1], { uploadId: 'owned-upload', ownerObjectId: 'owner' });
   assert.equal(calls[2][1].broaderAnswer, 'Verified note.');
   assert.equal(calls[2][1].placementCaption, 'Filtered image caption.');
-  assert.equal(calls[3][1].preview.broaderAnswer, 'Original\ntext.');
+  assert.equal(calls[3][1].preview.incomingNotes,
+    'Document extraction (verbatim):\nOriginal\ntext.\n\nProcessed placement note:\nVerified note.\n\nGenerated image caption:\nFiltered image caption.');
+  assert.equal(calls[3][1].preview.broaderAnswer, calls[3][1].preview.incomingNotes);
   assert.equal(calls[3][1].preview.saveKind, 'note');
 });
 
@@ -109,13 +112,59 @@ test('attachment preview freezes upload identity and placement evidence without 
   assert.equal(calls[2][1].broaderAnswer, 'Placement Note: A lighthouse.');
   assert.equal(calls[3][1].preview.placementNote, 'Placement Note: A lighthouse.');
   assert.equal(calls[3][1].preview.broaderAnswer, 'Placement Note: A lighthouse.');
+  assert.equal(calls[2][1].uploadContext.fileName, 'image.png');
+  assert.ok(!calls[3][1].preview.incomingNotes.includes('image.png'));
 });
 
-test('attachment preview output leaves model note and caption text unchanged', () => {
+test('attachment preview output uses only the frozen incoming notes', () => {
   const output = buildActualPreviewOutput('preview-id', {
-    saveKind: 'attachment', placementNote: 'Placement Note: A lighthouse.', placementCaption: 'Harbor at dusk.',
+    saveKind: 'attachment', uploadId: 'owned-upload', incomingNotes: 'Generated image caption:\nHarbor at dusk.',
+    placementNote: 'Placement Note: A lighthouse.', placementCaption: 'Harbor at dusk.',
   });
-  assert.equal(output.createLeafNotes, 'Placement Note: A lighthouse.\n\nHarbor at dusk.');
+  assert.equal(output.createLeafNotes, output.incomingNotes);
+});
+
+test('completed upload freezes verified human context separately from generated image evidence', async () => {
+  const { calls, handler } = prepare({ pendingUploadId: 'owned-upload', currentUserMessage: 'It is a trout.', upload: {
+    status: 'succeeded', saveKind: 'attachment', originalHumanMessage: 'Please save this fishing photo.',
+    note: '', caption: 'A fish in a stream.', fileName: 'rainbow-trout.jpg',
+  } });
+  await handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload',
+    userDescription: 'fishing photo', userClarification: 'trout' });
+  const placement = calls[2][1];
+  assert.deepEqual(placement.uploadContext, {
+    userDescription: 'fishing photo', userClarification: 'trout', placementNote: '', placementCaption: 'A fish in a stream.', fileName: 'rainbow-trout.jpg',
+  });
+  const incomingNotes = calls[3][1].preview.incomingNotes;
+  assert.equal(incomingNotes, 'User description:\nfishing photo\n\nUser clarification:\ntrout\n\nGenerated image caption:\nA fish in a stream.');
+  assert.ok(!incomingNotes.includes('rainbow-trout.jpg'));
+  assert.equal(calls[3][1].preview.placementNote, '');
+  assert.equal(calls[3][1].preview.userClarification, 'trout');
+});
+
+test('upload rejects invented human excerpts and treats opt-outs as no new detail', async () => {
+  const upload = { status: 'succeeded', saveKind: 'attachment', originalHumanMessage: 'A fish', caption: 'Fish in water' };
+  const { handler, calls } = prepare({ pendingUploadId: 'owned-upload', currentUserMessage: 'use what is available', upload });
+  const request = { ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' };
+  await assert.rejects(handler({ ...request, userDescription: 'trout' }), /original human message/);
+  await assert.rejects(handler({ ...request, userClarification: 'invented species' }), /current human reply/);
+  await handler({ ...request, userClarification: 'use what is available' });
+  assert.equal(calls.at(-1)[1].preview.userClarification, '');
+  assert.equal(calls.at(-1)[1].preview.userDescription, '');
+  for (const answer of ['yes', 'no', 'ja', 'nej']) {
+    const reply = prepare({ pendingUploadId: 'owned-upload', currentUserMessage: answer, upload });
+    await reply.handler({ ...request, userClarification: answer });
+    assert.equal(reply.calls.at(-1)[1].preview.userClarification, '');
+    assert.equal(reply.calls.at(-1)[1].preview.incomingNotes, 'Generated image caption:\nFish in water');
+  }
+});
+
+test('preview rejects a labeled note that exceeds storage capacity without truncating extraction', async () => {
+  const { calls, handler } = prepare({ previewUploadId: 'owned-upload', upload: {
+    status: 'succeeded', saveKind: 'note', extractedNoteText: 'x'.repeat(3990), note: 'Short note',
+  } });
+  await assert.rejects(handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' }), /exceed 4000/);
+  assert.deepEqual(calls.map(([name]) => name), ['upload']);
 });
 
 test('completed upload preview rejects missing authorization and unfinished uploads', async () => {
@@ -158,11 +207,11 @@ test('sparse attachment requires a human topic and does not invent saved notes',
   const upload = { status: 'succeeded', saveKind: 'attachment', fileName: 'photo.png', byteSize: 4, sha256: 'hash' };
   const automated = prepare({ previewUploadId: 'owned-upload', upload });
   await assert.rejects(automated.handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload' }), /human-provided topic/);
-  const human = prepare({ currentUploadId: 'owned-upload', currentUserMessage: 'Please save the harbor photo', upload });
-  await human.handler({ ...directRequest, originalQuestion: 'harbor photo', contentSource: 'completed_upload_note', uploadId: 'owned-upload' });
+  const human = prepare({ pendingUploadId: 'owned-upload', currentUserMessage: 'Please save the harbor photo', upload });
+  await human.handler({ ...directRequest, originalQuestion: 'harbor photo', contentSource: 'completed_upload_note', uploadId: 'owned-upload', userClarification: 'harbor photo' });
   assert.equal(human.calls[2][1].broaderAnswer, 'harbor photo');
   assert.equal(human.calls[3][1].preview.placementNote, '');
-  assert.equal(human.calls[3][1].preview.broaderAnswer, '');
+  assert.equal(human.calls[3][1].preview.userClarification, 'harbor photo');
 });
 
 test('path revision preserves the classified attachment payload', async () => {
@@ -170,6 +219,7 @@ test('path revision preserves the classified attachment payload', async () => {
   const frozen = {
     treeId: '7', saveKind: 'attachment', uploadId: 'owned-upload', fileName: 'photo.png',
     byteSize: 4, sha256: 'hash', placementNote: 'Lighthouse.', placementCaption: 'Harbor.', broaderAnswer: 'Lighthouse.',
+    userDescription: 'Harbor photo', userClarification: 'At dusk', incomingNotes: 'User description:\nHarbor photo',
   };
   globalThis.__previewMocks.getTreePreviewSnapshot = async () => frozen;
   globalThis.__previewMocks.reviseLeafPreviewPath = async () => ({ ...frozen, generatedLeafTitle: 'New photo',
@@ -182,4 +232,7 @@ test('path revision preserves the classified attachment payload', async () => {
   assert.equal(revised.saveKind, 'attachment');
   assert.equal(revised.uploadId, 'owned-upload');
   assert.equal(revised.placementCaption, 'Harbor.');
+  assert.equal(revised.userDescription, 'Harbor photo');
+  assert.equal(revised.userClarification, 'At dusk');
+  assert.equal(revised.incomingNotes, 'User description:\nHarbor photo');
 });

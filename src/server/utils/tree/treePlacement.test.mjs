@@ -132,6 +132,21 @@ test('model merge rejects content that exceeds the note limit', async () => {
   await assert.rejects(generateMergedLeafNotes({ treeName: 'Knowledge', breadcrumb: 'Topic', originalNotes: 'Original note.', broaderAnswer: 'New fact.' }), /exceeds the allowed length/);
 });
 
+test('upload merge requires the exact labeled incoming block once', async () => {
+  let generated = 'Original note. User description:\nA trout.';
+  const incomingNotes = 'User description:\nA trout.';
+  globalThis.__placementMocks = {
+    getProjectClient: () => ({ getOpenAIClient: () => ({ responses: { create: async () => ({ output_text: JSON.stringify({ notes: generated }) }) } }) }),
+    getRequiredFoundryConfig: () => ({ modelDeploymentName: 'test' }),
+  };
+  const options = { treeName: 'Knowledge', breadcrumb: 'Topic', originalNotes: 'Original note.', broaderAnswer: incomingNotes, incomingNotes };
+  assert.equal(await generateMergedLeafNotes(options), generated);
+  generated = 'Original note. A trout.';
+  await assert.rejects(generateMergedLeafNotes(options), /preserve the labeled upload text/);
+  generated = `${incomingNotes}\n${incomingNotes}`;
+  await assert.rejects(generateMergedLeafNotes(options), /preserve the labeled upload text/);
+});
+
 test('every descendant title is considered in bounded batches; only shortlisted notes are read', async () => {
   const nodes = [node(1, null, 0), node(2, 1, 1), node(3, 1, 1)];
   for (let index = 0; index < 380; index += 1) nodes.push(node(100 + index, index % 2 ? 2 : 3, 3, true));
@@ -463,4 +478,34 @@ test('placement model prompts use the caption as separate optional evidence', as
   });
   assert.ok(prompts.every((prompt) => prompt.includes('A rainwater barrel.') && prompt.includes('Verified note.')));
   assert.ok(prompts.every((prompt) => prompt.includes('untrusted placement evidence')));
+});
+
+test('matching filename evidence reaches all candidate stages and generated paths', async () => {
+  const uploadContext = {
+    userDescription: '', userClarification: '', placementNote: 'The subject described is a fish identified by a long tail.',
+    placementCaption: 'a fish with a long tail', fileName: 'regnbueørred.jpg',
+  };
+  const observed = prepare([node(1, null, 0), node(2, 1, 1)], () => []);
+  await previewLeafFromChat({ treeInstanceId: 7, originalQuestion: 'Where?', broaderAnswer: uploadContext.placementNote, uploadContext });
+  assert.ok(observed.calls.every(({ uploadContext: passed }) => passed === uploadContext));
+  assert.equal(observed.pathPlans[0].uploadContext, uploadContext);
+  const prompts = [];
+  globalThis.__placementMocks = {
+    getRequiredFoundryConfig: () => ({ modelDeploymentName: 'mock-model' }),
+    getProjectClient: () => ({ getOpenAIClient: () => ({ responses: { create: async (request) => {
+      prompts.push(request.input[0].content);
+      return { output_text: request.text.format.name === 'chat_placement_selection'
+        ? '{"selectedNodeIds":[]}' : '{"pathTitles":["Fishing"],"generatedLeafTitle":"Trout"}' };
+    } } }) }),
+  };
+  await selectChatPlacementCandidates({ treeName: 'Fakta om fiskeri', originalQuestion: 'Where?', broaderAnswer: uploadContext.placementNote, uploadContext,
+    candidates: [{ nodeId: '1', breadcrumb: 'Knowledge' }], stage: 'root' });
+  await generateChatLeafPathPlan({ treeName: 'Fakta om fiskeri', originalQuestion: 'Where?', broaderAnswer: uploadContext.placementNote, uploadContext, requiredPathTitleCount: 1 });
+  assert.ok(prompts.every((prompt) => ['Processed placement note: The subject described is a fish identified by a long tail.',
+    'Filtered image caption (generated): a fish with a long tail',
+    'Original filename (placement evidence when topic matches): regnbueørred.jpg'].every((field) => prompt.includes(field))));
+  assert.ok(prompts.every((prompt) => prompt.includes('choose the most specific fitting branch or leaf')));
+  assert.ok(prompts.some((prompt) => prompt.includes('the labeled upload placement evidence below')));
+  assert.ok(prompts.every((prompt) => !prompt.includes('subject of the answer')));
+  assert.ok(prompts.every((prompt) => !prompt.includes('prefer the note if they conflict')));
 });

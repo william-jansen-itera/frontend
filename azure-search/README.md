@@ -29,6 +29,8 @@ Before using these in the portal or REST:
 - Keep custom blob metadata source field names lowercase in the blob indexer: `sourcetype`, `treeid`, `nodeid`, `blobname`, `applicationidentifier`.
 - After changing skillsets, indexer mappings, or source metadata, use `Reset` and then `Run` on the blob indexer.
 
+VS Code Azure MCP access: The dev Search service `mds-ai-search-dev-wj` is in subscription `03a40ea8-84cc-4182-85a2-a8d0c61ceb76`, tenant `a18232f7-c6f8-48da-b8e1-838c7fac8ab1`. To check the tenant for another subscription, open that subscription in the Azure portal and read its **Tenant ID** on the Overview or Properties page. In VS Code, run **Preferences: Open User Settings (JSON)** from the Command Palette and add `"@azure.argTenant": "a18232f7-c6f8-48da-b8e1-838c7fac8ab1"` inside the existing JSON object (with a comma if needed). Fully restart VS Code and the Azure MCP server. The tenant setting does not select a subscription; select the dev subscription separately if it is not the default. Do not run `Powershell/Delete-ChatUploadSearchDocument.ps1` to test access: it deletes a document.
+
 Current design notes:
 - Deep links are computed in the app from `treeId` and `nodeId`.
 - SQL and blob records live in the same index but use different document keys.

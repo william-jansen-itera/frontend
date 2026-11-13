@@ -7,7 +7,7 @@ import {
 import { logException, logStructuredTrace, logTrace } from '@/server/utils/logging';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
-import { getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
+import { bindChatUploadHumanMessage, getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
 
 export const runtime = 'nodejs';
 
@@ -132,8 +132,19 @@ export async function POST(request) {
     const history = normalizeHistory(payload?.history);
     const principal = requireAuthenticatedPrincipal(request);
     const uploadId = String(payload?.uploadId ?? '').trim() || null;
+    const pendingUploadId = String(payload?.pendingUploadId ?? '').trim() || null;
+    const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+    if (pendingUploadId) {
+      if (family !== 'knowledgeTrees' || uploadId || previewUploadId || !ownerObjectId ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pendingUploadId)) {
+        return createChatJsonResponse({ error: 'Upload was not found or has expired.' }, { status: 404, requestId, includeDebug });
+      }
+      const pendingUpload = await getOwnedChatUpload({ uploadId: pendingUploadId, ownerObjectId });
+      if (pendingUpload?.status !== 'succeeded') {
+        return createChatJsonResponse({ error: 'Upload was not found or has not completed.' }, { status: 404, requestId, includeDebug });
+      }
+    }
     if (previewUploadId) {
-      const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
       if (family !== 'knowledgeTrees' || uploadId || !ownerObjectId ||
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(previewUploadId)) {
         return createChatJsonResponse({ error: 'Upload was not found or has expired.' }, { status: 404, requestId, includeDebug });
@@ -144,11 +155,13 @@ export async function POST(request) {
       }
     }
     if (uploadId) {
-      const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
       if (family !== 'knowledgeTrees' || !ownerObjectId ||
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uploadId) ||
           !await getOwnedChatUpload({ uploadId, ownerObjectId })) {
         return createChatJsonResponse({ error: 'Upload was not found or has expired.' }, { status: 404, requestId, includeDebug });
+      }
+      if (payload?.hasTypedUploadMessage === true) {
+        await bindChatUploadHumanMessage({ uploadId, ownerObjectId, message });
       }
     }
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route invoking agent family', {
@@ -167,6 +180,7 @@ export async function POST(request) {
       requestId,
       uploadId,
       previewUploadId,
+      pendingUploadId,
     });
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route received agent family result', {
       toolsUsedCount: Array.isArray(result?.toolsUsed) ? result.toolsUsed.length : null,

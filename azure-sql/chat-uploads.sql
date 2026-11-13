@@ -34,3 +34,8 @@ IF COL_LENGTH('dbo.chat_uploads', 'caption') IS NULL
 BEGIN
   ALTER TABLE dbo.chat_uploads ADD caption NVARCHAR(2000) NULL;
 END;
+
+IF COL_LENGTH('dbo.chat_uploads', 'original_human_message') IS NULL
+BEGIN
+  ALTER TABLE dbo.chat_uploads ADD original_human_message NVARCHAR(MAX) NULL;
+END;

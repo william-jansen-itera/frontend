@@ -229,6 +229,17 @@ test('a preview must report its actual destination and marker before confirmatio
   assert.equal(await validator({ response, toolInvocations }), null);
 });
 
+test('an upload preview must display the entire frozen incoming notes block', async () => {
+  const validator = await getValidator();
+  const incomingNotes = 'User description:\nA river\n\nGenerated image caption:\nA trout';
+  const toolInvocations = [{ toolName: 'preview_save_to_tree', output: { toolResultType: 'tree_note_preview', data: {
+    previewId: 'test-id', defaultSavePath: 'Knowledge > Trout', incomingNotes,
+  } } }];
+  const reply = (text) => savedResponse(`${text}\n\n<!-- Preview ID: test-id -->`, 'Reporting the upload preview.', 'previewed');
+  assert.match(await validator({ response: reply('Knowledge > Trout?'), toolInvocations }), /complete incomingNotes block/);
+  assert.equal(await validator({ response: reply(`Knowledge > Trout?\n\n${incomingNotes}`), toolInvocations }), null);
+});
+
 test('a failed confirm cannot be presented as a completed save', async () => {
   const validator = await getValidator();
   const error = await validator({
