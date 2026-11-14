@@ -6,9 +6,10 @@ const exportsByModule = {
   treeMutationService: ['createLeafNodeFromChat', 'createTreeNodeAttachment', 'mergeLeafNodeFromChat', 'normalizeUpdatedByMetadata'],
   chatUploadRepository: ['getOwnedChatUpload'],
   stagingBlob: ['readVerifiedStagingFile'],
-  treeCatalog: ['getAuditMetadata'],
+  treeCatalog: ['getAuditMetadata', 'assertTreeAccess'],
+  agentToolResult: ['buildAgentToolResult', 'buildUntrustedContentMeta'],
   treePreviewSnapshotRepository: ['consumeTreePreviewSnapshot', 'getTreePreviewSnapshot'],
-  persistenceToolShared: ['assertWritableRuntimeTree', 'buildPersistenceToolHandlerResult'],
+  persistenceToolShared: ['assertWritableRuntimeTree', 'buildPersistenceToolHandlerResult', 'buildTreePreviewToolOutput'],
 };
 
 registerHooks({
@@ -23,6 +24,7 @@ registerHooks({
 });
 
 const { createConfirmAddToTreeHandler } = await import('./index.js');
+const { buildTreePreviewToolOutput } = await import('../persistenceToolShared.js');
 
 function prepare({ saveKind = 'note', mergeTarget = null, expired = false } = {}) {
   const calls = [];
@@ -35,6 +37,7 @@ function prepare({ saveKind = 'note', mergeTarget = null, expired = false } = {}
     incomingNotes: saveKind === 'note' ? 'Document extraction (verbatim):\nOriginal\ntext.'
       : 'Processed placement note:\nPlacement facts.\n\nGenerated image caption:\nFiltered caption.',
     createPath: 'Knowledge > New leaf', mergeTarget,
+    defaultSaveMode: mergeTarget ? 'merge_existing' : 'create_leaf',
   };
   const upload = {
     id: 'upload', status: 'succeeded', saveKind, fileName: 'file.pdf', byteSize: 4,
@@ -53,6 +56,7 @@ function prepare({ saveKind = 'note', mergeTarget = null, expired = false } = {}
     createLeafNodeFromChat: async (args) => { calls.push(['create', args]); return { treeId: '7', createdNodeId: '4' }; },
     createTreeNodeAttachment: async (args) => { calls.push(['attach', args]); return { notes: 'Unchanged' }; },
     buildPersistenceToolHandlerResult: (args) => args,
+    buildTreePreviewToolOutput,
   };
   return { calls, preview, upload, handler: createConfirmAddToTreeHandler({ includedTreeIds: new Set(['7']), principal: {}, includeDebug: false }) };
 }
@@ -83,6 +87,40 @@ test('existing attachment leaf receives only the file, preserving its notes', as
   assert.equal(calls.find((call) => Array.isArray(call) && call[0] === 'attach')[1].expectedTarget, target);
   assert.ok(!calls.some((call) => Array.isArray(call) && call[0] === 'merge'));
   assert.equal(result.toolResultType, 'tree_attachment_saved');
+});
+
+test('unoffered merge is rejected before upload lookup, preview consumption, or saving', async () => {
+  for (const saveKind of ['note', 'attachment']) {
+    const { calls, handler } = prepare({ saveKind });
+    await assert.rejects(handler({ previewId: 'id', saveMode: 'merge_existing' }), /save mode was not offered/);
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('unoffered creation returns exact merge recovery arguments without consuming or saving', async () => {
+  for (const saveKind of ['note', 'attachment']) {
+    const { calls, preview, handler } = prepare({ saveKind,
+      mergeTarget: { nodeId: '3', breadcrumb: 'Knowledge > Existing' } });
+    preview.createPath = null;
+    if (saveKind === 'note') {
+      delete preview.uploadId;
+      preview.incomingNotes = null;
+    }
+    await assert.rejects(handler({ previewId: 'id', saveMode: 'create_leaf' }), (error) => {
+      assert.match(error.message, /save mode was not offered/);
+      assert.match(error.message, /preview was not consumed/);
+      assert.match(error.message, /"availableSaveModes":\["merge_existing"\]/);
+      assert.match(error.message, /"defaultConfirmArguments":\{"previewId":"id","saveMode":"merge_existing"\}/);
+      assert.match(error.message, /If the human approved the default, retry confirm_save_to_tree/);
+      assert.match(error.message, /wait for approval of that new preview/);
+      return true;
+    });
+    assert.deepEqual(calls, []);
+    const result = await handler({ previewId: 'id', saveMode: 'merge_existing' });
+    assert.equal(result.toolResultType, saveKind === 'note' ? 'tree_note_updated' : 'tree_attachment_saved');
+    assert.equal(calls.filter((call) => call === 'consume').length, 1);
+    assert.ok(!calls.some((call) => Array.isArray(call) && call[0] === 'create'));
+  }
 });
 
 test('new upload note and attachment leaf save the same frozen labeled notes shown at preview', async () => {

@@ -6,24 +6,25 @@ import { consumeTreePreviewSnapshot, getTreePreviewSnapshot } from '@/server/uti
 import {
   assertWritableRuntimeTree,
   buildPersistenceToolHandlerResult,
+  buildTreePreviewToolOutput,
 } from '@/server/utils/agent/knowledgeTrees/tools/persistenceToolShared';
 
 export const confirmAddToTreeToolDefinition = {
   type: 'function',
   name: 'confirm_save_to_tree',
-  description: 'Save only after the user approves the preview shown in the immediately preceding assistant reply with its Preview ID marker. A yes to a broad answer\'s save offer requires preview_save_to_tree first; it does not authorize confirmation. Choose the offered default mode for an unqualified yes (merge if offered), or create_leaf only if it was offered and the user explicitly requests a separate note. Use only the latest previewId, including a revised previewId when the path was changed. Failures after confirmation require a new preview.',
+  description: 'Save only after the user approves the preview shown in the immediately preceding assistant reply with its Preview ID marker. A yes to a broad answer\'s save offer requires preview_save_to_tree first; it does not authorize confirmation, even when an older preview exists in history. Never invent a previewId or reuse an older preview for newer content. Choose saveMode only from that preview\'s availableSaveModes. If exactly one mode is offered, use that exact value. Otherwise use defaultSaveMode unless the human explicitly chooses another offered mode. For an unqualified approval, copy defaultConfirmArguments exactly. Never infer the mode from file type, path wording, or previous previews. Use only the latest previewId, including a revised previewId when the path was changed. Follow tool error recovery guidance; a missing or invalid ID is not proof of expiry.',
   strict: true,
   parameters: {
     type: 'object',
     properties: {
       previewId: {
         type: 'string',
-        description: 'The exact latest previewId returned by preview_save_to_tree or revise_save_preview. Pass only this id so the server can load the cached preview snapshot.',
+        description: 'Copy the exact previewId of the latest human-approved preview returned by preview_save_to_tree or revise_save_preview, never an older previewId.',
       },
       saveMode: {
         type: 'string',
         enum: ['merge_existing', 'create_leaf'],
-        description: 'The approved mode: use defaultSaveMode for an unqualified yes; choose create_leaf instead of an offered merge only when create_leaf was offered and the user explicitly requests a separate note.',
+        description: 'Copy the sole value in the latest approved preview\'s availableSaveModes. If multiple modes are offered, use defaultConfirmArguments.saveMode unless the human explicitly chooses another offered mode. Never infer the mode from file type or path wording.',
       },
     },
     required: ['previewId', 'saveMode'],
@@ -50,7 +51,8 @@ export function createConfirmAddToTreeHandler({ includedTreeIds, principal, incl
       offeredPreview.createPath.toLowerCase() !== offeredPreview.mergeTarget?.breadcrumb?.toLowerCase();
     if ((saveMode !== 'merge_existing' || !offeredPreview.mergeTarget) &&
         (saveMode !== 'create_leaf' || !createAvailable)) {
-      throw new Error('That save mode was not offered for this preview. Request a new preview.');
+      const { availableSaveModes, defaultConfirmArguments } = buildTreePreviewToolOutput(previewId, offeredPreview);
+      throw new Error(`That save mode was not offered for this preview. Nothing was saved and the preview was not consumed. ${JSON.stringify({ availableSaveModes, defaultConfirmArguments })}. If the human approved the default, retry confirm_save_to_tree with these exact defaultConfirmArguments. Do not silently substitute a mode. If the human requested an unoffered action, use revise_save_preview for a different complete path and wait for approval of that new preview.`);
     }
     let attachmentFile = null;
     if (offeredPreview.uploadId) {

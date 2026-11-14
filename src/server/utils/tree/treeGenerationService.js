@@ -81,11 +81,12 @@ export async function selectChatPlacementCandidates({ treeName, originalQuestion
   let modelCall = null;
   return generateValidatedResponse(async () => {
     const project = getProjectClient();
-    const { modelDeploymentName } = getRequiredFoundryConfig();
+    const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
     modelCall = onModelCall ? { stage, candidateCount: candidates.length } : null;
     if (modelCall) onModelCall(modelCall);
     return project.getOpenAIClient().responses.create({
       model: modelDeploymentName,
+      ...(reasoning ? { reasoning } : {}),
       input: [{ type: 'message', role: 'system', content: prompt }],
       text: { verbosity: 'medium', format: { type: 'json_schema', name: 'chat_placement_selection', strict: true, schema: CHAT_PLACEMENT_SELECTION_SCHEMA } },
     });
@@ -469,10 +470,11 @@ function buildRootBranchPrompt({ treeName, description, rootTitle }) {
 async function requestGeneratedRootTitles(tree) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',
@@ -498,10 +500,11 @@ async function requestGeneratedRootTitles(tree) {
 async function requestGeneratedRootBranch(tree, rootTitle) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',
@@ -554,11 +557,12 @@ function buildChildNodeGenerationPrompt({ treeName, breadcrumbTitles, generateLe
 async function requestGeneratedChildTitles({ treeName, breadcrumbTitles, generateLeafChildren = false }) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
   const maxChildren = generateLeafChildren ? MAX_GENERATED_LEAF_CHILDREN_PER_NODE : MAX_GENERATED_CHILDREN_PER_NODE;
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',
@@ -638,10 +642,11 @@ function buildChatAnswerLeafNoteGenerationPrompt({ treeName, breadcrumbTitles, o
 async function requestGeneratedLeafNotes({ treeName, breadcrumbTitles }) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',
@@ -664,10 +669,11 @@ async function requestGeneratedLeafNotes({ treeName, breadcrumbTitles }) {
 async function requestGeneratedLeafNotesFromChatAnswer({ treeName, breadcrumbTitles, originalQuestion, broaderAnswer }) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',
@@ -770,9 +776,10 @@ function buildChatLeafPathPlanPrompt({
     'Use concise titles.',
     'Avoid duplicate titles within the generated path.',
     'Do not generate notes, explanations, numbering, or extra properties.',
-    'The generated leaf title must be a short noun phrase, not a sentence or summary.',
-    'Use only a few words. Prefer about 3 to 6 words, and never exceed 8 words.',
-    'Prefer a leaf title that adds the specific topic without repeating terms already clear from the fixed anchor and generated structural path. Keep a repeated term only when needed to identify the topic.',
+    'The generated leaf title must be the shortest clear topic name within the full ancestor path, not a sentence, caption, or summary.',
+    'A single word is sufficient when it identifies the topic. Do not pad the title to reach a preferred length; never exceed 8 words.',
+    'Do not repeat information already clear from the fixed anchor and generated structural path, or include self-evident context and incidental visual details from a caption.',
+    'Include a qualifier only when it distinguishes a materially different topic or the human explicitly requests it. Preserve necessary multiword names and distinguishing terms; do not strip meaningful specificity just to shorten the title.',
     `Keep every generated title within ${MAX_GENERATED_TITLE_LENGTH} characters.`,
     '',
     'Tree title:',
@@ -810,10 +817,11 @@ function buildChatLeafPathPlanSchema(requiredPathTitleCount) {
 async function requestChatLeafAnchorSelection({ treeName, originalQuestion, broaderAnswer, candidates }) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',
@@ -844,10 +852,11 @@ async function requestChatLeafPathPlan({
 }) {
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
 
   return openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',
@@ -1036,9 +1045,10 @@ export function validateGeneratedLeafNotesPayload(payload) {
 
 export async function generateMergedLeafNotes({ treeName, breadcrumb, originalNotes, broaderAnswer, incomingNotes = null }) {
   const project = getProjectClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
   const response = await project.getOpenAIClient().responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [{
       type: 'message',
       role: 'system',

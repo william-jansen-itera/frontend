@@ -280,9 +280,10 @@ async function analyzeMessagesWithModel(messages) {
 
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
-  const { modelDeploymentName } = getRequiredFoundryConfig();
+  const { modelDeploymentName, reasoning } = getRequiredFoundryConfig();
   const response = await openAIClient.responses.create({
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     input: [
       {
         type: 'message',

@@ -1419,6 +1419,7 @@ export default function ChatPageClient({ includeDebug }) {
                           ) : (
                             <AgentAnswerContent
                               answer={turn.answer || t("NoAnswer")}
+                              translate={getAgentChatTranslator(turn.responseLanguage, language, t)}
                               keyPrefix={`${turn.id}-answer`}
                               textClassName={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}
                             />

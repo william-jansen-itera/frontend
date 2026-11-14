@@ -205,11 +205,12 @@ When both explicit message fields and a draft uid are present, treat the draft a
 }
 
 function buildEmailPromptAgentDefinition() {
-  const { modelDeploymentName } = getRequiredFoundryFamilyConfig(EMAIL_FAMILY);
+  const { modelDeploymentName, reasoning } = getRequiredFoundryFamilyConfig(EMAIL_FAMILY);
 
   return {
     kind: 'prompt',
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     instructions: buildEmailAgentInstructions(),
     tools: buildEmailToolDefinitions(),
   };

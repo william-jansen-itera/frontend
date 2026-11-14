@@ -24,6 +24,8 @@ Required Foundry settings:
 - `AZURE_AI_PROJECT_ENDPOINT`
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME`
 
+For the deployment named exactly `gpt-5.4`, frontend model calls and published prompt agents explicitly use `reasoning.effort=medium`. The upload-processing and tree-population Function workers apply the same setting. Other deployment names, including `gpt-4.1`, receive no reasoning override. Deploy the updated frontend and workers, and republish each agent to apply this change; no additional application setting is required. Prompts, schemas, and workflow validation are unchanged by this reasoning setting.
+
 Tree Populate reuses the server-only `AZURE_STORAGE_CONNECTION_STRING` for its Storage Queue; the Function queue worker uses `AzureWebJobsStorage`, which must point to the same storage account. The frontend submits a job ID to the queue and polls its own API for SQL-backed status; it does not call a Populate Function HTTP endpoint, so no additional Function URL or key is needed. The existing purge and secret HTTP functions still use their own URLs and keys. Apply `azure-sql/tree-jobs.sql` and deploy/configure the Function queue worker before enabling the asynchronous frontend route. The shared `tree_jobs` table records typed tree jobs; the Populate worker uses `job_type = 'populate'`. Populate generation uses the Function App's Foundry endpoint/model settings and identity, not the browser; job submission and polling remain authorized by tree write access.
 
 For Populate, enable the Function App's system-assigned managed identity and grant it **Foundry User** (formerly **Azure AI User**) on the Foundry resource. The Function worker uses that identity for Foundry calls when no service-principal credentials are configured on the Function App; the frontend's credentials are not required there.
@@ -32,6 +34,10 @@ Optional chat settings:
 
 - `AZURE_AI_AGENT_NAME` defaults to `tree-search-agent`
 - `APPLICATION_DEBUG` controls whether debug data is included in chat and search responses
+
+Reply-language instructions treat a standalone human `ja` as Danish (`responseLanguage="da"`), regardless of the app-language fallback. Matching ignores case, surrounding whitespace, and trailing punctuation; an explicit language request still wins. This language rule does not change approval or tool-permission handling.
+
+Chat displays the confirm tool's "View note" and "View attachment" links using the same agent-selected language translator as its waiting messages (Danish/English, with the app-language fallback). Only the displayed label is localized; the tool output, saved content, and destination URL remain unchanged. This browser-only change does not require agent republication.
 
 Optional Azure AI Search settings:
 
@@ -521,7 +527,7 @@ When `delete_email` moves a message from Inbox to Trash, IMAP assigns it a Trash
 ### Knowledge Trees Tools
 
 - `search_tree_<name>_<id>` is generated for each accessible tree with a published description. It searches that tree's notes and attachments for evidence to answer grounded questions; available tools depend on the user's tree access and visibility scope.
-- `preview_save_to_tree` proposes a location for factual text supplied in the current user message, for an already-delivered broad answer after the user accepts its save offer, or for a completed chat upload's classified note or attachment. For direct text, the server checks that the proposed note text is present verbatim in the current message. For an upload, the server verifies ownership and completion and freezes the stored classification and payload rather than trusting agent-supplied content. If no tree was named, the agent selects the best fit from available trees or asks when the choice is ambiguous. It returns a preview ID; previewing does not write a tree node or attachment.
+- `preview_save_to_tree` proposes a location for factual text supplied in the current user message, for an already-delivered broad answer after the user accepts its save offer, or for a completed chat upload's classified note or attachment. Select `contentSource` by the origin of the substantive text: a yes to a broad answer's save offer uses `prior_broad_answer` and the answer from history, not `current_user_text` or the approval wording. Do not require the user to repeat an available answer. For direct text, the server checks that the proposed note text is present verbatim in the current message; a rejected source selection must be corrected explicitly, not silently reclassified. For an upload, the server verifies ownership and completion and freezes the stored classification and payload rather than trusting agent-supplied content. If no tree was named, the agent selects the best fit from available trees or asks when the choice is ambiguous. It returns a preview ID; previewing does not write a tree node or attachment.
 - `revise_save_preview` accepts a user's complete `>`-separated path (optionally starting with the tree name) after a preview. The path must end with the note title at the configured leaf depth. It reuses existing branches, previews any missing intermediate nodes, and replaces the previous preview ID; users can revise again before saving.
 - `confirm_save_to_tree` creates or updates the note, or attaches the verified original file, from the saved preview after the user separately confirms the proposed destination. A missing or stale preview ID requires a new preview.
 

@@ -158,6 +158,7 @@
       "Thinking": "Tænker...", "Send": "Send", "Start": "Start en samtale", "EmptyWithInspector": "Samtalen vises her.",
       "Empty": "Samtalehistorikken og kildehenvisninger vises her, når du stiller spørgsmål.",
       "Status": { "Pending": "Afventer", "Waiting": "Venter", "Error": "Fejl", "Complete": "Færdig" }, "Waiting": "Jeg arbejder på det...", "NoAnswer": "Intet svar modtaget.",
+      "SavedLinks": { "ViewNote": "Vis note", "ViewAttachment": "Vis vedhæftning" },
       "Approval": { "Trash": "Flyt {count} mails til papirkurven?", "Permanent": "Slet {count} mails permanent? Dette kan ikke fortrydes.", "Details": "Gennemse mails", "Account": "Konto: {provider}", "Folder": "Mappe: {folder}", "Approve": "Godkend", "Cancel": "Annuller" },
       "Inspector": "Samtaleinspektion", "InspectorIntro": "Se præcis, hvordan agenten søgte, udvalgte kilder og dannede svaret."
     },

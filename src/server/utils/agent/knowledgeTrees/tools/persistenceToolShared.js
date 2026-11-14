@@ -21,8 +21,8 @@ export function buildTreePreviewToolOutput(previewId, preview) {
     createPath,
     mergePath,
     defaultSaveMode: preview.defaultSaveMode,
+    defaultConfirmArguments: { previewId, saveMode: preview.defaultSaveMode },
     defaultSavePath: preview.defaultSaveMode === 'merge_existing' ? mergePath : createPath,
-    differentPathSaveMode: 'create_leaf',
     availableSaveModes: preview.mergeTarget
       ? (!createPath
         ? ['merge_existing'] : ['merge_existing', 'create_leaf'])

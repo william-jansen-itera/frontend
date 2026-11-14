@@ -25,6 +25,7 @@ export function getRequiredFoundryConfig() {
     projectEndpoint,
     modelDeploymentName,
     agentName,
+    ...(modelDeploymentName === 'gpt-5.4' ? { reasoning: { effort: 'medium' } } : {}),
   };
 }
 

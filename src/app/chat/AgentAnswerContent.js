@@ -129,7 +129,7 @@ function AttachmentImage({ src, alt }) {
   );
 }
 
-export function AgentAnswerContent({ answer, keyPrefix, textClassName }) {
+export function AgentAnswerContent({ answer, keyPrefix, textClassName, translate }) {
   const heading = ({ node, children }) => {
     const Tag = node.tagName;
     return <Tag className={styles.messageHeading}>{children}</Tag>;
@@ -151,9 +151,18 @@ export function AgentAnswerContent({ answer, keyPrefix, textClassName }) {
         h4: heading,
         h5: heading,
         h6: heading,
-        a: ({ href, children }) => href
-          ? <a href={href} target="_blank" rel="noreferrer" className={styles.inlineAttachmentLink}>{children}</a>
-          : <span>{children}</span>,
+        a: ({ href, children }) => {
+          const label = href?.startsWith("/notes?") && translate
+            ? children === "View note"
+              ? translate("SavedLinks.ViewNote")
+              : children === "View attachment"
+                ? translate("SavedLinks.ViewAttachment")
+                : children
+            : children;
+          return href
+            ? <a href={href} target="_blank" rel="noreferrer" className={styles.inlineAttachmentLink}>{label}</a>
+            : <span>{label}</span>;
+        },
         img: ({ src, alt }) => <AttachmentImage src={src} alt={alt} />,
         table: ({ children }) => (
           <div className={styles.messageTableWrapper}>

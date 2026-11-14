@@ -43,6 +43,7 @@ registerHooks({
 const { createLeafNodeFromChat, previewLeafFromChat, updateTreeNodeDetails } = await import('./treeMutationService.js');
 const { generateChatLeafPathPlan, generateMergedLeafNotes, selectChatPlacementCandidates } = await import('./treeGenerationService.js');
 const { copyPublicTreeRecords, updateUnchangedLeafNotes } = await import('./treeRecordRepository.js');
+const { getRequiredFoundryConfig: getActualFoundryConfig } = await import('../foundryAgentClient.js');
 
 function prepare(nodes, choose) {
   const calls = [];
@@ -509,4 +510,77 @@ test('matching filename evidence reaches all candidate stages and generated path
   assert.ok(prompts.some((prompt) => prompt.includes('the labeled upload placement evidence below')));
   assert.ok(prompts.every((prompt) => !prompt.includes('subject of the answer')));
   assert.ok(prompts.every((prompt) => !prompt.includes('prefer the note if they conflict')));
+});
+
+test('new leaf titles use ancestor context without padding or dropping meaningful qualifiers', async () => {
+  const prompts = [];
+  let title = 'Pike';
+  globalThis.__placementMocks = {
+    getRequiredFoundryConfig: () => ({ modelDeploymentName: 'mock-model' }),
+    getProjectClient: () => ({ getOpenAIClient: () => ({ responses: { create: async (request) => {
+      prompts.push(request.input[0].content);
+      return { output_text: JSON.stringify({ pathTitles: [], generatedLeafTitle: title }) };
+    } } }) }),
+  };
+  const uploadContext = {
+    userDescription: '', userClarification: '', placementNote: 'A green fish in water.',
+    placementCaption: 'a green fish in water', fileName: 'pike_w.jpg',
+  };
+  const options = {
+    treeName: 'Fishing', originalQuestion: 'Save the upload', broaderAnswer: uploadContext.placementNote,
+    uploadContext, anchorBreadcrumbTitles: ['Fish species', 'Freshwater', 'Edible fish'], requiredPathTitleCount: 0,
+  };
+  assert.equal((await generateChatLeafPathPlan(options)).generatedLeafTitle, 'Pike');
+  title = 'Pike spawning grounds';
+  uploadContext.userDescription = 'Focus on pike spawning grounds.';
+  assert.equal((await generateChatLeafPathPlan(options)).generatedLeafTitle, title);
+  for (const prompt of prompts) {
+    assert.match(prompt, /shortest clear topic name within the full ancestor path/);
+    assert.match(prompt, /A single word is sufficient/);
+    assert.match(prompt, /incidental visual details from a caption/);
+    assert.match(prompt, /qualifier only when it distinguishes a materially different topic or the human explicitly requests it/);
+    assert.match(prompt, /Preserve necessary multiword names and distinguishing terms/);
+    assert.doesNotMatch(prompt, /Prefer about 3 to 6 words/);
+    assert.ok(prompt.includes('Fish species > Freshwater > Edible fish'));
+    assert.ok(prompt.includes('Filtered image caption (generated): a green fish in water'));
+  }
+  assert.equal(uploadContext.placementNote, 'A green fish in water.');
+});
+
+test('GPT-5.4 placement calls enable medium reasoning without changing GPT-4.1 requests or prompts', async (t) => {
+  const keys = ['AZURE_AI_PROJECT_ENDPOINT', 'AZURE_AI_MODEL_DEPLOYMENT_NAME'];
+  const original = keys.map((key) => process.env[key]);
+  t.after(() => keys.forEach((key, index) => {
+    if (original[index] === undefined) delete process.env[key];
+    else process.env[key] = original[index];
+  }));
+  process.env.AZURE_AI_PROJECT_ENDPOINT = 'https://project.example';
+  const requestsByModel = [];
+  for (const model of ['gpt-4.1', 'gpt-5.4']) {
+    process.env.AZURE_AI_MODEL_DEPLOYMENT_NAME = model;
+    const requests = [];
+    globalThis.__placementMocks = {
+      getRequiredFoundryConfig: getActualFoundryConfig,
+      getProjectClient: () => ({ getOpenAIClient: () => ({ responses: { create: async (request) => {
+        requests.push(request);
+        return { output_text: request.text.format.name === 'chat_placement_selection'
+          ? '{"selectedNodeIds":["1"]}' : '{"pathTitles":[],"generatedLeafTitle":"Pike"}' };
+      } } }) }),
+    };
+    await selectChatPlacementCandidates({
+      treeName: 'Fishing', originalQuestion: 'Save the upload', broaderAnswer: 'A green fish in water.',
+      candidates: [{ nodeId: '1', breadcrumb: 'Fish species' }], stage: 'root',
+    });
+    await generateChatLeafPathPlan({
+      treeName: 'Fishing', originalQuestion: 'Save the upload', broaderAnswer: 'A green fish in water.',
+      anchorBreadcrumbTitles: ['Fish species', 'Freshwater', 'Edible fish'], requiredPathTitleCount: 0,
+    });
+    for (const request of requests) {
+      assert.equal(request.model, model);
+      if (model === 'gpt-5.4') assert.deepEqual(request.reasoning, { effort: 'medium' });
+      else assert.ok(!Object.hasOwn(request, 'reasoning'));
+    }
+    requestsByModel.push(requests.map(({ model, reasoning, ...rest }) => rest));
+  }
+  assert.deepEqual(requestsByModel[0], requestsByModel[1]);
 });

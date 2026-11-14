@@ -79,11 +79,12 @@ export function listDefinedInvestmentTools() {
 }
 
 function buildInvestmentPromptAgentDefinition() {
-  const { modelDeploymentName } = getRequiredFoundryFamilyConfig(INVESTMENT_FAMILY);
+  const { modelDeploymentName, reasoning } = getRequiredFoundryFamilyConfig(INVESTMENT_FAMILY);
 
   return {
     kind: 'prompt',
     model: modelDeploymentName,
+    ...(reasoning ? { reasoning } : {}),
     instructions: buildInvestmentAgentInstructions(),
     tools: buildInvestmentToolDefinitions(),
   };

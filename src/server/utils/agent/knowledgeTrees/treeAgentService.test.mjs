@@ -41,7 +41,9 @@ test('latest user message sets reply language for both human and automated turns
     assert.match(instruction, /explicit language request.*first/);
     assert.match(instruction, /otherwise use the language of that message if clear/);
     assert.match(instruction, new RegExp(`selected app language, ${language}`));
-    assert.doesNotMatch(instruction, /Danish/);
+    assert.match(instruction, /standalone human reply "ja" \(case-insensitive, allowing surrounding whitespace and trailing punctuation\) as Danish/);
+    assert.match(instruction, /set responseLanguage="da", and cite "ja" as the signal in languageReason instead of using the app-language fallback/);
+    assert.match(instruction, /An explicit language request still takes precedence/);
     assert.match(instruction, /latest user message first/);
     assert.match(instruction, /check that your own answer prose uses the selected language/);
     assert.match(instruction, /do not invent a reason or attribute language to uploaded evidence/);
@@ -140,27 +142,31 @@ test('automated preview rejects a language report that conflicts with its locali
   assert.match(await danishValidator({ response, toolInvocations: [] }), /browser-generated message is in da/);
 });
 
-async function getValidator(uploadId = null, previewUploadId = null, message = 'Yes, save it.') {
+async function getValidator(uploadId = null, previewUploadId = null, message = 'Yes, save it.', {
+  history = [], pendingUploadId = null, handlerMap = null, runExecution = null,
+} = {}) {
   let validator;
   globalThis.__treeServiceMocks = {
     appendDebugStep: () => {},
+    attachDebugToError: (error) => error,
     getProjectClient: () => ({ getOpenAIClient: () => ({}) }),
     getPublishedKnowledgeTreesPromptAgent: async () => ({ name: 'test-agent' }),
-    buildRuntimeTreeToolContext: async () => ({ handlerMap: new Map(['process_upload', 'preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree'].map((name) => [name, () => {}])), toolPolicies: new Map(), includedTrees: [] }),
+    buildRuntimeTreeToolContext: async () => ({ handlerMap: handlerMap ?? new Map(['process_upload', 'preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree'].map((name) => [name, () => {}])), toolPolicies: new Map(), includedTrees: [] }),
     buildVisibilityScopeContext: () => ({}),
     buildVisibilityScopeInstruction: () => '',
     buildAllowedToolInstruction: () => '',
-    buildInitialAgentInput: () => [],
+    buildInitialAgentInput,
     buildReplyLanguageInstruction: () => '',
     runAgentFamilyExecution: async (options) => {
       if (previewUploadId) assert.deepEqual([...options.handlerMap.keys()], ['preview_save_to_tree', 'confirm_save_to_tree']);
       validator = options.finalResponseValidator;
+      await runExecution?.(options);
       return { response: {}, toolInvocations: [], modelCalls: [] };
     },
     buildKnowledgeTreesFamilyResult: async () => ({ familyResult: {} }),
     buildKnowledgeTreesResponse: () => ({}),
   };
-  await invokeKnowledgeTreesAgent({ message, uploadId, previewUploadId });
+  await invokeKnowledgeTreesAgent({ message, history, uploadId, previewUploadId, pendingUploadId });
   return validator;
 }
 
@@ -247,9 +253,115 @@ test('a failed confirm cannot be presented as a completed save', async () => {
     toolInvocations: [{ toolName: 'confirm_save_to_tree', output: { error: 'Preview expired' } }],
   });
   assert.match(error, /persistenceAction="none"/);
-  assert.match(error, /explicitly confirms the latest preview, call confirm_save_to_tree/);
+  assert.match(error, /Do not call confirm_save_to_tree: no preview is eligible/);
+  assert.match(error, /call preview_save_to_tree with contentSource="prior_broad_answer" now/);
   assert.match(error, /rewrite answer and explanation/);
   assert.match(error, /note was not saved/);
+});
+
+test('accepting a new broad answer cannot confirm an older or invented preview ID', async () => {
+  const oldId = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  const fakeId = 'deafbeef-0000-4000-8000-000000000000';
+  let confirms = 0;
+  const previewArguments = [];
+  const validator = await getValidator(null, null, 'Yes, save that answer.', {
+    history: [
+      { role: 'assistant', content: `Place the uploaded file here?\n\n<!-- Preview ID: ${oldId} -->` },
+      { role: 'user', content: 'Give me a broader answer about catching this fish instead.' },
+      { role: 'assistant', content: 'A new broad answer about fishing. Would you like to save this answer?' },
+    ],
+    handlerMap: new Map([
+      ['confirm_save_to_tree', async () => { confirms += 1; }],
+      ['preview_save_to_tree', async (args) => { previewArguments.push(args); return {}; }],
+    ]),
+    runExecution: async ({ handlerMap, initialInput }) => {
+      const instruction = initialInput.find(({ role }) => role === 'system').content;
+      assert.match(instruction, /Do not call confirm_save_to_tree or invent a previewId/);
+      assert.match(instruction, /even when an older preview exists in history/);
+      for (const previewId of [oldId, fakeId]) {
+        await assert.rejects(handlerMap.get('confirm_save_to_tree')({ previewId, saveMode: 'create_leaf' }),
+          /call preview_save_to_tree now with contentSource="prior_broad_answer"/);
+      }
+      await handlerMap.get('preview_save_to_tree')({
+        contentSource: 'prior_broad_answer', broaderAnswer: 'A new broad answer about fishing.',
+      });
+    },
+  });
+  assert.equal(confirms, 0);
+  assert.deepEqual(previewArguments, [{
+    contentSource: 'prior_broad_answer', broaderAnswer: 'A new broad answer about fishing.',
+  }]);
+  const correction = await validator({
+    response: savedResponse('Saved.'), toolInvocations: [],
+  });
+  assert.match(correction, /Do not call confirm_save_to_tree/);
+  assert.doesNotMatch(correction, /call confirm_save_to_tree with/);
+});
+
+test('confirmation accepts only the immediately displayed ID and preserves the handler result', async () => {
+  const oldId = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  const latestId = '60b8daca-abcd-4321-8000-000000000001';
+  const calls = [];
+  const result = { toolResultType: 'tree_note_created' };
+  await getValidator(null, null, 'Yes, use that revised path.', {
+    history: [
+      { role: 'assistant', content: `Old path?\n\n<!-- Preview ID: ${oldId} -->` },
+      { role: 'user', content: 'Change the path.' },
+      { role: 'assistant', content: `Revised path?\n\n<!-- Preview ID: ${latestId} -->` },
+    ],
+    handlerMap: new Map([['confirm_save_to_tree', async (...args) => { calls.push(args); return result; }]]),
+    runExecution: async ({ handlerMap }) => {
+      const confirm = handlerMap.get('confirm_save_to_tree');
+      await assert.rejects(confirm({ previewId: oldId, saveMode: 'create_leaf' }), /does not match/);
+      await assert.rejects(confirm({ previewId: 'made-up', saveMode: 'create_leaf' }), /does not match/);
+      const args = { previewId: latestId, saveMode: 'create_leaf' };
+      const context = { trace: 'test' };
+      assert.equal(await confirm(args, context), result);
+      assert.deepEqual(calls, [[args, context]]);
+    },
+  });
+});
+
+test('creating or revising a preview prevents confirmation in the same human turn', async () => {
+  const previewId = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  for (const tool of ['preview_save_to_tree', 'revise_save_preview']) {
+    let confirms = 0;
+    await getValidator(null, null, 'Use another path.', {
+      history: [{ role: 'assistant', content: `Preview?\n\n<!-- Preview ID: ${previewId} -->` }],
+      handlerMap: new Map([
+        [tool, async () => ({ toolResultType: 'tree_note_preview' })],
+        ['confirm_save_to_tree', async () => { confirms += 1; }],
+      ]),
+      runExecution: async ({ handlerMap, finalResponseValidator }) => {
+        await handlerMap.get(tool)({});
+        await assert.rejects(handlerMap.get('confirm_save_to_tree')({ previewId, saveMode: 'create_leaf' }),
+          /preview created in this turn requires later human approval/);
+        const correction = await finalResponseValidator({ response: savedResponse('Saved.'), toolInvocations: [] });
+        assert.match(correction, /Do not call confirm_save_to_tree/);
+      },
+    });
+    assert.equal(confirms, 0);
+  }
+});
+
+test('upload turns cannot use a prior preview marker as human save approval', async () => {
+  const id = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  for (const turn of [{ uploadId: id }, { previewUploadId: id }, { pendingUploadId: id }]) {
+    let confirms = 0;
+    await getValidator(turn.uploadId, turn.previewUploadId, 'Yes.', {
+      pendingUploadId: turn.pendingUploadId,
+      history: [{ role: 'assistant', content: `Preview?\n\n<!-- Preview ID: ${id} -->` }],
+      handlerMap: new Map([
+        ['preview_save_to_tree', async () => ({})],
+        ['confirm_save_to_tree', async () => { confirms += 1; }],
+      ]),
+      runExecution: async ({ handlerMap }) => {
+        await assert.rejects(handlerMap.get('confirm_save_to_tree')({ previewId: id, saveMode: 'create_leaf' }),
+          /Confirmation is not authorized in this turn/);
+      },
+    });
+    assert.equal(confirms, 0);
+  }
 });
 
 test('a failed confirm after a preview cannot claim the preview or a save', async () => {
@@ -363,6 +475,11 @@ test('completed upload turn can report completion without preview and instructs 
     assert.doesNotMatch(allowedToolInstruction, /Verified note/);
     assert.match(allowedToolInstruction, /automated completion turn/);
     assert.match(allowedToolInstruction, /Do not treat it as approval to confirm a save/);
+    assert.match(allowedToolInstruction, /completion notice is not itself a save preview/);
+    assert.match(allowedToolInstruction, /call preview_save_to_tree with contentSource="completed_upload_note"/);
+    assert.match(allowedToolInstruction, /do not wait for final save approval before creating the preview/);
+    assert.match(allowedToolInstruction, /explicitly processing-only, report completion without previewing/);
+    assert.match(allowedToolInstruction, /Do not claim a preview is ready unless its tool succeeded/);
     assert.deepEqual(normalizedHistory, []);
     assert.match(normalizedMessage, /Verified note/);
     return [];

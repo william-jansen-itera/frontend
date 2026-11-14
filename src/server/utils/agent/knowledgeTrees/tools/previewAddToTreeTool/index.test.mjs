@@ -37,7 +37,7 @@ function prepare({ currentUserMessage = 'Add this to a tree: Rainwater harvestin
     },
     previewLeafFromChat: async (request) => {
       calls.push(['preview', request]);
-      return { treeName: 'Knowledge', defaultSaveMode: 'create_leaf' };
+      return { treeName: 'Knowledge', defaultSaveMode: 'create_leaf', broaderAnswer: request.broaderAnswer };
     },
     storeTreePreviewSnapshot: async (request) => { calls.push(['snapshot', request]); },
     buildTreePreviewToolOutput: (previewId, preview) => ({ previewId, preview }),
@@ -81,8 +81,18 @@ test('direct text absent from the current message is rejected before authorizati
 
 test('an accepted prior broad answer remains previewable without appearing in the current message', async () => {
   const { calls, handler } = prepare({ currentUserMessage: 'Yes, save the answer.' });
+  await assert.rejects(handler(directRequest), (error) => {
+    assert.match(error.message, /current user message/);
+    assert.match(error.message, /contentSource="prior_broad_answer"/);
+    assert.match(error.message, /do not ask the user to repeat an available answer/);
+    return true;
+  });
+  assert.deepEqual(calls, []);
   await handler({ ...directRequest, contentSource: 'prior_broad_answer' });
   assert.deepEqual(calls.map(([name]) => name), ['access', 'preview', 'snapshot']);
+  assert.equal(calls[1][1].broaderAnswer, directRequest.broaderAnswer);
+  assert.equal(calls[1][1].originalQuestion, directRequest.originalQuestion);
+  assert.equal(calls[2][1].preview.broaderAnswer, directRequest.broaderAnswer);
 });
 
 test('completed upload preview uses the owned extracted text and placement evidence, not agent-supplied content', async () => {
@@ -122,6 +132,35 @@ test('attachment preview output uses only the frozen incoming notes', () => {
     placementNote: 'Placement Note: A lighthouse.', placementCaption: 'Harbor at dusk.',
   });
   assert.equal(output.createLeafNotes, output.incomingNotes);
+});
+
+test('note and attachment previews expose only offered modes and copy the default confirmation arguments', () => {
+  for (const saveKind of ['note', 'attachment']) {
+    for (const { mergeTarget, createPath, expectedModes, defaultSaveMode } of [
+      { mergeTarget: null, createPath: 'Knowledge > New leaf', expectedModes: ['create_leaf'], defaultSaveMode: 'create_leaf' },
+      { mergeTarget: { breadcrumb: 'Knowledge > Existing' }, createPath: null,
+        expectedModes: ['merge_existing'], defaultSaveMode: 'merge_existing' },
+      { mergeTarget: { breadcrumb: 'Knowledge > Existing' }, createPath: 'Knowledge > Existing',
+        expectedModes: ['merge_existing'], defaultSaveMode: 'merge_existing' },
+      { mergeTarget: { breadcrumb: 'Knowledge > Existing' }, createPath: 'Knowledge > New leaf',
+        expectedModes: ['merge_existing', 'create_leaf'], defaultSaveMode: 'merge_existing' },
+    ]) {
+      const preview = { saveKind, mergeTarget, createPath, defaultSaveMode };
+      const output = buildActualPreviewOutput('latest-preview', preview);
+      assert.deepEqual(output.availableSaveModes, expectedModes);
+      assert.deepEqual(output.defaultConfirmArguments, { previewId: 'latest-preview', saveMode: defaultSaveMode });
+      assert.ok(output.availableSaveModes.includes(output.defaultConfirmArguments.saveMode));
+      if (!expectedModes.includes('create_leaf')) {
+        assert.equal(output.createPath, null);
+        assert.doesNotMatch(JSON.stringify(output), /create_leaf/);
+      }
+      const revised = buildActualPreviewOutput('revised-preview', {
+        ...preview, mergeTarget: null, createPath: 'Knowledge > Revised leaf', defaultSaveMode: 'create_leaf',
+      });
+      assert.deepEqual(revised.defaultConfirmArguments, { previewId: 'revised-preview', saveMode: 'create_leaf' });
+      assert.deepEqual(revised.availableSaveModes, ['create_leaf']);
+    }
+  }
 });
 
 test('completed upload freezes verified human context separately from generated image evidence', async () => {

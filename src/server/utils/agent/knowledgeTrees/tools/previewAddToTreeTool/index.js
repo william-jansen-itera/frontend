@@ -28,7 +28,7 @@ function buildUploadIncomingNotes(upload, { userDescription, userClarification, 
 export const previewAddToTreeToolDefinition = {
   type: 'function',
   name: 'preview_save_to_tree',
-  description: 'Preview a note from current text, a prior answer or a classified completed upload, or preview attaching the original completed upload file. An existing leaf receives the file without changing notes; a new leaf receives the file and available labeled placement note/caption. Requires later human confirmation.',
+  description: 'Prepare a preview without saving; final save approval is not required to call this tool when the original request authorizes previewing. Ask for final human approval only after displaying the returned preview. When the human accepts an offer to save an already-delivered broad answer, use contentSource="prior_broad_answer" and that answer from history, not current_user_text: a yes is acceptance, not note text. Use current_user_text only for factual text actually supplied in the current human message. Use completed_upload_note for a server-authorized classified upload; an existing leaf receives the original file without changing notes, and a new leaf receives the file and available labeled placement evidence.',
   strict: true,
   parameters: {
     type: 'object',
@@ -43,12 +43,12 @@ export const previewAddToTreeToolDefinition = {
       },
       broaderAnswer: {
         type: 'string',
-        description: 'For current_user_text, a verbatim factual excerpt of the current user message excluding the save request. For prior_broad_answer, the already-delivered answer cleaned without adding facts. For completed_upload_note, use an empty string; the server supplies the note.',
+        description: 'For prior_broad_answer, copy the accepted, already-delivered broad answer from history, cleaning dialogue without adding facts; never substitute the human approval text or require the human to repeat the answer. For current_user_text, a verbatim factual excerpt actually present in the current human message, excluding the save request. For completed_upload_note, use an empty string; the server supplies the note.',
       },
       contentSource: {
         type: 'string',
         enum: ['current_user_text', 'prior_broad_answer', 'completed_upload_note'],
-        description: 'Whether the text comes from the current user message, an accepted broad answer, or a server-authorized completed upload note.',
+        description: 'Select by the origin of the substantive text, not the message asking to save it. An accepted offer to save an earlier broad answer requires prior_broad_answer, including when the latest human message is only yes. current_user_text requires new factual text in the current human message; approval alone does not qualify. completed_upload_note requires a server-authorized completed upload.',
       },
       uploadId: {
         type: 'string',
@@ -86,7 +86,7 @@ export function createPreviewAddToTreeHandler({ includedTrees, principal, includ
       const content = String(broaderAnswer ?? '').trim();
       const message = String(currentUserMessage ?? '').trim();
       if (!content || content === message || !message.includes(content)) {
-        throw new Error('The note text must be taken from the current user message. Provide the text to save and preview again.');
+        throw new Error('contentSource="current_user_text" requires factual note text taken from the current user message, not approval alone. If the user accepted an offer to save a specific earlier broad answer, retry with contentSource="prior_broad_answer" and that already-delivered answer from history; do not ask the user to repeat an available answer. Otherwise request the factual text to save.');
       }
     } else if (contentSource === 'completed_upload_note') {
       const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;

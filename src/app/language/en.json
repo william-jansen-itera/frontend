@@ -158,6 +158,7 @@
       "Thinking": "Thinking...", "Send": "Send", "Start": "Start a turn", "EmptyWithInspector": "This will show the conversation.",
       "Empty": "The conversation history and grounded citations will appear here as you ask questions.",
       "Status": { "Pending": "Pending", "Waiting": "Waiting", "Error": "Error", "Complete": "Complete" }, "Waiting": "Working on it...", "NoAnswer": "No answer returned.",
+      "SavedLinks": { "ViewNote": "View note", "ViewAttachment": "View attachment" },
       "Approval": { "Trash": "Move {count} emails to Trash?", "Permanent": "Permanently delete {count} emails? This cannot be undone.", "Details": "Review messages", "Account": "Account: {provider}", "Folder": "Folder: {folder}", "Approve": "Approve", "Cancel": "Cancel" },
       "Inspector": "Turn inspector", "InspectorIntro": "Inspect exactly how the agent searched, curated evidence, and produced the answer."
     },
