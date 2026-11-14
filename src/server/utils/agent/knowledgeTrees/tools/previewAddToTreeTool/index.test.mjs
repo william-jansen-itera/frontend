@@ -125,21 +125,21 @@ test('attachment preview output uses only the frozen incoming notes', () => {
 });
 
 test('completed upload freezes verified human context separately from generated image evidence', async () => {
-  const { calls, handler } = prepare({ pendingUploadId: 'owned-upload', currentUserMessage: 'It is a trout.', upload: {
+  const { calls, handler } = prepare({ pendingUploadId: 'owned-upload', currentUserMessage: 'It is a bass.', upload: {
     status: 'succeeded', saveKind: 'attachment', originalHumanMessage: 'Please save this fishing photo.',
-    note: '', caption: 'A fish in a stream.', fileName: 'rainbow-trout.jpg',
+    note: '', caption: 'A fish in a stream.', fileName: 'sea-bass.jpg',
   } });
   await handler({ ...directRequest, contentSource: 'completed_upload_note', uploadId: 'owned-upload',
-    userDescription: 'fishing photo', userClarification: 'trout' });
+    userDescription: 'fishing photo', userClarification: 'bass' });
   const placement = calls[2][1];
   assert.deepEqual(placement.uploadContext, {
-    userDescription: 'fishing photo', userClarification: 'trout', placementNote: '', placementCaption: 'A fish in a stream.', fileName: 'rainbow-trout.jpg',
+    userDescription: 'fishing photo', userClarification: 'bass', placementNote: '', placementCaption: 'A fish in a stream.', fileName: 'sea-bass.jpg',
   });
   const incomingNotes = calls[3][1].preview.incomingNotes;
-  assert.equal(incomingNotes, 'User description:\nfishing photo\n\nUser clarification:\ntrout\n\nGenerated image caption:\nA fish in a stream.');
-  assert.ok(!incomingNotes.includes('rainbow-trout.jpg'));
+  assert.equal(incomingNotes, 'User description:\nfishing photo\n\nUser clarification:\nbass\n\nGenerated image caption:\nA fish in a stream.');
+  assert.ok(!incomingNotes.includes('sea-bass.jpg'));
   assert.equal(calls[3][1].preview.placementNote, '');
-  assert.equal(calls[3][1].preview.userClarification, 'trout');
+  assert.equal(calls[3][1].preview.userClarification, 'bass');
 });
 
 test('upload rejects invented human excerpts and treats opt-outs as no new detail', async () => {

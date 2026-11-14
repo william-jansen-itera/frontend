@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
 import { getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
+import { extractUploadFilenameWords } from '@/server/utils/agent/knowledgeTrees/uploadValidation.mjs';
 
 export const runtime = 'nodejs';
 
@@ -21,7 +22,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Upload was not found.' }, { status: 404 });
     }
     return NextResponse.json({
-      uploadId: String(upload.id), fileName: upload.fileName, status: upload.status,
+      uploadId: String(upload.id), fileName: extractUploadFilenameWords(upload.fileName).join(' '), status: upload.status,
       note: upload.status === 'succeeded' ? upload.note : null,
       caption: upload.status === 'succeeded' ? upload.caption : null,
       failureSummary: upload.status === 'failed' ? upload.failureSummary : null,

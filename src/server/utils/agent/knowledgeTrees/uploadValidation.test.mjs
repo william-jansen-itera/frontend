@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_UPLOAD_BYTES, validateChatUpload } from './uploadValidation.mjs';
+import { extractUploadFilenameWords, MAX_UPLOAD_BYTES, validateChatUpload } from './uploadValidation.mjs';
 
 function file(name, size) {
   return { name, size, arrayBuffer: async () => new ArrayBuffer(size) };
@@ -20,4 +20,11 @@ test('rejects invalid files, unsupported formats, and out-of-bounds sizes', () =
   assert.throws(() => validateChatUpload(file('big.pdf', MAX_UPLOAD_BYTES + 1)), /10 MB/);
   assert.throws(() => validateChatUpload(file('script.js', 1)), /not supported/);
   assert.throws(() => validateChatUpload(file('folder\\no-extension', 1)), /not supported/);
+});
+
+test('filename words exclude extension and single-letter segments while keeping word order', () => {
+  assert.deepEqual(extractUploadFilenameWords('perch_w.Jpg'), ['perch']);
+  assert.deepEqual(extractUploadFilenameWords('folder\\sea_bass_w.JPG'), ['sea', 'bass']);
+  assert.deepEqual(extractUploadFilenameWords('fisk-med_lang.hale.jpeg'), ['fisk', 'med', 'lang', 'hale']);
+  assert.deepEqual(extractUploadFilenameWords('a_b.JPG'), []);
 });

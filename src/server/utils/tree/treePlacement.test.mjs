@@ -483,7 +483,7 @@ test('placement model prompts use the caption as separate optional evidence', as
 test('matching filename evidence reaches all candidate stages and generated paths', async () => {
   const uploadContext = {
     userDescription: '', userClarification: '', placementNote: 'The subject described is a fish identified by a long tail.',
-    placementCaption: 'a fish with a long tail', fileName: 'regnbueørred.jpg',
+    placementCaption: 'a fish with a long tail', fileName: 'perch.jpg',
   };
   const observed = prepare([node(1, null, 0), node(2, 1, 1)], () => []);
   await previewLeafFromChat({ treeInstanceId: 7, originalQuestion: 'Where?', broaderAnswer: uploadContext.placementNote, uploadContext });
@@ -503,7 +503,8 @@ test('matching filename evidence reaches all candidate stages and generated path
   await generateChatLeafPathPlan({ treeName: 'Fakta om fiskeri', originalQuestion: 'Where?', broaderAnswer: uploadContext.placementNote, uploadContext, requiredPathTitleCount: 1 });
   assert.ok(prompts.every((prompt) => ['Processed placement note: The subject described is a fish identified by a long tail.',
     'Filtered image caption (generated): a fish with a long tail',
-    'Original filename (placement evidence when topic matches): regnbueørred.jpg'].every((field) => prompt.includes(field))));
+    'Original filename (placement evidence when topic matches): perch.jpg',
+    'Filename topic words (untrusted placement evidence): perch'].every((field) => prompt.includes(field))));
   assert.ok(prompts.every((prompt) => prompt.includes('choose the most specific fitting branch or leaf')));
   assert.ok(prompts.some((prompt) => prompt.includes('the labeled upload placement evidence below')));
   assert.ok(prompts.every((prompt) => !prompt.includes('subject of the answer')));

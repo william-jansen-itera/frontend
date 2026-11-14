@@ -6,6 +6,7 @@ import {
   getOwnedChatUpload,
   queueOwnedChatUpload,
 } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
+import { extractUploadFilenameWords } from '../../uploadValidation.mjs';
 import { KNOWLEDGE_TREES_FAMILY } from '@/server/utils/agent/knowledgeTrees/tools/persistenceToolShared';
 
 export const processUploadToolDefinition = {
@@ -61,6 +62,7 @@ export function createProcessUploadHandler({ principal, currentUploadId }) {
       uploadId,
       status: upload.status,
       fileName: upload.fileName,
+      filenameTopicWords: extractUploadFilenameWords(upload.fileName),
       note: upload.status === 'succeeded' ? upload.note : null,
       failureSummary: upload.status === 'failed' ? upload.failureSummary : null,
     };
@@ -69,7 +71,7 @@ export function createProcessUploadHandler({ principal, currentUploadId }) {
       toolName: processUploadToolDefinition.name,
       toolResultType: 'temporary_upload_note',
       data,
-      meta: buildUntrustedContentMeta(data, ['fileName', 'note']),
+      meta: buildUntrustedContentMeta(data, ['fileName', 'filenameTopicWords', 'note']),
     });
   };
 }

@@ -29,6 +29,14 @@ export async function createOrGetPopulateJob({ tree, principal }) {
 
           IF @application_instance_id IS NULL THROW 50001, 'Tree was not found', 1;
 
+          UPDATE job SET status = 'failed', failure_summary = 'Tree population stopped before completion.',
+            finished_at = SYSUTCDATETIME(), lease_until = NULL, updated_at = SYSUTCDATETIME()
+          FROM dbo.tree_jobs job
+          WHERE job.application_instance_id = @application_instance_id
+            AND job.tree_instance_id = @tree_id AND job.job_type = 'populate'
+            AND ((job.status = 'queued' AND job.updated_at < DATEADD(hour, -2, SYSUTCDATETIME()))
+              OR (job.status = 'running' AND job.lease_until < DATEADD(minute, -15, SYSUTCDATETIME())));
+
           SELECT ${jobColumns}, CAST(0 AS BIT) AS isNew
           FROM dbo.tree_jobs job
           WHERE job.application_instance_id = @application_instance_id
@@ -61,6 +69,16 @@ export async function getTreeJob({ jobId, treeId }) {
       .input('tree_id', sql.Int, Number(treeId))
       .input('application_identifier', sql.NVarChar(100), getRequiredApplicationIdentifier())
       .query(`
+        UPDATE job SET status = 'failed', failure_summary = 'Tree population stopped before completion.',
+          finished_at = SYSUTCDATETIME(), lease_until = NULL, updated_at = SYSUTCDATETIME()
+        FROM dbo.tree_jobs job
+        INNER JOIN dbo.application_instance ai ON ai.id = job.application_instance_id
+        INNER JOIN dbo.tree_instance ti ON ti.id = job.tree_instance_id AND ti.application_instance_id = ai.id
+        WHERE ai.app_identifier = @application_identifier AND ti.deleted_at IS NULL
+          AND job.tree_instance_id = @tree_id AND job.job_type = 'populate'
+          AND ((job.status = 'queued' AND job.updated_at < DATEADD(hour, -2, SYSUTCDATETIME()))
+            OR (job.status = 'running' AND job.lease_until < DATEADD(minute, -15, SYSUTCDATETIME())));
+
         SELECT TOP 1 ${jobColumns}
         FROM dbo.tree_jobs job
         INNER JOIN dbo.application_instance ai ON ai.id = job.application_instance_id

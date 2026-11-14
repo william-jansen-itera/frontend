@@ -48,9 +48,12 @@ test('rejects uploads not owned by the principal', async () => {
 });
 
 test('queues once, and returns existing status on a repeat call', async () => {
+  globalThis.uploadMocks.get = async () => ({ status: 'staged', fileName: 'perch_w.Jpg' });
   const handler = createProcessUploadHandler({ principal, currentUploadId: uploadId });
   const result = await handler({ uploadId });
   assert.equal(result.data.status, 'queued');
+  assert.equal(result.data.fileName, 'perch_w.Jpg');
+  assert.deepEqual(result.data.filenameTopicWords, ['perch']);
   assert.equal(globalThis.uploadMocks.connection, 'upload-queue-connection');
   assert.equal(globalThis.uploadMocks.queueName, 'chat-upload-jobs');
   assert.equal(globalThis.uploadMocks.sent.length, 1);

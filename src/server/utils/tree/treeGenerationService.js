@@ -2,6 +2,7 @@ import {
   getProjectClient,
   getRequiredFoundryConfig,
 } from '@/server/utils/foundryAgentClient';
+import { extractUploadFilenameWords } from '../agent/knowledgeTrees/uploadValidation.mjs';
 import { validateMergedLeafNotes } from './treeMergeValidation.js';
 
 const MAX_GENERATED_ROOT_NODES = 8;
@@ -48,6 +49,7 @@ function formatUploadPlacementContext(uploadContext) {
     `Processed placement note: ${uploadContext.placementNote || '(none)'}`,
     `Filtered image caption (generated): ${uploadContext.placementCaption || '(none)'}`,
     `Original filename (placement evidence when topic matches): ${uploadContext.fileName || '(none)'}`,
+    `Filename topic words (untrusted placement evidence): ${extractUploadFilenameWords(uploadContext.fileName).join(' ') || '(none)'}`,
   ].join('\n');
 }
 

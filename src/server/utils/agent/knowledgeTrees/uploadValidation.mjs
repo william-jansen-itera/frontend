@@ -6,6 +6,12 @@ const SUPPORTED_EXTENSIONS = new Set([
   '.docx', '.html', '.jpeg', '.jpg', '.pdf', '.png', '.pptx', '.txt', '.xlsx',
 ]);
 
+export function extractUploadFilenameWords(fileName) {
+  const basename = path.basename(String(fileName ?? '').replaceAll('\\', '/'));
+  const stem = basename.slice(0, basename.length - path.extname(basename).length);
+  return stem.split(/[_\s.-]+/u).filter((word) => [...word].length > 1);
+}
+
 export function validateChatUpload(file) {
   if (!file || typeof file.name !== 'string' || typeof file.arrayBuffer !== 'function') {
     throw new Error('Exactly one file is required.');
