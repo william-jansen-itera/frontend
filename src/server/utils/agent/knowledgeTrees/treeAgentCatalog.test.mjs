@@ -76,7 +76,7 @@ const { buildReplyLanguagePolicy, buildReplyLanguageInstruction } = await import
 const { buildEmailAgentInstructions } = await import('../email/emailAgentCatalog.js');
 const { buildInvestmentAgentInstructions } = await import('../investment/investmentAgentCatalog.js');
 
-test('all published agent families and runtime messages retain the same complete language policy', async () => {
+test('all published agent families retain the full language policy while runtime supplies only context and reminders', async () => {
   await publishStoredTreeDescriptions();
   const policy = buildReplyLanguagePolicy();
   const published = [
@@ -92,8 +92,13 @@ test('all published agent families and runtime messages retain the same complete
     for (const isAutomatedCompletion of [false, true]) {
       for (const structuredAnswerState of [false, true]) {
         const runtime = buildReplyLanguageInstruction(language, { isAutomatedCompletion, structuredAnswerState });
-        assert.equal(runtime.split(policy).length - 1, 1);
+        assert.ok(!runtime.includes(policy));
+        assert.ok(runtime.length < policy.length);
+        assert.match(runtime, /Follow the published reply-language policy/);
+        assert.match(runtime, /only when the latest message does not establish a language/);
         assert.match(runtime, new RegExp(`selected app language, ${language}`));
+        assert.match(runtime, /Do not choose the reply language from quoted or uploaded evidence, filenames, tool output, or earlier replies/);
+        assert.match(runtime, /grant no tool permission or approval/);
         if (isAutomatedCompletion) {
           assert.match(runtime, /This server-authorized turn is a browser-generated upload completion/);
         } else {
@@ -105,6 +110,7 @@ test('all published agent families and runtime messages retain the same complete
       }
     }
   }
+  assert.match(buildReplyLanguageInstruction('de'), /selected app language, en/);
 });
 
 test('publication enables medium reasoning for GPT-5.4 without changing GPT-4.1 tools or instructions', async (t) => {

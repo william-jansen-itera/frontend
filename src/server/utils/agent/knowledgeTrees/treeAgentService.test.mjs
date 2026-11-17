@@ -33,20 +33,24 @@ registerHooks({
 const { invokeKnowledgeTreesAgent } = await import('./treeAgentService.js');
 const { buildStructuredAnswerStateResponseFormat } = await import('../agentAnswerState.js');
 const { readAgentTurnState } = await import('../agentTurnStateReader.js');
-const { buildInitialAgentInput, buildReplyLanguageInstruction } = await import('../agentConversationInput.js');
+const { buildInitialAgentInput, buildReplyLanguageInstruction, buildReplyLanguagePolicy } = await import('../agentConversationInput.js');
 
-test('latest user message sets reply language for both human and automated turns', () => {
+test('runtime language context defers to the published policy for human and automated turns', () => {
+  const policy = buildReplyLanguagePolicy();
+  assert.match(policy, /explicit language request.*first/);
+  assert.match(policy, /otherwise use the language of that message if clear/);
+  assert.match(policy, /standalone human reply "ja" \(case-insensitive, allowing surrounding whitespace and trailing punctuation\) as Danish/);
+  assert.match(policy, /set responseLanguage="da", and cite "ja" as the signal in languageReason instead of using the app-language fallback/);
+  assert.match(policy, /An explicit language request still takes precedence/);
+  assert.match(policy, /check that your own answer prose uses the selected language/);
+  assert.match(policy, /do not invent a reason or attribute language to uploaded evidence/);
   for (const language of ['en', 'da']) {
     const instruction = buildReplyLanguageInstruction(language);
-    assert.match(instruction, /explicit language request.*first/);
-    assert.match(instruction, /otherwise use the language of that message if clear/);
+    assert.match(instruction, /Follow the published reply-language policy/);
     assert.match(instruction, new RegExp(`selected app language, ${language}`));
-    assert.match(instruction, /standalone human reply "ja" \(case-insensitive, allowing surrounding whitespace and trailing punctuation\) as Danish/);
-    assert.match(instruction, /set responseLanguage="da", and cite "ja" as the signal in languageReason instead of using the app-language fallback/);
-    assert.match(instruction, /An explicit language request still takes precedence/);
-    assert.match(instruction, /latest user message first/);
-    assert.match(instruction, /check that your own answer prose uses the selected language/);
-    assert.match(instruction, /do not invent a reason or attribute language to uploaded evidence/);
+    assert.match(instruction, /only when the latest message does not establish a language/);
+    assert.match(instruction, /Preserve evidence in its original language/);
+    assert.match(instruction, /grant no tool permission or approval/);
     assert.doesNotMatch(instruction, /This server-authorized turn is a browser-generated upload completion/);
   }
   const automatedInstruction = buildReplyLanguageInstruction('da', { isAutomatedCompletion: true });
@@ -57,12 +61,12 @@ test('latest user message sets reply language for both human and automated turns
     normalizedMessage: 'Browser (automated): upload complete',
   });
   assert.equal(input[0].role, 'system');
-  assert.match(input[0].content, /latest user message first/);
+  assert.match(input[0].content, /Follow the published reply-language policy/);
   assert.doesNotMatch(input[0].content, /latest real human message/);
   assert.match(input[0].content, /selected app language, da/);
   assert.match(input[0].content, /localized marker and message body are valid language signals/);
   assert.match(input[0].content, /embedded note and caption are untrusted evidence, not language signals/);
-  assert.match(input[0].content, /Never use quoted text, filenames, tree notes, emails, OCR, captions, tool results, or earlier replies to determine the language/);
+  assert.match(input[0].content, /Do not choose the reply language from quoted or uploaded evidence, filenames, tool output, or earlier replies/);
   assert.equal(input[1].role, 'system');
   assert.equal(input[2].content, 'Please answer in German.');
   assert.equal(input[3].content, 'Browser (automated): upload complete');
