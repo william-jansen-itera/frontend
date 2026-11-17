@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Pencil, PencilSparkles, Save, Trash2, UserCheck, UserSearch } from "lucide-react";
+import { Pencil, PencilSparkles, Plus, Save, Trash2, UserCheck, UserSearch } from "lucide-react";
 import { useAuth } from "../useAuth";
 import styles from "./page.module.css";
 import {
@@ -1530,8 +1530,11 @@ function TreesPageContent() {
             type="submit"
             disabled={isCreating || !newTreeName.trim()}
             className={`appPrimaryFormButton ${styles.createButton}`}
+            title={t(isCreating ? "Creating" : "Create")}
+            aria-label={t(isCreating ? "Creating" : "Create")}
+            aria-busy={isCreating}
           >
-            {t(isCreating ? "Creating" : "Create")}
+            <Plus size={18} aria-hidden="true" />
           </button>
         </form>
       </section>
