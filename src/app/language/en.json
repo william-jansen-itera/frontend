@@ -93,6 +93,7 @@
       "Memory": { "Label": "Share collective memory", "Title": "Hold the domain together", "Text": "The agent has your understanding of the domain — the tree you built together, and the applications it can use in context — so it can recognize the connections in that material and speak from them. Context is not the chat history. It is a shared memory." },
       "Restore": { "Label": "Restore", "Title": "Restore before permanent removal", "Text": "Deleting a tree, branch, or attachment does not erase it immediately. The workspace keeps a 7-day recovery window first, so accidental deletes can be restored before final cleanup." },
       "Access": { "Label": "Access", "Title": "Manage access through the groups teams already use", "Text": "MDS does not need a separate user list inside the workspace. People sign in with Microsoft identity, and access can follow the Entra groups a team already uses." },
+      "Offload": { "Label": "Offload", "Title": "Let the tree suggest where things belong", "Text": "Supply notes or uploads, and let the tree agent suggest where they fit based on their text and images. Preview the proposed placement before saving, so you stay in control without having to organize everything by hand." },
       "WorkingSurfaces": "Working surfaces", "OpenNotes": "Open Notes", "OpenSearch": "Open Search", "OpenAgent": "Open Agent", "Contact": "Contact"
     },
     "Architecture": {
