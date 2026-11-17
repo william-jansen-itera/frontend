@@ -134,6 +134,7 @@ export async function POST(request) {
     const uploadId = String(payload?.uploadId ?? '').trim() || null;
     const pendingUploadId = String(payload?.pendingUploadId ?? '').trim() || null;
     const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+    let uploadHasHumanMessage = null;
     if (pendingUploadId) {
       if (family !== 'knowledgeTrees' || uploadId || previewUploadId || !ownerObjectId ||
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pendingUploadId)) {
@@ -143,6 +144,7 @@ export async function POST(request) {
       if (pendingUpload?.status !== 'succeeded') {
         return createChatJsonResponse({ error: 'Upload was not found or has not completed.' }, { status: 404, requestId, includeDebug });
       }
+      uploadHasHumanMessage = Boolean(String(pendingUpload.originalHumanMessage ?? '').trim());
     }
     if (previewUploadId) {
       if (family !== 'knowledgeTrees' || uploadId || !ownerObjectId ||
@@ -153,6 +155,7 @@ export async function POST(request) {
       if (!upload) {
         return createChatJsonResponse({ error: 'Upload was not found or has expired.' }, { status: 404, requestId, includeDebug });
       }
+      uploadHasHumanMessage = Boolean(String(upload.originalHumanMessage ?? '').trim());
     }
     if (uploadId) {
       if (family !== 'knowledgeTrees' || !ownerObjectId ||
@@ -163,6 +166,7 @@ export async function POST(request) {
       if (payload?.hasTypedUploadMessage === true) {
         await bindChatUploadHumanMessage({ uploadId, ownerObjectId, message });
       }
+      uploadHasHumanMessage = payload?.hasTypedUploadMessage === true;
     }
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route invoking agent family', {
       historyCount: history.length,
@@ -181,6 +185,7 @@ export async function POST(request) {
       uploadId,
       previewUploadId,
       pendingUploadId,
+      uploadHasHumanMessage,
     });
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route received agent family result', {
       toolsUsedCount: Array.isArray(result?.toolsUsed) ? result.toolsUsed.length : null,

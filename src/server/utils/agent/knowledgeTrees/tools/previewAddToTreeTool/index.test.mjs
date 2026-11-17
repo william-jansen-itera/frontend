@@ -242,6 +242,26 @@ test('the published preview tool requires an explicit content source', () => {
   assert.deepEqual(previewAddToTreeToolDefinition.parameters.properties.contentSource.enum, ['current_user_text', 'prior_broad_answer', 'completed_upload_note']);
 });
 
+test('preview parameter instructions retain source-specific preparation and human-text provenance', () => {
+  const fields = previewAddToTreeToolDefinition.parameters.properties;
+  assert.match(fields.originalQuestion.description, /routing, not saved facts/);
+  assert.match(fields.broaderAnswer.description, /retain substantive details, caveats, and useful examples/);
+  assert.match(fields.broaderAnswer.description, /remove dialogue, self-reference, and tool chatter/);
+  assert.match(fields.broaderAnswer.description, /prepare it before the preview, not after confirmation/);
+  assert.match(fields.broaderAnswer.description, /do not paraphrase, invent facts, or substitute retrieved content/);
+  assert.match(fields.broaderAnswer.description, /For completed_upload_note, use an empty string/);
+  assert.match(fields.uploadId.description, /previewUploadId.*pendingUploadId/);
+  assert.match(fields.userDescription.description, /when it was sent, not by what it describes/);
+  assert.match(fields.userDescription.description, /later reply belong in userClarification, never here/);
+  assert.match(fields.userDescription.description, /"save this in tree", use an empty string/);
+  for (const field of [fields.userDescription, fields.userClarification]) {
+    assert.match(field.description, /exclude language instructions/);
+    assert.match(field.description, /Never include a generated caption/);
+    assert.match(field.description, /non-upload previews use an empty string/);
+  }
+  assert.match(fields.userClarification.description, /On automated completion turns.*use an empty string/);
+});
+
 test('sparse attachment requires a human topic and does not invent saved notes', async () => {
   const upload = { status: 'succeeded', saveKind: 'attachment', fileName: 'photo.png', byteSize: 4, sha256: 'hash' };
   const automated = prepare({ previewUploadId: 'owned-upload', upload });

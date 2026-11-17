@@ -143,7 +143,7 @@ test('automated preview rejects a language report that conflicts with its locali
 });
 
 async function getValidator(uploadId = null, previewUploadId = null, message = 'Yes, save it.', {
-  history = [], pendingUploadId = null, handlerMap = null, runExecution = null,
+  history = [], pendingUploadId = null, handlerMap = null, runExecution = null, uploadHasHumanMessage = null,
 } = {}) {
   let validator;
   globalThis.__treeServiceMocks = {
@@ -166,9 +166,42 @@ async function getValidator(uploadId = null, previewUploadId = null, message = '
     buildKnowledgeTreesFamilyResult: async () => ({ familyResult: {} }),
     buildKnowledgeTreesResponse: () => ({}),
   };
-  await invokeKnowledgeTreesAgent({ message, history, uploadId, previewUploadId, pendingUploadId });
+  await invokeKnowledgeTreesAgent({ message, history, uploadId, previewUploadId, pendingUploadId, uploadHasHumanMessage });
   return validator;
 }
+
+test('uploads without typed text carry preview intent beyond processing-only browser defaults', async () => {
+  const id = 'c125d350-4cae-4ad4-a69c-419324125e00';
+  const history = [{ role: 'user', content: 'Behandl gedde_w.Jpg, og lav en midlertidig placeringsnote.' }];
+  for (const context of [
+    { uploadId: id, previewUploadId: null, pendingUploadId: null },
+    { uploadId: null, previewUploadId: id, pendingUploadId: null },
+    { uploadId: null, previewUploadId: null, pendingUploadId: id },
+  ]) {
+    await getValidator(context.uploadId, context.previewUploadId, 'Browser (automatisk): Uploaden er færdigbehandlet.', {
+      history, pendingUploadId: context.pendingUploadId, uploadHasHumanMessage: false,
+      runExecution: async ({ initialInput }) => {
+        const runtime = initialInput.filter(({ role }) => role === 'system').map(({ content }) => content).join('\n');
+        assert.match(runtime, /attached without a typed human message/);
+        assert.match(runtime, /not a human description or an explicit processing-only request/);
+        assert.match(runtime, /intent to prepare a save preview after processing/);
+        assert.match(runtime, /preview when the evidence is sufficient, or ask for the missing topic\/detail/);
+        assert.match(runtime, /Do not stop at reporting the temporary placement note/);
+        assert.match(runtime, /Use userDescription=""/);
+        assert.match(runtime, /not consent to confirm_save_to_tree/);
+      },
+    });
+  }
+  await getValidator(null, id, 'Browser (automated): Upload complete.', {
+    uploadHasHumanMessage: true,
+    history: [{ role: 'user', content: 'Only process the file, do not preview saving it.' }],
+    runExecution: async ({ initialInput }) => {
+      const runtime = initialInput.filter(({ role }) => role === 'system').map(({ content }) => content).join('\n');
+      assert.doesNotMatch(runtime, /attached without a typed human message/);
+      assert.match(runtime, /explicitly processing-only, report completion without previewing/);
+    },
+  });
+});
 
 function savedResponse(answer, explanation = 'Reporting the note saved by confirm_save_to_tree.', persistenceAction = 'saved', isWaitingForContinuation = false) {
   return {

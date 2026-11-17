@@ -15,7 +15,7 @@ const modules = new Map([
   ['auth', 'export const requireAuthenticatedPrincipal = () => ({ userId: "owner" });'],
   ['treeCatalog', 'export const getAuditMetadata = () => ({ updatedByObjectId: "00000000-0000-0000-0000-000000000001" });'],
   ['chatUploadRepository', `
-    export const getOwnedChatUpload = async () => globalThis.__chatRouteUploadOwned ? { id: "owned", status: globalThis.__chatRouteUploadStatus || "succeeded" } : null;
+    export const getOwnedChatUpload = async () => globalThis.__chatRouteUploadOwned ? { id: "owned", status: globalThis.__chatRouteUploadStatus || "succeeded", originalHumanMessage: globalThis.__chatRouteOriginalHumanMessage ?? null } : null;
     export const bindChatUploadHumanMessage = async (options) => { globalThis.__chatRouteBindings.push(options); };
   `],
 ]);
@@ -82,8 +82,10 @@ test('only the initial typed upload message is bound; an owned completed clarifi
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ family: 'knowledgeTrees', ...body }),
   });
   assert.equal((await POST(request({ message: 'A fishing trip', uploadId, hasTypedUploadMessage: true }))).status, 200);
+  assert.equal(globalThis.__chatRouteCalls.at(-1).uploadHasHumanMessage, true);
   assert.deepEqual(globalThis.__chatRouteBindings, [{ uploadId, ownerObjectId: '00000000-0000-0000-0000-000000000001', message: 'A fishing trip' }]);
   assert.equal((await POST(request({ message: 'Default browser request', uploadId }))).status, 200);
+  assert.equal(globalThis.__chatRouteCalls.at(-1).uploadHasHumanMessage, false);
   assert.equal(globalThis.__chatRouteBindings.length, 1);
   assert.equal((await POST(request({ message: 'It is a trout.', pendingUploadId: uploadId }))).status, 200);
   assert.equal(globalThis.__chatRouteCalls.at(-1).pendingUploadId, uploadId);
@@ -93,4 +95,28 @@ test('only the initial typed upload message is bound; an owned completed clarifi
   assert.equal((await POST(request({ message: 'It is a trout.', pendingUploadId: uploadId }))).status, 404);
   globalThis.__chatRouteUploadOwned = false;
   assert.equal((await POST(request({ message: 'It is a trout.', pendingUploadId: uploadId }))).status, 404);
+});
+
+test('completed uploads derive human-message provenance from storage, not a client flag or follow-up text', async (t) => {
+  t.after(() => { delete globalThis.__chatRouteOriginalHumanMessage; });
+  globalThis.__chatRouteCalls = [];
+  globalThis.__chatRouteUploadOwned = true;
+  globalThis.__chatRouteUploadStatus = 'succeeded';
+  const uploadId = '00000000-0000-0000-0000-000000000002';
+  const request = (body) => new Request('http://localhost/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ family: 'knowledgeTrees', ...body }),
+  });
+  for (const originalHumanMessage of [null, '   ', 'Only process this file; do not prepare a save preview.']) {
+    globalThis.__chatRouteOriginalHumanMessage = originalHumanMessage;
+    const expected = Boolean(originalHumanMessage?.trim());
+    for (const context of [
+      { previewUploadId: uploadId, message: 'Browser (automatisk): Uploaden er færdigbehandlet.' },
+      { pendingUploadId: uploadId, message: 'It is a pike.' },
+    ]) {
+      const response = await POST(request({ ...context, uploadHasHumanMessage: !expected }));
+      assert.equal(response.status, 200);
+      assert.equal(globalThis.__chatRouteCalls.at(-1).uploadHasHumanMessage, expected);
+    }
+  }
 });

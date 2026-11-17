@@ -971,6 +971,7 @@ export default function ChatPageClient({ includeDebug }) {
   async function submitTurn({ question, message, file, hasTypedUploadMessage = false }) {
     const turnId = createTurnId();
     const submittedLanguage = language;
+    const automatedLabel = file && !hasTypedUploadMessage ? t("Upload.AutomatedLabel") : null;
     let completionTurnId = null;
     let uploadId = null;
     let stagedUpload = false;
@@ -985,6 +986,8 @@ export default function ChatPageClient({ includeDebug }) {
       {
         id: turnId,
         question,
+        isBrowserAutomated: Boolean(automatedLabel),
+        automatedLabel,
         attachedFileName: file?.name ?? null,
         originalQuestion: question,
         answer: "",
@@ -1027,7 +1030,7 @@ export default function ChatPageClient({ includeDebug }) {
           "x-chat-request-id": requestId,
         },
         body: JSON.stringify({
-          message,
+          message: automatedLabel ? `${automatedLabel}: ${message}` : message,
           history,
           family: chatFamily,
           language: submittedLanguage,
@@ -1083,8 +1086,12 @@ export default function ChatPageClient({ includeDebug }) {
         setSelectedTurnId(completionTurnId);
         const completion = await continueCompletedUpload(uploadId, completionMessage, completionTurn.automatedLabel, submittedLanguage, visibility, [
           ...history,
-          { role: "user", content: question },
-          { role: "assistant", content: String(payload?.answer ?? "").trim() },
+          ...buildHistoryFromTurns([{
+            question,
+            answer: String(payload?.answer ?? "").trim(),
+            isBrowserAutomated: Boolean(automatedLabel),
+            automatedLabel,
+          }]),
         ]);
         setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
           ? finishUploadCompletionTurn(turn, completion, uploadId)

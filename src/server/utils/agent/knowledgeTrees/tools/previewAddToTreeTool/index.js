@@ -39,11 +39,11 @@ export const previewAddToTreeToolDefinition = {
       },
       originalQuestion: {
         type: 'string',
-        description: 'For current_user_text or completed_upload_note, a short topic question for placing the text; for prior_broad_answer, the question that led to that answer. Stored in the cached preview snapshot for confirmation.',
+        description: 'For current_user_text, derive a short topic question from the subject of the supplied factual text. For completed_upload_note, derive a short topic question for routing, not saved facts. For prior_broad_answer, use the original question that led to the accepted answer. Stored in the cached preview snapshot for confirmation.',
       },
       broaderAnswer: {
         type: 'string',
-        description: 'For prior_broad_answer, copy the accepted, already-delivered broad answer from history, cleaning dialogue without adding facts; never substitute the human approval text or require the human to repeat the answer. For current_user_text, a verbatim factual excerpt actually present in the current human message, excluding the save request. For completed_upload_note, use an empty string; the server supplies the note.',
+        description: 'For prior_broad_answer, use the accepted, already-delivered broad answer from history. Clean it without adding facts: retain substantive details, caveats, and useful examples, but remove dialogue, self-reference, and tool chatter. Never substitute the human approval text or require the human to repeat the answer. This text is saved directly for create_leaf or used as new information for merge_existing; prepare it before the preview, not after confirmation. For current_user_text, copy only a substantive factual excerpt verbatim from the current human message, excluding the save request; do not paraphrase, invent facts, or substitute retrieved content. For completed_upload_note, use an empty string; the server retrieves the classified upload payload.',
       },
       contentSource: {
         type: 'string',
@@ -56,11 +56,11 @@ export const previewAddToTreeToolDefinition = {
       },
       userDescription: {
         type: 'string',
-        description: 'For an upload, an exact excerpt of the original typed human upload message, or empty. The server verifies it against the owned upload. Otherwise use an empty string.',
+        description: 'For completed_upload_note, an exact substantive excerpt of the original typed human upload message, or an empty string if it adds no facts. Assign human text by when it was sent, not by what it describes: factual details supplied in a later reply belong in userClarification, never here. Exclude request-only language such as "save this", "yes", "no", and "use what is available", and exclude language instructions. If the original message only says "save this in tree", use an empty string. Never include a generated caption; the server supplies it. The server verifies the excerpt against the owned upload. For non-upload previews use an empty string.',
       },
       userClarification: {
         type: 'string',
-        description: 'For a pending upload, an exact excerpt of new factual detail in this human reply, or empty. A yes, no, or request to use available evidence adds no facts. Otherwise use an empty string.',
+        description: 'For completed_upload_note on a pending-upload human follow-up, an exact substantive excerpt of new factual detail in the current human reply, or an empty string if it adds no facts. Put these later facts here, never in userDescription, even when they describe the original upload. Exclude request-only language such as "save this", "yes", "no", and "use what is available", and exclude language instructions. A bare yes, no, or request to use available evidence adds no facts. Never include a generated caption; the server supplies it. The server verifies the excerpt against the current human reply. On automated completion turns and for non-upload previews use an empty string.',
       },
     },
     required: ['toolName', 'originalQuestion', 'broaderAnswer', 'contentSource', 'uploadId', 'userDescription', 'userClarification'],

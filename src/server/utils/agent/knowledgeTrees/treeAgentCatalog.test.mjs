@@ -95,9 +95,29 @@ test('published prompt exposes Markdown headings, ordered routes, and literal pr
     }
   }
   const routes = instructions.split('## Decide the current turn')[1].split('## Grounding and broader answers')[0];
-  assert.deepEqual([...routes.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1])), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual([...routes.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1])), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   assert.ok(instructions.includes('`<!-- Preview ID: UUID -->`'));
   assert.equal(instructions.split('`\\n\\n<!-- Preview ID: ACTUAL_UUID -->`').length - 1, 2);
+});
+
+test('published routing clarifies missing intent or save content before broadening or searching', async () => {
+  await publishStoredTreeDescriptions();
+  const instructions = globalThis.__publishedTreeInstructions;
+  const routes = instructions.split('## Decide the current turn')[1].split('## Grounding and broader answers')[0];
+  const clarification = routes.match(/^7\. .+$/m)?.[0];
+  assert.ok(clarification);
+  assert.match(clarification, /current message and applicable conversation context/);
+  assert.match(clarification, /ask one concise clarification question/);
+  assert.match(clarification, /Do not invent missing information, call tools merely to guess.*or ask permission to broaden/);
+  assert.match(clarification, /"save this in tree" without factual text, an authorized upload.*paste the text or attach the file/);
+  assert.match(clarification, /Do not ask for content again when an earlier eligible route already identifies it/);
+  assert.match(clarification, /clear question with an unknown answer needs search/);
+  assert.match(routes, /^8\. If the current message explicitly requests broader knowledge/m);
+  assert.match(routes, /^9\. Otherwise start grounded/m);
+  const outcome = instructions.match(/^- Clarification of an unclear request.+$/m)?.[0];
+  assert.ok(outcome);
+  assert.match(outcome, /knowledgeMode="grounded", isPermissionToBroadenRequest=false, isPersistenceOffer=false, persistenceAction="none", isWaitingForContinuation=false/);
+  assert.match(outcome, /not a factual answer requiring search_tree_\* evidence/);
 });
 
 test('published upload policy checks compatible filename hints before asking for identification', async () => {
@@ -118,6 +138,9 @@ test('published upload policy keeps filename hints out of saved facts and preser
   assert.match(section, /Prefer human descriptions and file content when they conflict/);
   assert.match(section, /If neither human context nor the note or caption supports even a general topic, ask the human/);
   assert.match(section, /processing-only, report completion without previewing or asking/);
+  assert.match(section, /Only typed human text can establish an explicitly processing-only request/);
+  assert.match(section, /browser's fallback wording is not a processing-only restriction/);
+  assert.match(section, /Continue to a preview or the required clarification/);
   assert.match(section, /without asking for details again/);
   assert.match(section, /saving still requires a later human approval of the displayed preview/);
 });
@@ -145,6 +168,13 @@ test('published save routing distinguishes accepted prior answers from newly sup
   assert.match(instructions, /An intervening broad answer or save offer is not a preview.*new preview of that answer, regardless of earlier previews/);
   assert.match(instructions, /Never invent a previewId/);
   assert.match(instructions, /do not claim expiry unless the tool established it/);
+  const preview = instructions.split('### preview_save_to_tree')[1].split('### revise_save_preview')[0];
+  assert.match(preview, /Follow the tool's parameter descriptions for exact argument construction/);
+  assert.match(preview, /If no substantive text was supplied, ask for it/);
+  assert.match(preview, /If the offered answer is unavailable, request a new broad answer/);
+  assert.match(preview, /A prior yes to broaden, an isPersistenceOffer=true flag, or an unrelated request is not acceptance/);
+  assert.ok(preview.includes('userDescription="" and userClarification="regnbueørred med pink stribe og mørke pletter på krop og hale."'));
+  assert.match(preview, /Do not include the language instruction in either factual excerpt/);
 });
 
 test('published preview policy does not confuse processing readiness with an approved save', async () => {
