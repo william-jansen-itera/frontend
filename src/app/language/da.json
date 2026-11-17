@@ -244,6 +244,7 @@
         "NoTrees": "Ingen træer tilgængelige",
         "Manage": "Administrer",
         "AddRoot": "Tilføj rod",
+        "Root": "Rod",
         "AddChild": "Tilføj undernode",
         "Generate": "Generér",
         "Generating": "Genererer...",

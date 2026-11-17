@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Suspense, useEffect, useRef, useState } from "react";
+import { Pencil, PencilSparkles, Save, Trash2, UserCheck, UserSearch } from "lucide-react";
 import { useAuth } from "../useAuth";
 import styles from "./page.module.css";
 import {
@@ -1629,8 +1630,11 @@ function TreesPageContent() {
                                 onClick={() => handleSaveTreeMeta(tree)}
                                 disabled={isPending || !canWriteTree || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
                                 className="appCompactActionButton appCompactActionButtonNeutral"
+                                title={t(rowPendingState.meta ? "Saving" : "Save")}
+                                aria-label={t(rowPendingState.meta ? "Saving" : "Save")}
+                                aria-busy={Boolean(rowPendingState.meta)}
                               >
-                                {t(rowPendingState.meta ? "Saving" : "Save")}
+                                <Save size={18} aria-hidden="true" />
                               </button>
                             </div>
                             <div className={styles.treeVisibilityRow}>
@@ -1691,8 +1695,11 @@ function TreesPageContent() {
                               onClick={() => handleDeleteTree(tree)}
                               disabled={isPending || !canWriteTree}
                               className="appCompactActionButton appCompactActionButtonDanger"
+                              title={t(rowPendingState.delete ? "Working" : "Delete")}
+                              aria-label={t(rowPendingState.delete ? "Working" : "Delete")}
+                              aria-busy={Boolean(rowPendingState.delete)}
                             >
-                              {t(rowPendingState.delete ? "Working" : "Delete")}
+                              <Trash2 size={18} aria-hidden="true" />
                             </button>
                           </div>
                         </div>
@@ -1771,24 +1778,32 @@ function TreesPageContent() {
                             onClick={() => setDescriptionEditing(treeId, true)}
                             disabled={isPending || !canWriteTree || isDescriptionEditing}
                             className="appCompactActionButton appCompactActionButtonNeutral"
+                            title={t("Edit")}
+                            aria-label={t("Edit")}
                           >
-                            {t("Edit")}
+                            <Pencil size={18} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleGenerateDescription(tree)}
                             disabled={!canWriteTree || !isDescriptionEditing || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta)}
                             className="appCompactActionButton appCompactActionButtonNeutral"
+                            title={t(rowPendingState.generate ? "Generating" : "Generate")}
+                            aria-label={t(rowPendingState.generate ? "Generating" : "Generate")}
+                            aria-busy={Boolean(rowPendingState.generate)}
                           >
-                            {t(rowPendingState.generate ? "Generating" : "Generate")}
+                            <PencilSparkles size={18} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleSaveDescription(tree)}
                             disabled={!canWriteTree || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
                             className="appCompactActionButton appCompactActionButtonPrimary"
+                            title={t(rowPendingState.save ? "Saving" : rowPendingState.sync ? "Syncing" : "Save")}
+                            aria-label={t(rowPendingState.save ? "Saving" : rowPendingState.sync ? "Syncing" : "Save")}
+                            aria-busy={Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
                           >
-                            {t(rowPendingState.save ? "Saving" : rowPendingState.sync ? "Syncing" : "Save")}
+                            <Save size={18} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
@@ -1917,16 +1932,22 @@ function TreesPageContent() {
                               onClick={() => handleSearchTransferTargets(tree)}
                               disabled={isPending || !canManageTreeAccess || transferQuery.trim().length < 2}
                               className="appCompactActionButton appCompactActionButtonNeutral"
+                              title={t(rowPendingState.transferSearch ? "Searching" : "Search")}
+                              aria-label={t(rowPendingState.transferSearch ? "Searching" : "Search")}
+                              aria-busy={Boolean(rowPendingState.transferSearch)}
                             >
-                              {t(rowPendingState.transferSearch ? "Searching" : "Search")}
+                              <UserSearch size={18} aria-hidden="true" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleTransferOwner(tree)}
                               disabled={isPending || !canManageTreeAccess || !isTransferChanged}
                               className="appCompactActionButton appCompactActionButtonNeutral"
+                              title={t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
+                              aria-label={t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
+                              aria-busy={Boolean(rowPendingState.transfer)}
                             >
-                              {t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
+                              <UserCheck size={18} aria-hidden="true" />
                             </button>
                           </div>
                           {!canManageTreeAccess ? (
@@ -2024,16 +2045,22 @@ function TreesPageContent() {
                               onClick={() => handleSearchEditorTargets(tree)}
                               disabled={isPending || !canManageTreeAccess || editorQuery.trim().length < 2}
                               className="appCompactActionButton appCompactActionButtonNeutral"
+                              title={t(rowPendingState.editorSearch ? "Searching" : "Search")}
+                              aria-label={t(rowPendingState.editorSearch ? "Searching" : "Search")}
+                              aria-busy={Boolean(rowPendingState.editorSearch)}
                             >
-                              {t(rowPendingState.editorSearch ? "Searching" : "Search")}
+                              <UserSearch size={18} aria-hidden="true" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleAddEditor(tree)}
                               disabled={isPending || !canManageTreeAccess || !selectedEditorTarget?.objectId || selectedEditorTarget?.isCurrentOwner || selectedEditorTarget?.isAssignedEditor}
                               className="appCompactActionButton appCompactActionButtonNeutral"
+                              title={t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
+                              aria-label={t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
+                              aria-busy={Boolean(rowPendingState.editorAdd)}
                             >
-                              {t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
+                              <UserCheck size={18} aria-hidden="true" />
                             </button>
                           </div>
                           {!canManageTreeAccess ? (

@@ -1312,14 +1312,6 @@ export default function ChatPageClient({ includeDebug }) {
               </button>
             </div>
             <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
-              {selectedFile && shouldShowVisibilityControl ? (
-                <div className={`${styles.selectedFile} ${isSubmitting ? styles.selectedFileSubmitted : ""}`} aria-hidden={isSubmitting}>
-                  <span>{selectedFile.name}</span>
-                  <button type="button" className={styles.fileAction} title={t("Upload.Remove")} aria-label={t("Upload.Remove")} onClick={() => setSelectedFile(null)} disabled={isSubmitting}>
-                    <X size={16} aria-hidden="true" />
-                  </button>
-                </div>
-              ) : null}
               {uploadStatus ? <p role="status" className={styles.visuallyHidden}>{uploadStatus}</p> : null}
               <label className={styles.composerField}>
                 <textarea
@@ -1336,6 +1328,14 @@ export default function ChatPageClient({ includeDebug }) {
                   disabled={isSubmitting || availableChatFamilies.length === 0}
                 />
               </label>
+              {selectedFile && shouldShowVisibilityControl ? (
+                <div className={`${styles.selectedFile} ${isSubmitting ? styles.selectedFileSubmitted : ""}`} aria-hidden={isSubmitting}>
+                  <span>{selectedFile.name}</span>
+                  <button type="button" className={styles.fileAction} title={t("Upload.Remove")} aria-label={t("Upload.Remove")} onClick={() => setSelectedFile(null)} disabled={isSubmitting}>
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              ) : null}
             </form>
             </section>
 

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { NextIntlClientProvider, useTranslations } from "next-intl";
+import { SquareArrowRightEnter, SquareArrowRightExit } from "lucide-react";
 import { AuthProvider, useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import { ADMIN_SECTIONS } from "./admin/adminShared";
@@ -146,11 +147,25 @@ function HeaderAuthControls({
               </select>
             </span>
           </label>
-          <button onClick={handleSignIn} className="appAuthButton appAuthButtonPrimary">{t("SignIn")}</button>
+          <button
+            onClick={handleSignIn}
+            className="appAuthButton appAuthButtonPrimary"
+            title={t("SignIn")}
+            aria-label={t("SignIn")}
+          >
+            <SquareArrowRightEnter size={18} aria-hidden="true" />
+          </button>
         </>
       ) : (
         <>
-          <button onClick={handleSignOut} className="appAuthButton appAuthButtonSecondary">{t("SignOut")}</button>
+          <button
+            onClick={handleSignOut}
+            className="appAuthButton appAuthButtonSecondary"
+            title={t("SignOut")}
+            aria-label={t("SignOut")}
+          >
+            <SquareArrowRightExit size={18} aria-hidden="true" />
+          </button>
         </>
       )}
     </div>

@@ -40,6 +40,12 @@
   gap: 0.45rem;
 }
 
+.searchButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .textInput,
 .selectInput {
   height: 3.45rem;

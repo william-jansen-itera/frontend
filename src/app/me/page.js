@@ -4,6 +4,7 @@ import styles from "./page.module.css";
 import { useAuth } from "../useAuth";
 import { useLanguagePreference } from "../usePersistedLanguage";
 import { useTranslations } from "next-intl";
+import { SquareArrowRightEnter } from "lucide-react";
 
 function formatValue(value, fallback = "Not available") {
   const normalizedValue = String(value ?? "").trim();
@@ -38,7 +39,15 @@ export default function MePage() {
             <h1 className={`${styles.title} appPageTitle`}>{t("SignedOut")}</h1>
             <p className="appPageDescription">{t("SignInHint")}</p>
             <div className={styles.actionRow}>
-              <button type="button" onClick={signIn} className="appPrimaryFormButton">{t("SignIn")}</button>
+              <button
+                type="button"
+                onClick={signIn}
+                className="appPrimaryFormButton"
+                title={t("SignIn")}
+                aria-label={t("SignIn")}
+              >
+                <SquareArrowRightEnter size={18} aria-hidden="true" />
+              </button>
             </div>
           </div>
         </section>

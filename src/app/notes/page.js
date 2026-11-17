@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { ListChevronsDownUp, ListChevronsUpDown, Paperclip, PencilSparkles, Plus, Save, Trash2, Trees } from "lucide-react";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
 import { NotesEditor } from "./NotesEditor";
@@ -1232,98 +1233,116 @@ function NotesPage() {
         >
           <div className={styles.panelHeader}>
             <div className={`appPanelTopBar ${styles.panelToolbar}`}>
-              <span className={styles.panelHeading}>{t("Tree.Heading")}</span>
-              <label className={styles.toolbarLabel}>
-                <select
-                  value={resolvedTreeIdValue}
-                  onChange={(event) => {
-                    const nextTreeId = event.target.value || null;
-                    resetTreeSelectionState();
-                    router.push(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam));
-                  }}
-                  disabled={availableTrees.length === 0}
-                >
-                  {availableTrees.length === 0 ? (
-                    <option value="">{t("Tree.NoTrees")}</option>
-                  ) : (
-                    availableTrees.map((tree) => (
-                      <option key={tree.id} value={tree.id}>
-                        {tree.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-              <label className={styles.toolbarLabel}>
-                <select
-                  value={visibilityParam}
-                  onChange={(event) => {
-                    setError(null);
-                    resetTreeSelectionState();
-                    const nextVisibility = setVisibility(event.target.value);
-                    router.push(getTreeSelectionHref(pathname, searchParams.toString(), null, nextVisibility));
-                  }}
-                >
-                  <option value="public">{t("Visibility.Public")}</option>
-                  <option value="private">{t("Visibility.Private")}</option>
-                </select>
-              </label>
+              <div className={styles.treeSelectors}>
+                <span className={styles.panelHeading}>{t("Tree.Heading")}</span>
+                <label className={styles.toolbarLabel}>
+                  <select
+                    value={resolvedTreeIdValue}
+                    onChange={(event) => {
+                      const nextTreeId = event.target.value || null;
+                      resetTreeSelectionState();
+                      router.push(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam));
+                    }}
+                    disabled={availableTrees.length === 0}
+                  >
+                    {availableTrees.length === 0 ? (
+                      <option value="">{t("Tree.NoTrees")}</option>
+                    ) : (
+                      availableTrees.map((tree) => (
+                        <option key={tree.id} value={tree.id}>
+                          {tree.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <label className={styles.toolbarLabel}>
+                  <select
+                    value={visibilityParam}
+                    onChange={(event) => {
+                      setError(null);
+                      resetTreeSelectionState();
+                      const nextVisibility = setVisibility(event.target.value);
+                      router.push(getTreeSelectionHref(pathname, searchParams.toString(), null, nextVisibility));
+                    }}
+                  >
+                    <option value="public">{t("Visibility.Public")}</option>
+                    <option value="private">{t("Visibility.Private")}</option>
+                  </select>
+                </label>
+              </div>
               <button
                 onClick={() => {
                   router.push(visibilityParam === "public" ? "/trees" : `/trees?visibility=${encodeURIComponent(visibilityParam)}`);
                 }}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
+                title={t("Tree.Manage")}
+                aria-label={t("Tree.Manage")}
               >
-                {t("Tree.Manage")}
+                <Trees size={18} aria-hidden="true" />
               </button>
               <button
                 onClick={handleAddRoot}
                 disabled={!canAddRoot}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonNeutral"
+                className={`appCompactActionButton appCompactActionButtonNeutral ${styles.addRootButton}`}
+                title={t("Tree.AddRoot")}
+                aria-label={t("Tree.AddRoot")}
               >
-                {t("Tree.AddRoot")}
+                <Plus size={18} aria-hidden="true" />
+                {t("Tree.Root")}
               </button>
               <button
                 onClick={handleAddChild}
                 disabled={!canAddChild}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
+                title={t("Tree.AddChild")}
+                aria-label={t("Tree.AddChild")}
               >
-                {t("Tree.AddChild")}
+                <Plus size={18} aria-hidden="true" />
               </button>
               <button
                 onClick={handleGenerateChildren}
                 disabled={!canGenerateChildren || isGeneratingChildren || isNodeDetailsBusy}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
+                title={t(isGeneratingChildren ? "Tree.Generating" : "Tree.Generate")}
+                aria-label={t(isGeneratingChildren ? "Tree.Generating" : "Tree.Generate")}
+                aria-busy={isGeneratingChildren}
               >
-                {t(isGeneratingChildren ? "Tree.Generating" : "Tree.Generate")}
+                <PencilSparkles size={18} aria-hidden="true" />
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(false)}
                 disabled={!hasExpandedNodes || isUpdatingExpansion}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
+                title={t("Tree.CollapseAll")}
+                aria-label={t("Tree.CollapseAll")}
               >
-                {t("Tree.CollapseAll")}
+                <ListChevronsDownUp size={18} aria-hidden="true" />
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(true)}
                 disabled={!hasCollapsedNodes || isUpdatingExpansion}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonNeutral"
+                title={t("Tree.ExpandAll")}
+                aria-label={t("Tree.ExpandAll")}
               >
-                {t("Tree.ExpandAll")}
+                <ListChevronsUpDown size={18} aria-hidden="true" />
               </button>
               <button
                 onClick={handleDelete}
                 disabled={!canDelete}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonDanger"
+                title={t("Tree.Delete")}
+                aria-label={t("Tree.Delete")}
               >
-                {t("Tree.Delete")}
+                <Trash2 size={18} aria-hidden="true" />
               </button>
               {approvalEnabled && canSubmitSelectedNode ? (
                 <button
@@ -1447,8 +1466,11 @@ function NotesPage() {
                 disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
                 type="button"
                 className="appCompactActionButton appCompactActionButtonPrimary"
+                title={t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
+                aria-label={t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
+                aria-busy={isSavingNodeDetails}
               >
-                {t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
+                <Save size={18} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -1610,18 +1632,27 @@ function NotesPage() {
                         <span className={styles.attachmentHint}>{t("Details.AttachmentLimit")}</span>
                       </div>
                       <div className={styles.attachmentPicker}>
-                        <label className={`appCompactActionButton appCompactActionButtonNeutral ${isNodeDetailsBusy ? styles.pickerButtonDisabled : ""}`}>
-                          <span>{t("Details.ChooseFiles")}</span>
-                          <input
-                            ref={attachmentInputRef}
-                            type="file"
-                            multiple
-                            accept={ATTACHMENT_ACCEPT}
-                            onChange={handleAttachmentSelectionChange}
-                            disabled={isNodeDetailsBusy || !canWriteSelectedTree}
-                            className={styles.fileInputHidden}
-                          />
-                        </label>
+                        <input
+                          ref={attachmentInputRef}
+                          type="file"
+                          multiple
+                          accept={ATTACHMENT_ACCEPT}
+                          onChange={handleAttachmentSelectionChange}
+                          disabled={isNodeDetailsBusy || !canWriteSelectedTree}
+                          className={styles.fileInputHidden}
+                          aria-label={t("Details.ChooseFiles")}
+                          tabIndex={-1}
+                        />
+                        <button
+                          type="button"
+                          className={styles.attachmentPickerButton}
+                          title={t("Details.ChooseFiles")}
+                          aria-label={t("Details.ChooseFiles")}
+                          disabled={isNodeDetailsBusy || !canWriteSelectedTree}
+                          onClick={() => attachmentInputRef.current?.click()}
+                        >
+                          <Paperclip size={18} aria-hidden="true" />
+                        </button>
                         <button
                           onClick={handleUploadAttachments}
                           disabled={isNodeDetailsBusy || !canWriteSelectedTree || pendingFiles.length === 0}
@@ -1739,8 +1770,11 @@ function NotesPage() {
                                   disabled={isNodeDetailsBusy || !canWriteSelectedTree}
                                   type="button"
                                   className="appCompactActionButton appCompactActionButtonDanger"
+                                  title={t(deletingAttachmentId === String(attachment.id) ? "Details.Deleting" : "Details.DeleteFile")}
+                                  aria-label={t(deletingAttachmentId === String(attachment.id) ? "Details.Deleting" : "Details.DeleteFile")}
+                                  aria-busy={deletingAttachmentId === String(attachment.id)}
                                 >
-                                  {t(deletingAttachmentId === String(attachment.id) ? "Details.Deleting" : "Details.DeleteFile")}
+                                  <Trash2 size={18} aria-hidden="true" />
                                 </button>
                               </div>
                             </div>

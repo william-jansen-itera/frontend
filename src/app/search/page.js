@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
+import { Search } from "lucide-react";
 import styles from "./page.module.css";
 import {
   ALL_VISIBILITY_VALUES,
@@ -463,8 +464,14 @@ function SearchPageContent() {
             </select>
           </label>
 
-          <button type="submit" className="appPrimaryFormButton">
-            {t(isSearching ? "Searching" : "SearchButton")}
+          <button
+            type="submit"
+            className={`appPrimaryFormButton ${styles.searchButton}`}
+            title={t(isSearching ? "Searching" : "SearchButton")}
+            aria-label={t(isSearching ? "Searching" : "SearchButton")}
+            aria-busy={isSearching}
+          >
+            <Search size={18} aria-hidden="true" />
           </button>
         </form>
       </section>

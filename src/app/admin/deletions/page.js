@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { RefreshCw } from "lucide-react";
 import styles from "../page.module.css";
 import { buildAuditLabel, formatTimestamp, getErrorMessage } from "../adminShared";
 
@@ -382,8 +383,11 @@ export default function AdminDeletionsPage() {
             onClick={loadDeletedItems}
             disabled={isLoading}
             className="appPrimaryFormButton"
+            title={t(isLoading ? "Refreshing" : "Refresh")}
+            aria-label={t(isLoading ? "Refreshing" : "Refresh")}
+            aria-busy={isLoading}
           >
-            {t(isLoading ? "Refreshing" : "Refresh")}
+            <RefreshCw size={18} aria-hidden="true" />
           </button>
         </div>
         {statusMessage ? <p className={styles.statusMessage}>{statusMessage}</p> : null}

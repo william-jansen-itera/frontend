@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { Pencil, PencilSparkles } from "lucide-react";
 import styles from "./NotesEditor.module.css";
 
 const INSERT_GROUPS = [
@@ -140,8 +141,10 @@ export function NotesEditor({
           className={styles.toolbarButton}
           onClick={onStartEditing}
           disabled={disabled || isEditing}
+          title={t("Edit")}
+          aria-label={t("Edit")}
         >
-          {t("Edit")}
+          <Pencil size={18} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -161,8 +164,11 @@ export function NotesEditor({
             className={styles.toolbarButton}
             onClick={onGenerate}
             disabled={disabled || !isEditing || !canGenerate || isGenerating}
+            title={t(isGenerating ? "Generating" : "Generate")}
+            aria-label={t(isGenerating ? "Generating" : "Generate")}
+            aria-busy={isGenerating}
           >
-            {t(isGenerating ? "Generating" : "Generate")}
+            <PencilSparkles size={18} aria-hidden="true" />
           </button>
         ) : null}
         <button

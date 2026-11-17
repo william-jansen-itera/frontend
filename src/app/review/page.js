@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
+import { RefreshCw } from "lucide-react";
 import { buildAuditLabel, getErrorMessage } from "@/app/shared/displayFormatting";
 import { useAuth } from "@/app/useAuth";
 import styles from "./page.module.css";
@@ -608,8 +609,11 @@ export default function ReviewPage() {
               onClick={refreshReviewItems}
               disabled={isLoading}
               className="appPrimaryFormButton"
+              title={t(isLoading ? "Refreshing" : "Refresh")}
+              aria-label={t(isLoading ? "Refreshing" : "Refresh")}
+              aria-busy={isLoading}
             >
-              {t(isLoading ? "Refreshing" : "Refresh")}
+              <RefreshCw size={18} aria-hidden="true" />
             </button>
           </div>
         </div>
