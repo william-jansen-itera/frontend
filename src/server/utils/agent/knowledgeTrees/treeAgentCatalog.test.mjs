@@ -10,6 +10,7 @@ const modules = new Map([
   ['@/server/utils/foundryAgentClient', `
     export const AGENT_PREVIEW_FEATURES = {};
     export const getRequiredFoundryConfig = () => globalThis.__treePublishConfig ?? ({ agentName: 'test-agent', modelDeploymentName: 'test-model' });
+    export const getRequiredFoundryFamilyConfig = () => ({ agentName: 'test-agent', modelDeploymentName: 'test-model' });
     export const getProjectClient = () => ({ agents: {
       update: async (name, definition) => {
         globalThis.__publishedTreeInstructions = definition.instructions;
@@ -39,8 +40,29 @@ for (const [moduleName, handlerName, definitionName, toolName] of [
     `export const ${handlerName} = () => {}; export const ${definitionName} = { name: "${toolName}" };`);
 }
 
+for (const [moduleName, handlerName, definitionName, constantName] of [
+  ['email/tools/draftEmailTool', 'buildDraftEmailHandler', 'draftEmailToolDefinition', 'DRAFT_EMAIL_TOOL'],
+  ['email/tools/deleteEmailTool', 'buildDeleteEmailHandler', 'deleteEmailToolDefinition', 'DELETE_EMAIL_TOOL'],
+  ['email/tools/flagEmailTool', 'buildFlagEmailHandler', 'flagEmailToolDefinition', 'FLAG_EMAIL_TOOL'],
+  ['email/tools/showEmailTool', 'buildShowEmailHandler', 'showEmailToolDefinition', 'SHOW_EMAIL_TOOL'],
+  ['email/tools/retrieveEmailsTool', 'buildRetrieveEmailsHandler', 'retrieveEmailsToolDefinition', 'RETRIEVE_EMAILS_TOOL'],
+  ['email/tools/analyzeEmailTool', 'buildAnalyzeEmailHandler', 'analyzeEmailToolDefinition', 'ANALYZE_EMAIL_TOOL'],
+  ['email/tools/sendEmailTool', 'buildSendEmailHandler', 'sendEmailToolDefinition', 'SEND_EMAIL_TOOL'],
+  ['email/tools/unsubscribeEmailTool', 'buildUnsubscribeEmailHandler', 'unsubscribeEmailToolDefinition', 'UNSUBSCRIBE_EMAIL_TOOL'],
+  ['investment/tools/getBuySellVolatilityRecommendationTool', 'buildGetBuySellVolatilityRecommendationHandler', 'getBuySellVolatilityRecommendationToolDefinition', 'GET_BUY_SELL_VOLATILITY_RECOMMENDATION_TOOL'],
+  ['investment/tools/getStockPriceTool', 'buildGetStockPriceHandler', 'getStockPriceToolDefinition', 'GET_STOCK_PRICE_TOOL'],
+  ['investment/tools/reviewVolatilityEventsTool', 'buildReviewVolatilityEventsHandler', 'reviewVolatilityEventsToolDefinition', 'GET_VOLATILITY_EVENTS_TOOL'],
+  ['investment/tools/updatePortfolioHoldingsTool', 'buildUpdatePortfolioHoldingsHandler', 'updatePortfolioHoldingsToolDefinition', 'PORTFOLIO_STOCK_HOLDINGS_TOOL'],
+]) {
+  modules.set(`@/server/utils/agent/${moduleName}`,
+    `export const ${handlerName} = () => {}; export const ${definitionName} = {}; export const ${constantName} = "${constantName}";`);
+}
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier === '@/server/utils/agent/agentConversationInput') {
+      return nextResolve(new URL('../agentConversationInput.js', import.meta.url).href, context);
+    }
     const stub = modules.get(specifier);
     return stub
       ? { url: `data:text/javascript,${encodeURIComponent(stub)}`, shortCircuit: true }
@@ -50,6 +72,40 @@ registerHooks({
 
 const { publishStoredTreeDescriptions } = await import('./treeAgentCatalog.js');
 const { getRequiredFoundryConfig: getActualFoundryConfig } = await import('../../foundryAgentClient.js');
+const { buildReplyLanguagePolicy, buildReplyLanguageInstruction } = await import('../agentConversationInput.js');
+const { buildEmailAgentInstructions } = await import('../email/emailAgentCatalog.js');
+const { buildInvestmentAgentInstructions } = await import('../investment/investmentAgentCatalog.js');
+
+test('all published agent families and runtime messages retain the same complete language policy', async () => {
+  await publishStoredTreeDescriptions();
+  const policy = buildReplyLanguagePolicy();
+  const published = [
+    globalThis.__publishedTreeInstructions,
+    buildEmailAgentInstructions(),
+    buildInvestmentAgentInstructions(),
+  ];
+  for (const instructions of published) {
+    assert.equal(instructions.split(policy).length - 1, 1);
+    assert.doesNotMatch(instructions, /\$\{buildReplyLanguagePolicy/);
+  }
+  for (const language of ['en', 'da']) {
+    for (const isAutomatedCompletion of [false, true]) {
+      for (const structuredAnswerState of [false, true]) {
+        const runtime = buildReplyLanguageInstruction(language, { isAutomatedCompletion, structuredAnswerState });
+        assert.equal(runtime.split(policy).length - 1, 1);
+        assert.match(runtime, new RegExp(`selected app language, ${language}`));
+        if (isAutomatedCompletion) {
+          assert.match(runtime, /This server-authorized turn is a browser-generated upload completion/);
+        } else {
+          assert.doesNotMatch(runtime, /This server-authorized turn is a browser-generated upload completion/);
+        }
+        assert.ok(runtime.includes(structuredAnswerState
+          ? 'alongside the existing answer and state fields'
+          : 'one JSON object with string fields answer, responseLanguage, and languageReason'));
+      }
+    }
+  }
+});
 
 test('publication enables medium reasoning for GPT-5.4 without changing GPT-4.1 tools or instructions', async (t) => {
   const keys = ['AZURE_AI_PROJECT_ENDPOINT', 'AZURE_AI_MODEL_DEPLOYMENT_NAME'];
