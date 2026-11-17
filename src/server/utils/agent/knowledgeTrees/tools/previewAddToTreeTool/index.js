@@ -52,7 +52,7 @@ export const previewAddToTreeToolDefinition = {
       },
       uploadId: {
         type: 'string',
-        description: 'For completed_upload_note, the upload ID in the automated completion message; otherwise use an empty string.',
+        description: 'For completed_upload_note, copy the exact server-provided upload ID authorized for this turn: previewUploadId on an automated completion turn, or pendingUploadId on a human follow-up to a processed upload. Both use contentSource="completed_upload_note". Otherwise use an empty string.',
       },
       userDescription: {
         type: 'string',

@@ -76,9 +76,33 @@ test('publication enables medium reasoning for GPT-5.4 without changing GPT-4.1 
   assert.deepEqual(definitions[0], definitions[1]);
 });
 
+test('published prompt exposes Markdown headings, ordered routes, and literal preview markers', async () => {
+  await publishStoredTreeDescriptions();
+  const instructions = globalThis.__publishedTreeInstructions;
+  assert.doesNotMatch(instructions, /^ {4}\S/m);
+  const lines = instructions.split('\n');
+  for (const [index, line] of lines.entries()) {
+    if (/^#{2,4} /.test(line)) {
+      if (index > 0 && !/^#{2,4} /.test(lines[index - 1])) {
+        assert.equal(lines[index - 1], '', `Blank line before ${line}`);
+      }
+    }
+    if (/^- /.test(line) && !/^(?:- | {2})/.test(lines[index - 1] ?? '')) {
+      assert.equal(lines[index - 1], '', `Blank line before list: ${line}`);
+    }
+    if (/^- /.test(line) && lines[index + 1] && !/^(?:- | {2})/.test(lines[index + 1])) {
+      assert.fail(`Missing blank line after list: ${line}`);
+    }
+  }
+  const routes = instructions.split('## Decide the current turn')[1].split('## Grounding and broader answers')[0];
+  assert.deepEqual([...routes.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1])), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.ok(instructions.includes('`<!-- Preview ID: UUID -->`'));
+  assert.equal(instructions.split('`\\n\\n<!-- Preview ID: ACTUAL_UUID -->`').length - 1, 2);
+});
+
 test('published upload policy checks compatible filename hints before asking for identification', async () => {
   await publishStoredTreeDescriptions();
-  const section = globalThis.__publishedTreeInstructions.split('#### completed upload')[1].split('### preview_save_to_tree')[0];
+  const section = globalThis.__publishedTreeInstructions.split('### Completed upload: save intent')[1].split('## Save workflow')[0];
   assert.match(section, /Before deciding whether to ask.*normalized filename topic words together/);
   assert.match(section, /Recognize meaningful terms across languages/);
   assert.match(section, /subject independently supported by the note or caption.*preview directly/);
@@ -88,7 +112,7 @@ test('published upload policy checks compatible filename hints before asking for
 
 test('published upload policy keeps filename hints out of saved facts and preserves human approval', async () => {
   await publishStoredTreeDescriptions();
-  const section = globalThis.__publishedTreeInstructions.split('#### completed upload')[1].split('### preview_save_to_tree')[0];
+  const section = globalThis.__publishedTreeInstructions.split('### Completed upload: save intent')[1].split('## Save workflow')[0];
   assert.match(section, /unverified placement hint, not a confirmed identification/);
   assert.match(section, /Do not add filename-only claims to saved notes or put them in userDescription or userClarification/);
   assert.match(section, /Prefer human descriptions and file content when they conflict/);
@@ -100,7 +124,7 @@ test('published upload policy keeps filename hints out of saved facts and preser
 
 test('published confirmation policy copies the latest offered arguments only after human approval', async () => {
   await publishStoredTreeDescriptions();
-  const section = globalThis.__publishedTreeInstructions.split('### confirm_save_to_tree')[1].split('## final response format')[0];
+  const section = globalThis.__publishedTreeInstructions.split('### confirm_save_to_tree')[1].split('## Final response format')[0];
   assert.match(section, /saveMode only from the latest approved preview's availableSaveModes/);
   assert.match(section, /If exactly one mode is offered, use that exact value/);
   assert.match(section, /For an unqualified approval, copy defaultConfirmArguments exactly/);
@@ -131,6 +155,21 @@ test('published preview policy does not confuse processing readiness with an app
   assert.match(section, /call preview_save_to_tree rather than merely reporting that nothing is saved or waiting for final approval/);
   assert.match(section, /Claim a preview is ready only after preview_save_to_tree or revise_save_preview succeeds/);
   assert.match(section, /Processing-only requests still do not authorize a save preview/);
+});
+
+test('published preview presentation hides internal modes and avoids duplicate destinations', async () => {
+  await publishStoredTreeDescriptions();
+  const instructions = globalThis.__publishedTreeInstructions;
+  const preview = instructions.split('### preview_save_to_tree')[1].split('### revise_save_preview')[0];
+  assert.match(preview, /exact defaultSavePath once/);
+  assert.match(preview, /proposed action in ordinary language in the reply language/);
+  assert.match(preview, /do not display technical field labels or raw enum values/);
+  assert.match(preview, /do not repeat it as a separate merge path/);
+  assert.match(preview, /createPath.*only when returned and different from the default destination/);
+  assert.doesNotMatch(preview, /Show the tool result's saveKind, defaultSavePath and defaultSaveMode/);
+  const revision = instructions.split('### revise_save_preview')[1].split('### confirm_save_to_tree')[0];
+  assert.match(revision, /exact revised defaultSavePath once/);
+  assert.match(revision, /without displaying technical field labels or raw enum values/);
 });
 
 test('published language policy treats standalone ja as Danish before applying the app-language fallback', async () => {
