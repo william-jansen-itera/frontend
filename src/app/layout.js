@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { NextIntlClientProvider, useTranslations } from "next-intl";
-import { SquareArrowRightEnter, SquareArrowRightExit } from "lucide-react";
+import { SquareArrowRightEnter, SquareArrowRightExit, UserCog } from "lucide-react";
 import { AuthProvider, useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import { ADMIN_SECTIONS } from "./admin/adminShared";
@@ -38,7 +38,6 @@ const navLinks = [
   { href: "/search", labelKey: "Search", requiresRole: "mdsusers" },
   { href: "/chat", labelKey: "Agent", requiresRole: "mdsusers" },
   { href: "/review", labelKey: "Review", requiresRole: "mdsusers" },
-  { href: "/me", labelKey: "Me", requiresAuthenticated: true },
   { href: "/admin", labelKey: "Admin", requiresRole: "mdsadmins", children: adminNavChildren },
   { href: "/about", labelKey: "About" },
   { href: "/contact", labelKey: "Contact" },
@@ -116,12 +115,11 @@ function HeaderAuthControls({
   user,
   signIn,
   signOut,
-  mobile = false,
+  meHref,
   onAction = null,
 }) {
   const t = useTranslations("Menu");
   const { language, setLanguage, isReady } = useLanguagePreference();
-  const authGroupClassName = mobile ? "appAuthGroup appAuthGroupMobile" : "appAuthGroup";
 
   const handleSignIn = () => {
     onAction?.();
@@ -134,14 +132,14 @@ function HeaderAuthControls({
   };
 
   return (
-    <div className={authGroupClassName}>
+    <div className="appAuthGroup">
       {!user ? (
         <>
           <label className="appLanguageControl">
             <span>{t("LanguageLabel")}</span>
             <span className="appLanguageSelect">
               {language === "da" ? <span className="appLanguageFlagDanish" aria-hidden="true" /> : null}
-              <select value={language} onChange={(event) => setLanguage(event.target.value)} disabled={!isReady}>
+              <select aria-label={t("LanguageLabel")} value={language} onChange={(event) => setLanguage(event.target.value)} disabled={!isReady}>
                 <option value="en">English</option>
                 <option value="da">Dansk</option>
               </select>
@@ -158,6 +156,16 @@ function HeaderAuthControls({
         </>
       ) : (
         <>
+          <Link
+            href={meHref}
+            prefetch={false}
+            className="appAuthButton appAuthButtonSecondary"
+            title={t("Me")}
+            aria-label={t("Me")}
+            onClick={onAction}
+          >
+            <UserCog size={18} aria-hidden="true" />
+          </Link>
           <button
             onClick={handleSignOut}
             className="appAuthButton appAuthButtonSecondary"
@@ -311,6 +319,8 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
               user={user}
               signIn={signIn}
               signOut={signOut}
+              meHref={buildNavHref("/me")}
+              onAction={() => setMobileMenuPathname(null)}
             />
 
             <button
@@ -330,13 +340,6 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
           {isMobileMenuOpen ? (
             <div id="app-mobile-menu" className="appMobileMenu">
               {renderNavLinks({ mobile: true })}
-              <HeaderAuthControls
-                user={user}
-                signIn={signIn}
-                signOut={signOut}
-                mobile
-                onAction={() => setMobileMenuPathname(null)}
-              />
             </div>
           ) : null}
         </nav>

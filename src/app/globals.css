@@ -127,7 +127,7 @@ body {
 
 .appNavMainRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   width: 100%;
@@ -303,11 +303,11 @@ body {
 
 .appNavBrandGroup {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 1.1rem;
   min-width: 0;
   flex: 1 1 auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .appNavMenuButton {
@@ -343,6 +343,7 @@ body {
 
 .appBrandLink {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   color: var(--ui-title-color);
   font-size: 1rem;
@@ -361,6 +362,9 @@ body {
 
 .appNavLinks {
   display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 3.5rem;
   align-items: center;
   gap: 0.55rem;
   flex-wrap: wrap;
@@ -374,6 +378,7 @@ body {
 
 .appNavLink {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 0.4rem;
   padding: 0.55rem 0.85rem;
@@ -474,6 +479,7 @@ body {
 
 .appAuthGroup {
   display: flex;
+  min-height: 3.5rem;
   align-items: center;
   gap: 0.75rem;
   flex: 0 0 auto;
@@ -535,8 +541,7 @@ body {
   display: none;
 }
 
-.appNavLinksMobile,
-.appAuthGroupMobile {
+.appNavLinksMobile {
   display: none;
 }
 
@@ -575,6 +580,11 @@ body {
     height: 2.9rem;
   }
 
+  .appNavLinks,
+  .appAuthGroup {
+    min-height: 2.9rem;
+  }
+
 }
 
 @media (max-width: 720px) {
@@ -590,8 +600,7 @@ body {
     flex: 1 1 auto;
   }
 
-  .appNavLinks,
-  .appNavMainRow > .appAuthGroup {
+  .appNavLinks {
     display: none;
   }
 
@@ -648,21 +657,6 @@ body {
     padding: 0.6rem 0.75rem;
   }
 
-  .appAuthGroupMobile {
-    display: grid;
-    gap: 0.7rem;
-    width: 100%;
-    justify-content: stretch;
-  }
-
-  .appAuthGroupMobile .appAuthText {
-    overflow-wrap: anywhere;
-  }
-
-  .appAuthGroupMobile .appAuthButton {
-    width: fit-content;
-  }
-
   .appPageShell {
     padding: 0.15rem 1rem 1rem;
   }
@@ -679,14 +673,14 @@ body {
 
   .appNavMainRow {
     align-items: center;
+    gap: 0.5rem;
   }
 
   .appNavBrandGroup {
     flex: 1 1 auto;
   }
 
-  .appNavLinks,
-  .appNavMainRow > .appAuthGroup {
+  .appNavLinks {
     display: none;
   }
 
@@ -714,19 +708,25 @@ body {
     box-sizing: border-box;
   }
 
-  .appAuthGroupMobile {
-    display: grid;
-    gap: 0.7rem;
-    width: 100%;
-    justify-content: stretch;
+  .appNav {
+    padding-inline: 0.75rem;
   }
 
-  .appAuthGroupMobile .appAuthText {
-    overflow-wrap: anywhere;
+  .appAuthGroup {
+    gap: 0.5rem;
   }
 
-  .appAuthGroupMobile .appAuthButton {
-    width: fit-content;
+  .appAuthButton {
+    padding: 0.55rem 0.65rem;
+  }
+
+  .appLanguageControl > span:first-child {
+    display: none;
+  }
+
+  .appLanguageControl select {
+    max-width: 4.5rem;
+    font-size: 0.75rem;
   }
 
   .appPageShell {
