@@ -1,5 +1,7 @@
 import styles from "./page.module.css";
+import { useId } from "react";
 import { useTranslations } from "next-intl";
+import { LeafyGreen } from "lucide-react";
 import { dataNodeHasChildren } from "./treeUtils";
 
 export const TREE_INDENT = 24;
@@ -9,8 +11,22 @@ const CONTENT_OFFSET = 10;
 const ROOT_OFFSET = 24;
 const ROOT_CONNECTOR_LAYER = 1000;
 
+function getNodeHash(id) {
+  let hash = 2166136261;
+  for (const character of String(id)) {
+    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0;
+  }
+  return hash;
+}
+
+function getBranchBrightness(id) {
+  return 0.75 + (getNodeHash(id) % 36) / 200;
+}
+
 export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
   const t = useTranslations("Pages.Notes.Tree");
+  const leafGradientId = useId();
+  const nodeHash = getNodeHash(node.data.id);
   const isSelected = String(node.data.id) === String(selectedNodeId);
   const level = node.level;
   const isLeaf = Boolean(node.data.isLeafNode);
@@ -19,7 +35,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
 
   return (
     <div
-      style={{ ...style, paddingLeft: 0, height: TREE_ROW_HEIGHT, minHeight: TREE_ROW_HEIGHT, overflow: "visible" }}
+      style={{ ...style, paddingLeft: 0, height: TREE_ROW_HEIGHT, minHeight: TREE_ROW_HEIGHT, overflow: "visible", "--tree-branch-brightness": getBranchBrightness(node.data.id) }}
       ref={dragHandle}
       onClick={node.handleClick}
       className={[
@@ -38,6 +54,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
           width: 16,
           borderRadius: isRootRow && node.childIndex === 0 ? "5px 0 0 0" : 0,
           zIndex: ROOT_CONNECTOR_LAYER,
+          "--tree-branch-brightness": 0.9,
         }}
       />
       {level === 0 && (
@@ -77,6 +94,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
               width: Math.max(1, 6 - depth * 2),
               borderRadius: "2px 2px 0px 2px",
               zIndex: ROOT_CONNECTOR_LAYER - 2 * depth - 2,
+              "--tree-branch-brightness": getBranchBrightness(pathNode.parent.data.id),
             }}
           />
         );
@@ -114,7 +132,23 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
           style={{ marginLeft: level === 0 ? ROOT_OFFSET + 12 : ROOT_OFFSET + level * TREE_INDENT + CONTENT_OFFSET - (isLeaf ? 2 : 0), visibility: isLeaf ? undefined : "hidden" }}
           aria-hidden="true"
         >
-          {isLeaf ? "\uD83C\uDF43" : "\u25B8"}
+          {isLeaf ? (
+            <LeafyGreen
+              size={18}
+              color="#15803d"
+              fill={`url(#${leafGradientId})`}
+              strokeWidth={2}
+              style={{ transform: "translate(-7px, -2px) rotate(40deg)", filter: `saturate(0.7) brightness(${0.8 + (nodeHash % 41) / 160})` }}
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id={leafGradientId} x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform={`rotate(${nodeHash % 360} 0.5 0.5)`}>
+                  <stop offset="0%" stopColor="#dcfce7" />
+                  <stop offset="60%" stopColor="#16a34a" />
+                </linearGradient>
+              </defs>
+            </LeafyGreen>
+          ) : "\u25B8"}
         </span>
       )}
       <span className={`${styles.treeRowLabel} ${isLeaf ? styles.treeLeafLabel : ""}`}>

@@ -29,6 +29,7 @@
   --ui-body-size: 1rem;
   --ui-body-line-height: 1.7;
   --ui-control-radius: 16px;
+  --ui-action-button-size: 44px;
 }
 
 @theme inline {
@@ -229,6 +230,8 @@ body {
 
 .appCompactActionButton {
   display: inline-flex;
+  box-sizing: border-box;
+  min-height: var(--ui-action-button-size);
   align-items: center;
   justify-content: center;
   appearance: none;
@@ -299,6 +302,25 @@ body {
 
 .appPrimaryFormButton:hover {
   filter: brightness(1.04);
+}
+
+button.appIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: var(--ui-action-button-size);
+  min-width: var(--ui-action-button-size);
+  height: var(--ui-action-button-size);
+  min-height: var(--ui-action-button-size);
+  padding: 0.5rem;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --ui-action-button-size: 40px;
+  }
 }
 
 .appNavBrandGroup {
@@ -478,12 +500,34 @@ body {
 }
 
 .appAuthGroup {
+  position: relative;
   display: flex;
   min-height: 3.5rem;
   align-items: center;
   gap: 0.75rem;
   flex: 0 0 auto;
   justify-content: flex-end;
+}
+
+.appAuthGroup .appNavGroup {
+  position: static;
+}
+
+.appAuthGroup .appNavSubmenu {
+  left: auto;
+  right: 0;
+}
+
+@media (max-width: 400px) {
+  .appNav .appNavMainRow,
+  .appNav .appAuthGroup {
+    gap: 0.25rem;
+  }
+
+  .appNav .appAuthButton {
+    width: 36px;
+    padding: 0.35rem;
+  }
 }
 
 .appLanguageControl {
@@ -547,12 +591,15 @@ body {
 
 .appAuthButton {
   display: inline-flex;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
   align-items: center;
   justify-content: center;
   appearance: none;
   border: 1px solid transparent;
   border-radius: 999px;
-  padding: 0.7rem 1rem;
+  padding: 0.5rem;
   color: #ffffff;
   font-size: 0.92rem;
   font-weight: 700;
@@ -717,7 +764,9 @@ body {
   }
 
   .appAuthButton {
-    padding: 0.55rem 0.65rem;
+    width: 40px;
+    height: 40px;
+    padding: 0.4rem;
   }
 
   .appLanguageControl > span:first-child {

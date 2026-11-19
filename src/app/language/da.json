@@ -227,7 +227,7 @@
       "TreeLabel": "Træ", "AllTrees": "Alle træer", "VisibilityLabel": "Synlighed",
       "Visibility": { "Public": "Offentlig", "Private": "Privat", "Both": "Begge" },
       "SearchButton": "Søg", "Searching": "Søger...", "Loading": "Indlæser søgning...",
-      "StartTitle": "Start med et søgeudtryk", "StartDescription": "Søgningen omfatter både nodeindhold fra SQL og vedhæftede filer fra bloblageret i det fælles indeks.",
+      "StartTitle": "Start med et søgeudtryk", "StartDescription": "Søgningen omfatter både nodeindhold og vedhæftede filer.",
       "ResultsHeading": "Noderesultater", "MatchCount": "{count, plural, one {# resultat} other {# resultater}}",
       "ExecutedQueries": "Udførte søgninger", "RecordedSearches": "{count, plural, one {# søgning registreret} other {# søgninger registreret}}",
       "TokenCoverage": "orddækningsfilter", "Enabled": "aktiveret", "Disabled": "deaktiveret", "Threshold": "tærskel {value}",

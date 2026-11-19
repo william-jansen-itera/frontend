@@ -227,7 +227,7 @@
       "TreeLabel": "Tree", "AllTrees": "All trees", "VisibilityLabel": "Visibility",
       "Visibility": { "Public": "Public", "Private": "Private", "Both": "Both" },
       "SearchButton": "Search", "Searching": "Searching...", "Loading": "Loading search...",
-      "StartTitle": "Start with a phrase", "StartDescription": "Search runs against both SQL-backed node content and blob attachment content in the shared index.",
+      "StartTitle": "Start with a phrase", "StartDescription": "Search includes both node content and attachments.",
       "ResultsHeading": "Node Results", "MatchCount": "{count, plural, one {# match} other {# matches}}",
       "ExecutedQueries": "Executed Queries", "RecordedSearches": "{count, plural, one {# search recorded} other {# searches recorded}}",
       "TokenCoverage": "token coverage filter", "Enabled": "enabled", "Disabled": "disabled", "Threshold": "threshold {value}",

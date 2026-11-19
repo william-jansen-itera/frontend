@@ -11,6 +11,8 @@
 }
 
 .toolbarButton {
+  box-sizing: border-box;
+  min-height: var(--ui-action-button-size);
   appearance: none;
   border: 1px solid #cbd5e1;
   border-radius: 999px;

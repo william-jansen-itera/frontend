@@ -1276,11 +1276,11 @@ function NotesPage() {
                   router.push(visibilityParam === "public" ? "/trees" : `/trees?visibility=${encodeURIComponent(visibilityParam)}`);
                 }}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonNeutral"
+                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.Manage")}
                 aria-label={t("Tree.Manage")}
               >
-                <Trees size={18} aria-hidden="true" />
+                <Trees size={20} aria-hidden="true" />
               </button>
               <button
                 onClick={handleAddRoot}
@@ -1290,59 +1290,59 @@ function NotesPage() {
                 title={t("Tree.AddRoot")}
                 aria-label={t("Tree.AddRoot")}
               >
-                <Plus size={18} aria-hidden="true" />
+                <Plus size={20} aria-hidden="true" />
                 {t("Tree.Root")}
               </button>
               <button
                 onClick={handleAddChild}
                 disabled={!canAddChild}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonNeutral"
+                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.AddChild")}
                 aria-label={t("Tree.AddChild")}
               >
-                <Plus size={18} aria-hidden="true" />
+                <Plus size={20} aria-hidden="true" />
               </button>
               <button
                 onClick={handleGenerateChildren}
                 disabled={!canGenerateChildren || isGeneratingChildren || isNodeDetailsBusy}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonNeutral"
+                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t(isGeneratingChildren ? "Tree.Generating" : "Tree.Generate")}
                 aria-label={t(isGeneratingChildren ? "Tree.Generating" : "Tree.Generate")}
                 aria-busy={isGeneratingChildren}
               >
-                <PencilSparkles size={18} aria-hidden="true" />
+                <PencilSparkles size={20} aria-hidden="true" />
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(false)}
                 disabled={!hasExpandedNodes || isUpdatingExpansion}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonNeutral"
+                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.CollapseAll")}
                 aria-label={t("Tree.CollapseAll")}
               >
-                <ListChevronsDownUp size={18} aria-hidden="true" />
+                <ListChevronsDownUp size={20} aria-hidden="true" />
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(true)}
                 disabled={!hasCollapsedNodes || isUpdatingExpansion}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonNeutral"
+                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.ExpandAll")}
                 aria-label={t("Tree.ExpandAll")}
               >
-                <ListChevronsUpDown size={18} aria-hidden="true" />
+                <ListChevronsUpDown size={20} aria-hidden="true" />
               </button>
               <button
                 onClick={handleDelete}
                 disabled={!canDelete}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonDanger"
+                className="appIconButton appCompactActionButton appCompactActionButtonDanger"
                 title={t("Tree.Delete")}
                 aria-label={t("Tree.Delete")}
               >
-                <Trash2 size={18} aria-hidden="true" />
+                <Trash2 size={20} aria-hidden="true" />
               </button>
               {approvalEnabled && canSubmitSelectedNode ? (
                 <button
@@ -1465,12 +1465,12 @@ function NotesPage() {
                 onClick={handleSaveNodeDetails}
                 disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
                 type="button"
-                className="appCompactActionButton appCompactActionButtonPrimary"
+                className="appIconButton appCompactActionButton appCompactActionButtonPrimary"
                 title={t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
                 aria-label={t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
                 aria-busy={isSavingNodeDetails}
               >
-                <Save size={18} aria-hidden="true" />
+                <Save size={20} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -1645,13 +1645,13 @@ function NotesPage() {
                         />
                         <button
                           type="button"
-                          className={styles.attachmentPickerButton}
+                          className={`appIconButton ${styles.attachmentPickerButton}`}
                           title={t("Details.ChooseFiles")}
                           aria-label={t("Details.ChooseFiles")}
                           disabled={isNodeDetailsBusy || !canWriteSelectedTree}
                           onClick={() => attachmentInputRef.current?.click()}
                         >
-                          <Paperclip size={18} aria-hidden="true" />
+                          <Paperclip size={20} aria-hidden="true" />
                         </button>
                         <button
                           onClick={handleUploadAttachments}
@@ -1769,12 +1769,12 @@ function NotesPage() {
                                   onClick={() => handleDeleteAttachment(attachment.id)}
                                   disabled={isNodeDetailsBusy || !canWriteSelectedTree}
                                   type="button"
-                                  className="appCompactActionButton appCompactActionButtonDanger"
+                                  className="appIconButton appCompactActionButton appCompactActionButtonDanger"
                                   title={t(deletingAttachmentId === String(attachment.id) ? "Details.Deleting" : "Details.DeleteFile")}
                                   aria-label={t(deletingAttachmentId === String(attachment.id) ? "Details.Deleting" : "Details.DeleteFile")}
                                   aria-busy={deletingAttachmentId === String(attachment.id)}
                                 >
-                                  <Trash2 size={18} aria-hidden="true" />
+                                  <Trash2 size={20} aria-hidden="true" />
                                 </button>
                               </div>
                             </div>

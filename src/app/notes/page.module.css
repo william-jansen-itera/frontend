@@ -82,6 +82,7 @@
 
 .treeConnector {
   position: absolute;
+  filter: brightness(var(--tree-branch-brightness, 0.9));
   background: #cbbfb3;
   pointer-events: none;
   background: linear-gradient(

@@ -1,4 +1,5 @@
 import { useTranslations } from "next-intl";
+import { Globe, GlobeOff, Zap, ZapOff } from "lucide-react";
 import styles from "../page.module.css";
 import {
   formatFamilyActionMessage,
@@ -57,6 +58,7 @@ export function AgentFamilyPublishingPanel({
               const isActivationPending = Boolean(pendingItems[activationPendingKey]);
               const isUnpublishing = Boolean(pendingItems[unpublishPendingKey]);
               const isPending = isPublishing || isActivationPending || isUnpublishing;
+              const activationLabel = t(family.isActive ? isActivationPending ? "Deactivating" : "Deactivate" : isActivationPending ? "Activating" : "Activate");
               const definedTools = getFamilyDefinedTools(family);
               const familyName = family.label || family.family;
               const publishAction = family.promptAgentStatus === "published" ? "Republish" : "Publish";
@@ -135,28 +137,34 @@ export function AgentFamilyPublishingPanel({
                       <>
                         <button
                           type="button"
-                          className="appCompactActionButton appCompactActionButtonNeutral"
+                          className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                           onClick={() => onAction(family, "publish", t("ConfirmPublish", { action: t(publishAction).toLowerCase(), name: familyName }), formatFamilyActionMessage)}
                           disabled={isPending || isLoading}
+                          title={t(isPublishing ? "Publishing" : publishAction)}
+                          aria-label={t(isPublishing ? "Publishing" : publishAction)}
                         >
-                          {t(isPublishing ? "Publishing" : publishAction)}
+                          <Globe size={20} aria-hidden="true" />
                         </button>
                         <button
                           type="button"
-                          className="appCompactActionButton appCompactActionButtonNeutral"
+                          className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                           onClick={() => onAction(family, activationAction, t(family.isActive ? "ConfirmDeactivate" : "ConfirmActivate", { name: familyName }), formatFamilyActionMessage)}
                           disabled={isPending || isLoading || shouldDisableFamilyActivation(family)}
+                          title={activationLabel}
+                          aria-label={activationLabel}
                         >
-                          {t(family.isActive ? isActivationPending ? "Deactivating" : "Deactivate" : isActivationPending ? "Activating" : "Activate")}
+                          {family.isActive ? <ZapOff size={20} aria-hidden="true" /> : <Zap size={20} aria-hidden="true" />}
                         </button>
                         {shouldShowFamilyUnpublish(family) ? (
                           <button
                             type="button"
-                            className="appCompactActionButton appCompactActionButtonNeutral"
+                            className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                             onClick={() => onAction(family, "unpublish", t("ConfirmUnpublish", { name: familyName }), formatFamilyActionMessage)}
                             disabled={isPending || isLoading}
+                            title={t(isUnpublishing ? "Unpublishing" : "Unpublish")}
+                            aria-label={t(isUnpublishing ? "Unpublishing" : "Unpublish")}
                           >
-                            {t(isUnpublishing ? "Unpublishing" : "Unpublish")}
+                            <GlobeOff size={20} aria-hidden="true" />
                           </button>
                         ) : null}
                       </>

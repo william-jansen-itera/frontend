@@ -102,10 +102,15 @@
 
 .ctaLink,
 .ctaLinkSecondary {
-  padding: 0.8rem 1rem;
+  display: inline-flex;
+  box-sizing: border-box;
+  min-height: var(--ui-action-button-size);
+  align-items: center;
+  padding: 8px 1rem;
   border-radius: 999px;
   text-decoration: none;
   font-size: 0.94rem;
+  line-height: 1;
   font-weight: 700;
 }
 

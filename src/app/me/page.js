@@ -42,11 +42,11 @@ export default function MePage() {
               <button
                 type="button"
                 onClick={signIn}
-                className="appPrimaryFormButton"
+                className="appIconButton appPrimaryFormButton"
                 title={t("SignIn")}
                 aria-label={t("SignIn")}
               >
-                <SquareArrowRightEnter size={18} aria-hidden="true" />
+                <SquareArrowRightEnter size={20} aria-hidden="true" />
               </button>
             </div>
           </div>

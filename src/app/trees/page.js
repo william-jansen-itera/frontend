@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Pencil, PencilSparkles, Plus, Save, Trash2, UserCheck, UserSearch } from "lucide-react";
+import { Pencil, PencilSparkles, Plus, Save, Trash2, UserCheck, UserPlus, UserSearch } from "lucide-react";
 import { useAuth } from "../useAuth";
 import styles from "./page.module.css";
 import {
@@ -1529,12 +1529,12 @@ function TreesPageContent() {
           <button
             type="submit"
             disabled={isCreating || !newTreeName.trim()}
-            className={`appPrimaryFormButton ${styles.createButton}`}
+            className={`appIconButton appPrimaryFormButton ${styles.createButton}`}
             title={t(isCreating ? "Creating" : "Create")}
             aria-label={t(isCreating ? "Creating" : "Create")}
             aria-busy={isCreating}
           >
-            <Plus size={18} aria-hidden="true" />
+            <Plus size={20} aria-hidden="true" />
           </button>
         </form>
       </section>
@@ -1628,17 +1628,6 @@ function TreesPageContent() {
                                 disabled={isPending || !canWriteTree}
                                 className={`appTextControl ${styles.textInput} ${styles.treeNameInput}`}
                               />
-                              <button
-                                type="button"
-                                onClick={() => handleSaveTreeMeta(tree)}
-                                disabled={isPending || !canWriteTree || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
-                                className="appCompactActionButton appCompactActionButtonNeutral"
-                                title={t(rowPendingState.meta ? "Saving" : "Save")}
-                                aria-label={t(rowPendingState.meta ? "Saving" : "Save")}
-                                aria-busy={Boolean(rowPendingState.meta)}
-                              >
-                                <Save size={18} aria-hidden="true" />
-                              </button>
                             </div>
                             <div className={styles.treeVisibilityRow}>
                               <select
@@ -1658,12 +1647,19 @@ function TreesPageContent() {
                               </select>
                             </div>
                           </div>
-                          <div className={styles.treeMetaActions}>
-                            {canWriteTree ? (
-                              <span className={styles.treeJobStatus} role="status">
-                                Job: {treeJob ? `${treeJob.jobType === "populate" ? "Populate" : treeJob.jobType} - ${{ queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed" }[treeJob.status] ?? treeJob.status}` : "None"}
-                              </span>
-                            ) : null}
+                        </div>
+                        <div className={styles.treeMetaActions}>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveTreeMeta(tree)}
+                              disabled={isPending || !canWriteTree || !draftName.trim() || (!isNameChanged && !isVisibilityChanged)}
+                              className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+                              title={t(rowPendingState.meta ? "Saving" : "Save")}
+                              aria-label={t(rowPendingState.meta ? "Saving" : "Save")}
+                              aria-busy={Boolean(rowPendingState.meta)}
+                            >
+                              <Save size={20} aria-hidden="true" />
+                            </button>
                             {!tree.isPrivate && user ? (
                               <button
                                 type="button"
@@ -1682,6 +1678,11 @@ function TreesPageContent() {
                             >
                               {t(rowPendingState.populate ? "Populating" : "Populate")}
                             </button>
+                            {canWriteTree ? (
+                              <span className={styles.treeJobStatus} role="status">
+                                Job: {treeJob ? `${treeJob.jobType === "populate" ? "Populate" : treeJob.jobType} - ${{ queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed" }[treeJob.status] ?? treeJob.status}` : "None"}
+                              </span>
+                            ) : null}
                             <Link
                               href={buildVisibilityHref(
                                 "/notes",
@@ -1697,14 +1698,13 @@ function TreesPageContent() {
                               type="button"
                               onClick={() => handleDeleteTree(tree)}
                               disabled={isPending || !canWriteTree}
-                              className="appCompactActionButton appCompactActionButtonDanger"
+                              className="appIconButton appCompactActionButton appCompactActionButtonDanger"
                               title={t(rowPendingState.delete ? "Working" : "Delete")}
                               aria-label={t(rowPendingState.delete ? "Working" : "Delete")}
                               aria-busy={Boolean(rowPendingState.delete)}
                             >
-                              <Trash2 size={18} aria-hidden="true" />
+                              <Trash2 size={20} aria-hidden="true" />
                             </button>
-                          </div>
                         </div>
                       </div>
 
@@ -1780,33 +1780,33 @@ function TreesPageContent() {
                             type="button"
                             onClick={() => setDescriptionEditing(treeId, true)}
                             disabled={isPending || !canWriteTree || isDescriptionEditing}
-                            className="appCompactActionButton appCompactActionButtonNeutral"
+                            className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                             title={t("Edit")}
                             aria-label={t("Edit")}
                           >
-                            <Pencil size={18} aria-hidden="true" />
+                            <Pencil size={20} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleGenerateDescription(tree)}
                             disabled={!canWriteTree || !isDescriptionEditing || Boolean(rowPendingState.generate) || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || Boolean(rowPendingState.meta)}
-                            className="appCompactActionButton appCompactActionButtonNeutral"
+                            className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                             title={t(rowPendingState.generate ? "Generating" : "Generate")}
                             aria-label={t(rowPendingState.generate ? "Generating" : "Generate")}
                             aria-busy={Boolean(rowPendingState.generate)}
                           >
-                            <PencilSparkles size={18} aria-hidden="true" />
+                            <PencilSparkles size={20} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleSaveDescription(tree)}
                             disabled={!canWriteTree || Boolean(rowPendingState.populate) || Boolean(rowPendingState.save) || Boolean(rowPendingState.sync) || !draftDescription.trim() || !isDescriptionChanged}
-                            className="appCompactActionButton appCompactActionButtonPrimary"
+                            className="appIconButton appCompactActionButton appCompactActionButtonPrimary"
                             title={t(rowPendingState.save ? "Saving" : rowPendingState.sync ? "Syncing" : "Save")}
                             aria-label={t(rowPendingState.save ? "Saving" : rowPendingState.sync ? "Syncing" : "Save")}
                             aria-busy={Boolean(rowPendingState.save) || Boolean(rowPendingState.sync)}
                           >
-                            <Save size={18} aria-hidden="true" />
+                            <Save size={20} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
@@ -1853,6 +1853,20 @@ function TreesPageContent() {
                                 </>
                               ) : null}
                             </div>
+                          </div>
+                          {!approvalEnabled ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("ApprovalDisabled")}</p>
+                          ) : null}
+                          {!canManageTreeAccess ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("ApprovalOwnerOnly")}</p>
+                          ) : null}
+                          {feedback.reviewMessage ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.reviewMessage}</p>
+                          ) : null}
+                          {feedback.reviewError ? (
+                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.reviewError}</p>
+                          ) : null}
+                        </div>
                             {approvalEnabled ? (
                               <div className={styles.reviewActionRow}>
                                 {canSubmitTree ? (
@@ -1897,23 +1911,9 @@ function TreesPageContent() {
                                 ) : null}
                               </div>
                             ) : null}
-                          </div>
-                          {!approvalEnabled ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("ApprovalDisabled")}</p>
-                          ) : null}
-                          {!canManageTreeAccess ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("ApprovalOwnerOnly")}</p>
-                          ) : null}
-                          {feedback.reviewMessage ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.reviewMessage}</p>
-                          ) : null}
-                          {feedback.reviewError ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.reviewError}</p>
-                          ) : null}
-                        </div>
                       </div>
 
-                      <div className={styles.transferRow}>
+                      <div className={`${styles.transferRow} ${styles.accessSection}`}>
                         <div className={styles.transferBlock}>
                           <div className={styles.transferHeader}>
                             <span className={`${styles.transferLabel} appFieldLabel`}>{t("Owner")}</span>
@@ -1921,6 +1921,7 @@ function TreesPageContent() {
                               {t(canManageTreeAccess ? "OwnerHint" : "OwnerTransferHint")}
                             </span>
                           </div>
+                        </div>
                           <div className={styles.transferControls}>
                             <input
                               type="text"
@@ -1930,29 +1931,32 @@ function TreesPageContent() {
                               placeholder={t("SearchPlaceholder")}
                               className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
                             />
-                            <button
-                              type="button"
-                              onClick={() => handleSearchTransferTargets(tree)}
-                              disabled={isPending || !canManageTreeAccess || transferQuery.trim().length < 2}
-                              className="appCompactActionButton appCompactActionButtonNeutral"
-                              title={t(rowPendingState.transferSearch ? "Searching" : "Search")}
-                              aria-label={t(rowPendingState.transferSearch ? "Searching" : "Search")}
-                              aria-busy={Boolean(rowPendingState.transferSearch)}
-                            >
-                              <UserSearch size={18} aria-hidden="true" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleTransferOwner(tree)}
-                              disabled={isPending || !canManageTreeAccess || !isTransferChanged}
-                              className="appCompactActionButton appCompactActionButtonNeutral"
-                              title={t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
-                              aria-label={t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
-                              aria-busy={Boolean(rowPendingState.transfer)}
-                            >
-                              <UserCheck size={18} aria-hidden="true" />
-                            </button>
                           </div>
+                        <div className={styles.rowActions}>
+                          <button
+                            type="button"
+                            onClick={() => handleSearchTransferTargets(tree)}
+                            disabled={isPending || !canManageTreeAccess || transferQuery.trim().length < 2}
+                            className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+                            title={t(rowPendingState.transferSearch ? "Searching" : "Search")}
+                            aria-label={t(rowPendingState.transferSearch ? "Searching" : "Search")}
+                            aria-busy={Boolean(rowPendingState.transferSearch)}
+                          >
+                            <UserSearch size={20} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTransferOwner(tree)}
+                            disabled={isPending || !canManageTreeAccess || !isTransferChanged}
+                            className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+                            title={t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
+                            aria-label={t(rowPendingState.transfer ? "Transferring" : "TransferOwner")}
+                            aria-busy={Boolean(rowPendingState.transfer)}
+                          >
+                            <UserCheck size={20} aria-hidden="true" />
+                          </button>
+                        </div>
+                        <div className={styles.transferBlock}>
                           {!canManageTreeAccess ? (
                             <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("OwnerReadOnly")}</p>
                           ) : null}
@@ -2001,7 +2005,7 @@ function TreesPageContent() {
                         </div>
                       </div>
 
-                      <div className={styles.transferRow}>
+                      <div className={`${styles.transferRow} ${styles.accessSection}`}>
                         <div className={styles.transferBlock}>
                           <div className={styles.transferHeader}>
                             <span className={`${styles.transferLabel} appFieldLabel`}>{t("Editors")}</span>
@@ -2034,6 +2038,7 @@ function TreesPageContent() {
                               <p className={styles.emptyEditors}>{t("NoEditors")}</p>
                             )}
                           </div>
+                        </div>
                           <div className={styles.transferControls}>
                             <input
                               type="text"
@@ -2043,29 +2048,32 @@ function TreesPageContent() {
                               placeholder={t("SearchPlaceholder")}
                               className={`appTextControl ${styles.textInput} ${styles.transferInput}`}
                             />
-                            <button
-                              type="button"
-                              onClick={() => handleSearchEditorTargets(tree)}
-                              disabled={isPending || !canManageTreeAccess || editorQuery.trim().length < 2}
-                              className="appCompactActionButton appCompactActionButtonNeutral"
-                              title={t(rowPendingState.editorSearch ? "Searching" : "Search")}
-                              aria-label={t(rowPendingState.editorSearch ? "Searching" : "Search")}
-                              aria-busy={Boolean(rowPendingState.editorSearch)}
-                            >
-                              <UserSearch size={18} aria-hidden="true" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAddEditor(tree)}
-                              disabled={isPending || !canManageTreeAccess || !selectedEditorTarget?.objectId || selectedEditorTarget?.isCurrentOwner || selectedEditorTarget?.isAssignedEditor}
-                              className="appCompactActionButton appCompactActionButtonNeutral"
-                              title={t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
-                              aria-label={t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
-                              aria-busy={Boolean(rowPendingState.editorAdd)}
-                            >
-                              <UserCheck size={18} aria-hidden="true" />
-                            </button>
                           </div>
+                        <div className={styles.rowActions}>
+                          <button
+                            type="button"
+                            onClick={() => handleSearchEditorTargets(tree)}
+                            disabled={isPending || !canManageTreeAccess || editorQuery.trim().length < 2}
+                            className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+                            title={t(rowPendingState.editorSearch ? "Searching" : "Search")}
+                            aria-label={t(rowPendingState.editorSearch ? "Searching" : "Search")}
+                            aria-busy={Boolean(rowPendingState.editorSearch)}
+                          >
+                            <UserSearch size={20} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddEditor(tree)}
+                            disabled={isPending || !canManageTreeAccess || !selectedEditorTarget?.objectId || selectedEditorTarget?.isCurrentOwner || selectedEditorTarget?.isAssignedEditor}
+                            className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+                            title={t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
+                            aria-label={t(rowPendingState.editorAdd ? "Adding" : "AddEditor")}
+                            aria-busy={Boolean(rowPendingState.editorAdd)}
+                          >
+                            <UserPlus size={20} aria-hidden="true" />
+                          </button>
+                        </div>
+                        <div className={styles.transferBlock}>
                           {!canManageTreeAccess ? (
                             <p className={`${styles.rowFeedback} ${styles.rowFeedbackInfo}`}>{t("EditorsReadOnly")}</p>
                           ) : null}

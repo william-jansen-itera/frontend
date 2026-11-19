@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { NextIntlClientProvider, useTranslations } from "next-intl";
-import { SquareArrowRightEnter, SquareArrowRightExit, UserCog } from "lucide-react";
+import { SquareArrowRightEnter, SquareArrowRightExit, UserCog, UserShield, UserStar } from "lucide-react";
 import { AuthProvider, useAuth } from "./useAuth";
 import { hasClientPrincipalRole } from "@/shared/clientPrincipal";
 import { ADMIN_SECTIONS } from "./admin/adminShared";
@@ -22,6 +22,7 @@ import {
 } from "./usePersistedVisibility";
 
 const adminNavChildren = ADMIN_SECTIONS;
+const adminNavLink = { href: "/admin", labelKey: "Admin", children: adminNavChildren };
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,8 +38,6 @@ const navLinks = [
   { href: "/notes", labelKey: "Notes", requiresRole: "mdsusers" },
   { href: "/search", labelKey: "Search", requiresRole: "mdsusers" },
   { href: "/chat", labelKey: "Agent", requiresRole: "mdsusers" },
-  { href: "/review", labelKey: "Review", requiresRole: "mdsusers" },
-  { href: "/admin", labelKey: "Admin", requiresRole: "mdsadmins", children: adminNavChildren },
   { href: "/about", labelKey: "About" },
   { href: "/contact", labelKey: "Contact" },
   { href: "/architecture", labelKey: "Architecture", requiresRole: "mdsadmins" },
@@ -116,6 +115,8 @@ function HeaderAuthControls({
   signIn,
   signOut,
   meHref,
+  reviewHref,
+  adminControl,
   onAction = null,
 }) {
   const t = useTranslations("Menu");
@@ -151,11 +152,24 @@ function HeaderAuthControls({
             title={t("SignIn")}
             aria-label={t("SignIn")}
           >
-            <SquareArrowRightEnter size={18} aria-hidden="true" />
+            <SquareArrowRightEnter size={20} aria-hidden="true" />
           </button>
         </>
       ) : (
         <>
+          {hasClientPrincipalRole(user, "mdsusers") ? (
+            <Link
+              href={reviewHref}
+              prefetch={false}
+              className="appAuthButton appAuthButtonSecondary"
+              title={t("Review")}
+              aria-label={t("Review")}
+              onClick={onAction}
+            >
+              <UserStar size={20} aria-hidden="true" />
+            </Link>
+          ) : null}
+          {adminControl}
           <Link
             href={meHref}
             prefetch={false}
@@ -164,7 +178,7 @@ function HeaderAuthControls({
             aria-label={t("Me")}
             onClick={onAction}
           >
-            <UserCog size={18} aria-hidden="true" />
+            <UserCog size={20} aria-hidden="true" />
           </Link>
           <button
             onClick={handleSignOut}
@@ -172,7 +186,7 @@ function HeaderAuthControls({
             title={t("SignOut")}
             aria-label={t("SignOut")}
           >
-            <SquareArrowRightExit size={18} aria-hidden="true" />
+            <SquareArrowRightExit size={20} aria-hidden="true" />
           </button>
         </>
       )}
@@ -224,12 +238,12 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
     };
   }, [openNavGroupHref]);
 
-  const renderNavLinks = ({ mobile = false } = {}) => {
-    const className = mobile ? "appNavLinks appNavLinksMobile" : "appNavLinks";
+  const renderNavLinks = ({ mobile = false, links = visibleNavLinks, account = false } = {}) => {
+    const className = account ? undefined : mobile ? "appNavLinks appNavLinksMobile" : "appNavLinks";
 
     return (
       <div className={className}>
-        {visibleNavLinks.map((link) => {
+        {links.map((link) => {
           const isActive = isNavLinkActive(pathname, link.href);
 
           if (Array.isArray(link.children) && link.children.length > 0) {
@@ -245,13 +259,19 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
               <div key={link.href} className={groupClassName}>
                 <button
                   type="button"
-                  className={`appNavLink appNavLinkButton appNavLinkWithChildren ${isActive || isGroupOpen ? "appNavLinkActive" : ""}`.trim()}
+                  className={account ? "appAuthButton appAuthButtonSecondary" : `appNavLink appNavLinkButton appNavLinkWithChildren ${isActive || isGroupOpen ? "appNavLinkActive" : ""}`.trim()}
+                  title={account ? t(link.labelKey) : undefined}
+                  aria-label={account ? t(link.labelKey) : undefined}
                   aria-expanded={isGroupOpen}
                   aria-controls={submenuId}
                   onClick={() => setOpenNavGroupHref((current) => (current === link.href ? null : link.href))}
                 >
-                  <span>{t(link.labelKey)}</span>
-                  <span className="appNavLinkChevron" aria-hidden="true">▾</span>
+                  {account ? <UserShield size={20} aria-hidden="true" /> : (
+                    <>
+                      <span>{t(link.labelKey)}</span>
+                      <span className="appNavLinkChevron" aria-hidden="true">▾</span>
+                    </>
+                  )}
                 </button>
 
                 <div id={submenuId} className={submenuClassName}>
@@ -320,6 +340,8 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
               signIn={signIn}
               signOut={signOut}
               meHref={buildNavHref("/me")}
+              reviewHref={buildNavHref("/review")}
+              adminControl={hasClientPrincipalRole(user, "mdsadmins") ? renderNavLinks({ links: [adminNavLink], account: true }) : null}
               onAction={() => setMobileMenuPathname(null)}
             />
 

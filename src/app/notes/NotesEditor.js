@@ -138,13 +138,13 @@ export function NotesEditor({
       <div className={styles.toolbar}>
         <button
           type="button"
-          className={styles.toolbarButton}
+          className={`appIconButton ${styles.toolbarButton}`}
           onClick={onStartEditing}
           disabled={disabled || isEditing}
           title={t("Edit")}
           aria-label={t("Edit")}
         >
-          <Pencil size={18} aria-hidden="true" />
+          <Pencil size={20} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -161,14 +161,14 @@ export function NotesEditor({
         {onGenerate ? (
           <button
             type="button"
-            className={styles.toolbarButton}
+            className={`appIconButton ${styles.toolbarButton}`}
             onClick={onGenerate}
             disabled={disabled || !isEditing || !canGenerate || isGenerating}
             title={t(isGenerating ? "Generating" : "Generate")}
             aria-label={t(isGenerating ? "Generating" : "Generate")}
             aria-busy={isGenerating}
           >
-            <PencilSparkles size={18} aria-hidden="true" />
+            <PencilSparkles size={20} aria-hidden="true" />
           </button>
         ) : null}
         <button

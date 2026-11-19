@@ -110,12 +110,12 @@ export default function AdminAgentPublishingPage() {
             type="button"
             onClick={() => loadAgentFamilies()}
             disabled={isLoading}
-            className="appPrimaryFormButton"
+            className="appIconButton appPrimaryFormButton"
             title={t(isLoading ? "Refreshing" : "Refresh")}
             aria-label={t(isLoading ? "Refreshing" : "Refresh")}
             aria-busy={isLoading}
           >
-            <RefreshCw size={18} aria-hidden="true" />
+            <RefreshCw size={20} aria-hidden="true" />
           </button>
         </div>
       </section>

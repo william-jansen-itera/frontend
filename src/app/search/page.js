@@ -422,16 +422,17 @@ function SearchPageContent() {
         </div>
 
         <form onSubmit={handleSubmit} className={styles.searchForm}>
-          <label className={styles.searchField}>
-            <span className="appFieldLabel">{t("QueryLabel")}</span>
-            <input
-              key={queryParam}
-              ref={queryInputRef}
-              type="search"
-              defaultValue={queryParam}
-              placeholder={t("QueryPlaceholder")}
-              className={`appTextControl ${styles.textInput}`}
-            />
+          <label className={styles.filterField}>
+            <span className="appFieldLabel">{t("VisibilityLabel")}</span>
+            <select
+              value={visibilityParam}
+              onChange={handleVisibilityChange}
+              className={`appSelectControl ${styles.selectInput}`}
+            >
+              <option value="public">{t("Visibility.Public")}</option>
+              <option value="private">{t("Visibility.Private")}</option>
+              <option value="both">{t("Visibility.Both")}</option>
+            </select>
           </label>
 
           <label className={styles.filterField}>
@@ -451,27 +452,26 @@ function SearchPageContent() {
             </select>
           </label>
 
-          <label className={styles.filterField}>
-            <span className="appFieldLabel">{t("VisibilityLabel")}</span>
-            <select
-              value={visibilityParam}
-              onChange={handleVisibilityChange}
-              className={`appSelectControl ${styles.selectInput}`}
-            >
-              <option value="public">{t("Visibility.Public")}</option>
-              <option value="private">{t("Visibility.Private")}</option>
-              <option value="both">{t("Visibility.Both")}</option>
-            </select>
+          <label className={styles.searchField}>
+            <span className="appFieldLabel">{t("QueryLabel")}</span>
+            <input
+              key={queryParam}
+              ref={queryInputRef}
+              type="search"
+              defaultValue={queryParam}
+              placeholder={t("QueryPlaceholder")}
+              className={`appTextControl ${styles.textInput}`}
+            />
           </label>
 
           <button
             type="submit"
-            className={`appPrimaryFormButton ${styles.searchButton}`}
+            className={`appIconButton appPrimaryFormButton ${styles.searchButton}`}
             title={t(isSearching ? "Searching" : "SearchButton")}
             aria-label={t(isSearching ? "Searching" : "SearchButton")}
             aria-busy={isSearching}
           >
-            <Search size={18} aria-hidden="true" />
+            <Search size={20} aria-hidden="true" />
           </button>
         </form>
       </section>

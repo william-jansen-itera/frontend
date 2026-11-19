@@ -1297,8 +1297,8 @@ export default function ChatPageClient({ includeDebug }) {
                       event.target.value = "";
                     }}
                   />
-                  <button type="button" className={styles.fileAction} title={t("Upload.Attach")} aria-label={t("Upload.Attach")} disabled={isSubmitting} onClick={() => fileInputRef.current?.click()}>
-                    <Paperclip size={18} aria-hidden="true" />
+                  <button type="button" className={`appIconButton ${styles.fileAction}`} title={t("Upload.Attach")} aria-label={t("Upload.Attach")} disabled={isSubmitting} onClick={() => fileInputRef.current?.click()}>
+                    <Paperclip size={20} aria-hidden="true" />
                   </button>
                 </>
               ) : null}
@@ -1331,8 +1331,8 @@ export default function ChatPageClient({ includeDebug }) {
               {selectedFile && shouldShowVisibilityControl ? (
                 <div className={`${styles.selectedFile} ${isSubmitting ? styles.selectedFileSubmitted : ""}`} aria-hidden={isSubmitting}>
                   <span>{selectedFile.name}</span>
-                  <button type="button" className={styles.fileAction} title={t("Upload.Remove")} aria-label={t("Upload.Remove")} onClick={() => setSelectedFile(null)} disabled={isSubmitting}>
-                    <X size={16} aria-hidden="true" />
+                  <button type="button" className={`appIconButton ${styles.fileAction}`} title={t("Upload.Remove")} aria-label={t("Upload.Remove")} onClick={() => setSelectedFile(null)} disabled={isSubmitting}>
+                    <X size={20} aria-hidden="true" />
                   </button>
                 </div>
               ) : null}
