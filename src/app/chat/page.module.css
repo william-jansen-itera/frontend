@@ -902,36 +902,6 @@ h6.messageHeading { font-size: 1rem; }
   object-fit: contain;
 }
 
-.attachmentOpenLink {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: fit-content;
-  padding: 8px 14px;
-  border: 1px solid #cbd5e1;
-  border-radius: 999px;
-  background-color: #f8fafc;
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  line-height: 1;
-  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-}
-
-.attachmentOpenLink:hover,
-.attachmentOpenLink:focus-visible {
-  background-color: #eef2f7;
-  border-color: #94a3b8;
-  text-decoration: none;
-}
-
-.attachmentOpenLink:focus-visible {
-  outline: 2px solid rgba(14, 116, 144, 0.2);
-  outline-offset: 3px;
-  border-radius: 8px;
-}
-
 @keyframes pendingResponsePanelPulse {
   0% {
     border-color: rgba(15, 118, 110, 0.26);

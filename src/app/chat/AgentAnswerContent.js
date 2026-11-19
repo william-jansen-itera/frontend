@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { ExternalLink } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -49,7 +50,14 @@ function isImageUrlCandidate(candidate) {
 
 function getInternalAttachmentContentUrl(rawUrl) {
   try {
-    const parsedUrl = new URL(String(rawUrl ?? ""));
+    const url = String(rawUrl ?? "");
+
+    if (url.startsWith("/api/attachments/content?")) {
+      const blobName = new URL(url, "http://localhost").searchParams.get("blobName");
+      return blobName ? `/api/attachments/content?blobName=${encodeURIComponent(blobName)}` : null;
+    }
+
+    const parsedUrl = new URL(url);
     const pathSegments = parsedUrl.pathname.split("/").map((part) => part.trim()).filter(Boolean);
 
     if (parsedUrl.protocol !== "https:" || !parsedUrl.hostname.endsWith(".blob.core.windows.net")) {
@@ -70,6 +78,33 @@ function getInternalAttachmentContentUrl(rawUrl) {
   } catch {
     return null;
   }
+}
+
+function getMarkdownText(node) {
+  return node.value ?? node.children?.map(getMarkdownText).join("") ?? "";
+}
+
+function remarkAttachmentImages() {
+  return (tree) => {
+    const visit = (node) => {
+      if (node.type === "link") {
+        const src = getInternalAttachmentContentUrl(node.url);
+        const blobName = src ? new URL(src, "http://localhost").searchParams.get("blobName") : null;
+
+        if (blobName && isImageUrlCandidate(blobName)) {
+          const label = getMarkdownText(node);
+          node.type = "image";
+          node.url = src;
+          node.alt = /^https?:\/\//i.test(label) ? blobName.split("/").pop() : label;
+          delete node.children;
+        }
+      }
+
+      node.children?.forEach(visit);
+    };
+
+    visit(tree);
+  };
 }
 
 function prepareAgentAnswer(answer) {
@@ -96,7 +131,7 @@ function answerUrlTransform(url) {
   return "";
 }
 
-function AttachmentImage({ src, alt }) {
+function AttachmentImage({ src, alt, openLabel }) {
   const blobName = src?.startsWith("/api/attachments/content?blobName=")
     ? new URL(src, "http://localhost").searchParams.get("blobName")
     : null;
@@ -108,9 +143,6 @@ function AttachmentImage({ src, alt }) {
 
   return (
     <div className={styles.attachmentPreviewRow}>
-      <div className={styles.attachmentPreviewDetails}>
-        <span className={styles.attachmentPreviewFileName}>{label}</span>
-      </div>
       <div className={styles.attachmentPreviewFrame}>
         <Image
           src={src}
@@ -122,8 +154,15 @@ function AttachmentImage({ src, alt }) {
           unoptimized
         />
       </div>
-      <a href={src} target="_blank" rel="noreferrer" className={styles.attachmentOpenLink}>
-        Open
+      <a
+        href={src}
+        target="_blank"
+        rel="noreferrer"
+        className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+        title={openLabel}
+        aria-label={openLabel}
+      >
+        <ExternalLink size={20} aria-hidden="true" />
       </a>
     </div>
   );
@@ -138,7 +177,7 @@ export function AgentAnswerContent({ answer, keyPrefix, textClassName, translate
   return (
     <ReactMarkdown
       key={keyPrefix}
-      remarkPlugins={[remarkGfm, remarkMath]}
+      remarkPlugins={[remarkGfm, remarkMath, remarkAttachmentImages]}
       rehypePlugins={[rehypeKatex]}
       urlTransform={answerUrlTransform}
       components={{
@@ -163,7 +202,7 @@ export function AgentAnswerContent({ answer, keyPrefix, textClassName, translate
             ? <a href={href} target="_blank" rel="noreferrer" className={styles.inlineAttachmentLink}>{label}</a>
             : <span>{label}</span>;
         },
-        img: ({ src, alt }) => <AttachmentImage src={src} alt={alt} />,
+        img: ({ src, alt }) => <AttachmentImage src={src} alt={alt} openLabel={translate ? translate("SavedLinks.Open") : "Open"} />,
         table: ({ children }) => (
           <div className={styles.messageTableWrapper}>
             <table className={styles.messageTable}>{children}</table>

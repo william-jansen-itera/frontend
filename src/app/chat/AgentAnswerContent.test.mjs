@@ -20,9 +20,19 @@ const { code } = await transform(await readFile(componentUrl, 'utf8'), {
 });
 const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
-    return nextResolve(specifier === 'next/image' ? 'next/image.js' : specifier, context);
+    if (specifier === 'next/image') {
+      return { url: 'test:next-image', shortCircuit: true };
+    }
+    return nextResolve(specifier, context);
   },
   load(url, context, nextLoad) {
+    if (url === 'test:next-image') {
+      return {
+        format: 'module',
+        source: `import image from ${JSON.stringify(import.meta.resolve('next/image.js'))}; export default image.default ?? image;`,
+        shortCircuit: true,
+      };
+    }
     if (url === componentUrl.href) {
       return { format: 'module', source: code, shortCircuit: true };
     }
@@ -66,4 +76,48 @@ test('localizing saved links does not translate saved prose, custom labels, or e
   assert.match(html, /<p>View note<\/p>/);
   assert.match(html, />My saved title<\/a>/);
   assert.match(html, /href="https:\/\/example.com\/notes\?treeId=29"[^>]*>View note<\/a>/);
+});
+
+test('ordinary image attachment links become previews before Markdown rendering and URL rewriting', async () => {
+  const blobUrl = 'https://storage.blob.core.windows.net/node-attachments/notes/7/216/sole.jpg';
+  const html = await renderAnswer(
+    `Sole-view diagram: [${blobUrl}](${blobUrl})\n\n- Hoof wall: [**Hoof wall**](https://storage.blob.core.windows.net/node-attachments/notes/7/216/wall.jpeg)`,
+    'en',
+  );
+  assert.equal((html.match(/<img /g) ?? []).length, 2);
+  assert.match(html, /<img [^>]*alt="sole.jpg"[^>]*src="\/api\/attachments\/content\?blobName=notes%2F7%2F216%2Fsole.jpg"/);
+  assert.match(html, /<img [^>]*alt="Hoof wall"[^>]*src="\/api\/attachments\/content\?blobName=notes%2F7%2F216%2Fwall.jpeg"/);
+  assert.doesNotMatch(html, /storage\.blob\.core\.windows\.net/);
+  assert.doesNotMatch(html, />sole\.jpg</);
+  assert.doesNotMatch(html, /<p>(?:(?!<\/p>)[\s\S])*?<div/);
+});
+
+test('existing Markdown images and already rewritten attachment links both retain their previews', async () => {
+  const html = await renderAnswer(
+    '![Original image](https://storage.blob.core.windows.net/node-attachments/notes/7/216/original.png)\n\n[API image](/api/attachments/content?blobName=notes%2F7%2F216%2Frewritten.jpg)',
+    'en',
+  );
+  assert.equal((html.match(/<img /g) ?? []).length, 2);
+  assert.match(html, /src="\/api\/attachments\/content\?blobName=notes%2F7%2F216%2Foriginal.png"/);
+  assert.match(html, /src="\/api\/attachments\/content\?blobName=notes%2F7%2F216%2Frewritten.jpg"/);
+});
+
+test('document attachments and external image links remain links without allowing unsafe URLs', async () => {
+  const html = await renderAnswer(
+    '[Document](https://storage.blob.core.windows.net/node-attachments/notes/7/216/document.pdf)\n\n[External image](https://example.com/image.jpg)\n\n[Unsafe](javascript:alert)',
+    'en',
+  );
+  assert.doesNotMatch(html, /<img /);
+  assert.match(html, /href="\/api\/attachments\/content\?blobName=notes%2F7%2F216%2Fdocument.pdf"/);
+  assert.match(html, /href="https:\/\/example.com\/image.jpg"/);
+  assert.doesNotMatch(html, /href="javascript:/);
+});
+
+test('image preview open commands use the shared external-link icon button with a translated label', async () => {
+  const html = await renderAnswer(
+    '![Diagram](https://storage.blob.core.windows.net/node-attachments/notes/7/216/diagram.jpg)',
+    'da',
+  );
+  assert.match(html, /<a [^>]*href="\/api\/attachments\/content\?blobName=notes%2F7%2F216%2Fdiagram.jpg"[^>]*target="_blank"[^>]*class="appIconButton appCompactActionButton appCompactActionButtonNeutral"[^>]*title="Åbn"[^>]*aria-label="Åbn"/);
+  assert.match(html, /<svg [^>]*width="20"[^>]*height="20"[^>]*class="[^"]*lucide-external-link/);
 });
