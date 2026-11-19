@@ -138,7 +138,7 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
               color="#15803d"
               fill={`url(#${leafGradientId})`}
               strokeWidth={2}
-              style={{ transform: "translate(-7px, -2px) rotate(40deg)", filter: `saturate(0.7) brightness(${0.8 + (nodeHash % 41) / 160})` }}
+              style={{ transform: "translate(-7px, -2px) rotate(40deg)", filter: `saturate(0.7) brightness(${0.9 + (nodeHash % 41) / 160})` }}
               aria-hidden="true"
             >
               <defs>

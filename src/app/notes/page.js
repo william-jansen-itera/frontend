@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ListChevronsDownUp, ListChevronsUpDown, Paperclip, PencilSparkles, Plus, Save, Trash2, Trees } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, ExternalLink, Paperclip, PencilSparkles, Plus, Save, Trash2, Trees } from "lucide-react";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
 import { NotesEditor } from "./NotesEditor";
@@ -1322,7 +1322,7 @@ function NotesPage() {
                 title={t("Tree.CollapseAll")}
                 aria-label={t("Tree.CollapseAll")}
               >
-                <ListChevronsDownUp size={20} aria-hidden="true" />
+                <ChevronsDownUp size={20} aria-hidden="true" />
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(true)}
@@ -1332,7 +1332,7 @@ function NotesPage() {
                 title={t("Tree.ExpandAll")}
                 aria-label={t("Tree.ExpandAll")}
               >
-                <ListChevronsUpDown size={20} aria-hidden="true" />
+                <ChevronsUpDown size={20} aria-hidden="true" />
               </button>
               <button
                 onClick={handleDelete}
@@ -1730,9 +1730,11 @@ function NotesPage() {
                                     href={getNodeAttachmentContentUrl(attachment)}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className={`appCompactActionButton appCompactActionButtonNeutral ${styles.attachmentActionLink}`}
+                                    className={`appIconButton appCompactActionButton appCompactActionButtonNeutral ${styles.attachmentActionLink}`}
+                                    title={t("Details.Open")}
+                                    aria-label={t("Details.Open")}
                                   >
-                                    {t("Details.Open")}
+                                    <ExternalLink size={20} aria-hidden="true" />
                                   </a>
                                 ) : null}
                                 {approvalEnabled && (attachment.reviewStatus === "draft" || attachment.reviewStatus === "rejected") ? (

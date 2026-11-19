@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Pencil, PencilSparkles } from "lucide-react";
+import { ClipboardPen, Pencil, PencilSparkles } from "lucide-react";
 import styles from "./NotesEditor.module.css";
 
 const INSERT_GROUPS = [
@@ -14,26 +14,6 @@ const INSERT_GROUPS = [
       { labelKey: "SquareBullet", preview: "▪", insertText: "▪ " },
       { labelKey: "ArrowBullet", preview: "▸", insertText: "▸ " },
       { labelKey: "Dash", preview: "-", insertText: "- " },
-    ],
-  },
-  {
-    titleKey: "Status",
-    items: [
-      { labelKey: "Check", preview: "✓", insertText: "✓ " },
-      { labelKey: "Cross", preview: "✗", insertText: "✗ " },
-      { labelKey: "Warning", preview: "⚠️", insertText: "⚠️ " },
-      { labelKey: "Question", preview: "❓", insertText: "❓ " },
-      { labelKey: "Unchecked", preview: "☐", insertText: "☐ " },
-      { labelKey: "Checked", preview: "☑", insertText: "☑ " },
-    ],
-  },
-  {
-    titleKey: "Templates",
-    items: [
-      { labelKey: "Action", preview: "Action:", insertText: "Action: " },
-      { labelKey: "Decision", preview: "Decision:", insertText: "Decision: " },
-      { labelKey: "Question", preview: "Question:", insertText: "Question: " },
-      { labelKey: "Note", preview: "Note:", insertText: "Note: " },
       {
         labelKey: "TwoBulletsSub",
         preview: "• ◦ • ◦",
@@ -54,6 +34,29 @@ const INSERT_GROUPS = [
         preview: "- - - -",
         insertText: "- \n- \n- \n- ",
       },
+    ],
+  },
+  {
+    titleKey: "Status",
+    items: [
+      { labelKey: "Check", preview: "✓", insertText: "✓ " },
+      { labelKey: "Cross", preview: "✗", insertText: "✗ " },
+      { labelKey: "Warning", preview: "⚠️", insertText: "⚠️ " },
+      { labelKey: "Question", preview: "❓", insertText: "❓ " },
+      { labelKey: "Unchecked", preview: "☐", insertText: "☐ " },
+      { labelKey: "Checked", preview: "☑", insertText: "☑ " },
+    ],
+  },
+  {
+    titleKey: "Templates",
+    items: [
+      { labelKey: "Decision", insertTextKey: "Decision" },
+      { labelKey: "Explanation", insertTextKey: "Explanation" },
+      { labelKey: "HowTo", insertTextKey: "HowTo" },
+      { labelKey: "Reference", insertTextKey: "Reference" },
+      { labelKey: "Meeting", insertTextKey: "Meeting" },
+      { labelKey: "ObservationLog", insertTextKey: "ObservationLog" },
+      { labelKey: "Problem", insertTextKey: "Problem" },
     ],
   },
 ];
@@ -148,15 +151,17 @@ export function NotesEditor({
         </button>
         <button
           type="button"
-          className={styles.toolbarButton}
+          className={`appIconButton ${styles.toolbarButton}`}
           onClick={() => {
             setIsPanelOpen((currentOpen) => !currentOpen);
           }}
           disabled={disabled || !isEditing}
           aria-expanded={isPanelOpen}
           aria-haspopup="dialog"
+          title={t("Insert")}
+          aria-label={t("Insert")}
         >
-          {t("Insert")}
+          <ClipboardPen size={20} aria-hidden="true" />
         </button>
         {onGenerate ? (
           <button
@@ -202,11 +207,11 @@ export function NotesEditor({
                       event.preventDefault();
                     }}
                     onClick={() => {
-                      insertTextAtCursor(item.insertText);
+                      insertTextAtCursor(item.insertTextKey ? t(`TemplateText.${item.insertTextKey}`) : item.insertText);
                     }}
                   >
-                    <span className={styles.insertItemPreview}>{item.preview ?? item.insertText.trim()}</span>
-                    <span className={styles.insertItemLabel}>{t(`Items.${item.labelKey}`)}</span>
+                    {item.preview ? <span className={styles.insertItemPreview}>{item.preview}</span> : null}
+                    <span className={item.preview ? styles.insertItemLabel : undefined}>{t(`Items.${item.labelKey}`)}</span>
                   </button>
                 ))}
               </div>

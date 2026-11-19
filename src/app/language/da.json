@@ -260,7 +260,7 @@
         "Private": "Privat"
       },
       "Details": {
-        "Heading": "Nodedetaljer",
+        "Heading": "Detaljer",
         "Save": "Gem",
         "Saving": "Gemmer...",
         "SelectNode": "Vælg en node for at redigere dens detaljer.",
@@ -317,7 +317,19 @@
           "Bullet": "Punkttegn", "OpenBullet": "Åbent punkttegn", "SquareBullet": "Firkantet punkttegn", "ArrowBullet": "Pil", "Dash": "Bindestreg",
           "Check": "Flueben", "Cross": "Kryds", "Warning": "Advarsel", "Question": "Spørgsmål", "Unchecked": "Ikke markeret", "Checked": "Markeret",
           "Action": "Handling", "Decision": "Beslutning", "Note": "Note", "TwoBulletsSub": "2 punkter med underpunkt",
-          "TwoBulletsTwoSubs": "2 punkter med to niveauer", "FourBullets": "4 punkter", "FourDashBullets": "4 punkter med bindestreg"
+          "TwoBulletsTwoSubs": "2 punkter med to niveauer", "FourBullets": "4 punkter", "FourDashBullets": "4 punkter med bindestreg",
+          "Explanation": "Forklaring", "HowTo": "Vejledning", "Reference": "Reference",
+          "Troubleshooting": "Fejlfinding", "Meeting": "Møde", "ObservationLog": "Observationslog", "Problem": "Problem"
+        },
+        "TemplateText": {
+          "Explanation": "Resumé:\n\nDetaljer:\n\nEksempel:\n\nVigtigste pointer:\n\n",
+          "HowTo": "Mål:\n\nForudsætninger:\n\nTrin:\n1. \n2. \n3. \n\nForventet resultat:\n\nFaldgruber:\n\n",
+          "Reference": "Definition:\n\nVigtige fakta:\n\nEksempler:\n\nKilder:\n\n",
+          "Decision": "Baggrund:\n\nBeslutningsgrundlag:\nRelevante fakta, dokumentation, begrænsninger og input fra interessenter.\n\nMuligheder:\n\nBeslutning:\n\nBegrundelse:\n\nKonsekvenser:\n\n",
+          "Troubleshooting": "Symptomer:\n\nMulige årsager:\n\nKontrolpunkter:\n\nLøsning:\n\nVerifikation:\n\n",
+          "Meeting": "Dato/tid:\n\nFormål:\n\nDrøftelse:\n\nBeslutninger:\n\nOpgaver:\n☐ \n\nÅbne spørgsmål:\n\n",
+          "ObservationLog": "Dato/tid:\n\nKontekst:\n\nObservation:\nHvad skete der, eller hvad blev bemærket?\n\nDokumentation:\nMålinger, eksempler eller referencer.\n\nFortolkning:\nHvad kan forklare det?\n\nOpfølgning:\n☐ Næste handling\n\n",
+          "Problem": "Problem:\nHvad er der galt?\n\nForventet:\nHvad burde ske i stedet?\n\nKonsekvenser:\nHvem eller hvad er berørt?\n\nDokumentation:\nEksempler, symptomer eller trin til at genskabe problemet.\n\nMulige årsager:\nHvad kan forklare problemet?\n\nNæste skridt:\n☐ Undersøgelse eller handling\n\nLøsning:\nHvad løste problemet, og hvordan blev det verificeret?\n\n"
         }
       }
     },

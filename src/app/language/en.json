@@ -260,7 +260,7 @@
         "Private": "Private"
       },
       "Details": {
-        "Heading": "Node Details",
+        "Heading": "Details",
         "Save": "Save",
         "Saving": "Saving...",
         "SelectNode": "Select a node to edit its details.",
@@ -317,7 +317,19 @@
           "Bullet": "Bullet", "OpenBullet": "Open bullet", "SquareBullet": "Square bullet", "ArrowBullet": "Arrow bullet", "Dash": "Dash",
           "Check": "Check", "Cross": "Cross", "Warning": "Warning", "Question": "Question", "Unchecked": "Unchecked", "Checked": "Checked",
           "Action": "Action", "Decision": "Decision", "Note": "Note", "TwoBulletsSub": "2 bullets + sub",
-          "TwoBulletsTwoSubs": "2 bullets + sub + sub", "FourBullets": "4 bullets", "FourDashBullets": "4 dash bullets"
+          "TwoBulletsTwoSubs": "2 bullets + sub + sub", "FourBullets": "4 bullets", "FourDashBullets": "4 dash bullets",
+          "Explanation": "Explanation", "HowTo": "How-to", "Reference": "Reference",
+          "Troubleshooting": "Troubleshooting", "Meeting": "Meeting", "ObservationLog": "Observation log", "Problem": "Problem"
+        },
+        "TemplateText": {
+          "Explanation": "Summary:\n\nDetails:\n\nExample:\n\nKey takeaways:\n\n",
+          "HowTo": "Goal:\n\nPrerequisites:\n\nSteps:\n1. \n2. \n3. \n\nExpected result:\n\nPitfalls:\n\n",
+          "Reference": "Definition:\n\nKey facts:\n\nExamples:\n\nSources:\n\n",
+          "Decision": "Context:\n\nInput information:\nRelevant facts, evidence, constraints, and stakeholder input.\n\nOptions:\n\nDecision:\n\nRationale:\n\nConsequences:\n\n",
+          "Troubleshooting": "Symptoms:\n\nPossible causes:\n\nChecks:\n\nSolution:\n\nVerification:\n\n",
+          "Meeting": "Date/time:\n\nPurpose:\n\nDiscussion:\n\nDecisions:\n\nActions:\n☐ \n\nOpen questions:\n\n",
+          "ObservationLog": "Date/time:\n\nContext:\n\nObservation:\nWhat happened or was noticed?\n\nEvidence:\nMeasurements, examples, or references.\n\nInterpretation:\nWhat might explain it?\n\nFollow-up:\n☐ Next action\n\n",
+          "Problem": "Problem:\nWhat is wrong?\n\nExpected:\nWhat should happen instead?\n\nImpact:\nWho or what is affected?\n\nEvidence:\nExamples, symptoms, or reproduction steps.\n\nPossible causes:\nWhat might explain the problem?\n\nNext steps:\n☐ Investigation or action\n\nResolution:\nWhat fixed it, and how was it verified?\n\n"
         }
       }
     },

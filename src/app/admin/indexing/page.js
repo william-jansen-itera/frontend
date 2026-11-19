@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { CirclePlay } from "lucide-react";
 import styles from "../page.module.css";
 import {
   formatIndexingErrorMessage,
@@ -93,10 +94,12 @@ export default function AdminIndexingPage() {
                               type="button"
                               onClick={() => handleIndexingAction(row.key, column.key)}
                               disabled={Boolean(pendingItems[pendingKey])}
-                              className="appCompactActionButton appCompactActionButtonNeutral"
+                              className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                               aria-label={t("StartFor", { mode: t(`Modes.${column.key}`), target: t(`Targets.${row.key}`) })}
+                              title={t(pendingItems[pendingKey] ? "Starting" : "Start")}
+                              aria-busy={Boolean(pendingItems[pendingKey])}
                             >
-                              {t(pendingItems[pendingKey] ? "Starting" : "Start")}
+                              <CirclePlay size={20} aria-hidden="true" />
                             </button>
                           </td>
                         );

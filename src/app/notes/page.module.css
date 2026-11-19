@@ -44,11 +44,6 @@
   min-width: 0;
 }
 
-.treeSelectors select {
-  border: 1px solid rgba(148, 163, 184, 0.55);
-  border-radius: 6px;
-}
-
 .detailsToolbar {
   justify-content: space-between;
 }
