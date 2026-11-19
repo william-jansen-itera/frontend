@@ -39,7 +39,7 @@ const navLinks = [
   { href: "/search", labelKey: "Search", requiresRole: "mdsusers" },
   { href: "/chat", labelKey: "Agent", requiresRole: "mdsusers" },
   { href: "/about", labelKey: "About" },
-  { href: "/contact", labelKey: "Contact" },
+  { href: "/contact", labelKey: "Contact", requiresAnonymous: true },
   { href: "/architecture", labelKey: "Architecture", requiresRole: "mdsadmins" },
 ];
 
@@ -209,6 +209,10 @@ function LayoutContent({ children, pathname, user, signIn, signOut, visibility =
   );
 
   const visibleNavLinks = navLinks.filter((link) => {
+    if (link.requiresAnonymous && user) {
+      return false;
+    }
+
     if (link.requiresAuthenticated && !user) {
       return false;
     }

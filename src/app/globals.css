@@ -56,6 +56,12 @@ body {
   flex-direction: column;
 }
 
+select {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
 .appPageSurface {
   flex: 1 1 auto;
   min-height: 0;
