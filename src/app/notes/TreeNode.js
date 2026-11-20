@@ -143,8 +143,8 @@ export function TreeNode({ node, style, dragHandle, selectedNodeId }) {
             >
               <defs>
                 <linearGradient id={leafGradientId} x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform={`rotate(${nodeHash % 360} 0.5 0.5)`}>
-                  <stop offset="0%" stopColor="#dcfce7" />
-                  <stop offset="60%" stopColor="#16a34a" />
+                  <stop offset="0%" stopColor="#ffffff" />
+                  <stop offset="60%" stopColor="#15803d" />
                 </linearGradient>
               </defs>
             </LeafyGreen>
