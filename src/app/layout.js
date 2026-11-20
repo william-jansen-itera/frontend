@@ -77,7 +77,7 @@ function getPageSurfaceClassName(pathname) {
   }
 
   if (pathname === "/about") {
-    return "appPageSurface appPageSurfaceAbout";
+    return "appPageSurface appPageSurfaceAbout appPageSurfaceAboutTree";
   }
 
   if (pathname === "/contact") {

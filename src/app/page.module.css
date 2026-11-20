@@ -4,9 +4,9 @@
   padding: 2rem;
   border: var(--surface-border);
   border-radius: var(--surface-radius-hero);
-  background: var(--surface-card-background);
+  background: rgba(255, 255, 255, 0.65);
   box-shadow: var(--surface-card-shadow-hero);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(2px);
   display: grid;
   gap: var(--hero-gap);
 }
@@ -64,7 +64,8 @@
   padding: 1.2rem;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: var(--surface-radius-card);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(247, 250, 252, 0.95));
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(2px);
 }
 
 .statusCard {
