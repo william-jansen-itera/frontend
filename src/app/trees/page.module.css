@@ -64,6 +64,17 @@
   gap: 8px;
 }
 
+.listFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.listFilters .toolbarLabel {
+  min-width: 0;
+}
+
 .listBody {
   padding: 1.2rem 1.5rem 1.35rem;
 }

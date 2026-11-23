@@ -327,6 +327,9 @@ function TreesPageContent() {
     allowedValues: PUBLIC_PRIVATE_VISIBILITY_VALUES,
   });
   const [trees, setTrees] = useState([]);
+  const requestedTreeId = searchParams.get("treeId") ?? "";
+  const selectedTreeId = trees.some((tree) => String(tree.id) === requestedTreeId) ? requestedTreeId : "";
+  const visibleTrees = selectedTreeId ? trees.filter((tree) => String(tree.id) === selectedTreeId) : trees;
   const [draftNames, setDraftNames] = useState({});
   const [draftVisibility, setDraftVisibility] = useState({});
   const [draftDescriptions, setDraftDescriptions] = useState({});
@@ -351,7 +354,19 @@ function TreesPageContent() {
   const handleVisibilityFilterChange = (event) => {
     const nextVisibility = setPersistedVisibility(event.target.value);
     const nextSearchParams = new URLSearchParams(searchParams.toString());
+    nextSearchParams.delete("treeId");
     setVisibilitySearchParam(nextSearchParams, nextVisibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
+    const nextQueryString = nextSearchParams.toString();
+    router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
+  };
+
+  const handleTreeFilterChange = (event) => {
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    if (event.target.value) {
+      nextSearchParams.set("treeId", event.target.value);
+    } else {
+      nextSearchParams.delete("treeId");
+    }
     const nextQueryString = nextSearchParams.toString();
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   };
@@ -1522,19 +1537,34 @@ function TreesPageContent() {
       <section className={`appTopLevelPanel ${styles.listPanel}`}>
         <div className={`appPanelTopBar ${styles.listToolbar}`}>
           <span className={styles.panelHeading}>{t("CurrentTrees")}</span>
-          <label className={styles.toolbarLabel}>
-            <select
-              value={visibilityFilter}
-              onChange={handleVisibilityFilterChange}
-            >
-              <option value="public">{t("Visibility.Public")}</option>
-              <option value="private">{t("Visibility.Private")}</option>
-            </select>
-          </label>
+          <div className={styles.listFilters}>
+            <label className={styles.toolbarLabel}>
+              <select
+                value={visibilityFilter}
+                onChange={handleVisibilityFilterChange}
+              >
+                <option value="public">{t("Visibility.Public")}</option>
+                <option value="private">{t("Visibility.Private")}</option>
+              </select>
+            </label>
+            <label className={styles.toolbarLabel}>
+              <select
+                aria-label={t("TreeFilterLabel")}
+                value={selectedTreeId}
+                onChange={handleTreeFilterChange}
+                disabled={isLoading || trees.length === 0}
+              >
+                <option value="">{t("AllTrees")}</option>
+                {trees.map((tree) => (
+                  <option key={tree.id} value={String(tree.id)}>{tree.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div className={styles.listBody}>
-          <h2 className={styles.sectionTitle}>{t("TreeCount", { count: trees.length })}</h2>
+          <h2 className={styles.sectionTitle}>{t("TreeCount", { count: visibleTrees.length })}</h2>
           <p className={styles.syncHint}>
             {t("PublicationHint")}
           </p>
@@ -1547,7 +1577,7 @@ function TreesPageContent() {
             <div className={styles.emptyState}>{t("Empty")}</div>
           ) : (
             <div className={styles.treeList}>
-              {trees.map((tree) => {
+              {visibleTrees.map((tree) => {
                 const treeId = String(tree.id);
                 const draftName = String(draftNames[treeId] ?? tree.name ?? "");
                 const storedDescription = String(tree.description ?? "");

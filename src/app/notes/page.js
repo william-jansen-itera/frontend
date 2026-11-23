@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ChevronsDownUp, ChevronsUpDown, ExternalLink, Paperclip, PencilSparkles, Plus, Save, Trash2, Trees } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, ExternalLink, Paperclip, PencilSparkles, Plus, Save, Settings, Trash2 } from "lucide-react";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
 import { NotesEditor } from "./NotesEditor";
@@ -1268,17 +1268,6 @@ function NotesPage() {
                 </label>
               </div>
               <button
-                onClick={() => {
-                  router.push(visibilityParam === "public" ? "/trees" : `/trees?visibility=${encodeURIComponent(visibilityParam)}`);
-                }}
-                type="button"
-                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
-                title={t("Tree.Manage")}
-                aria-label={t("Tree.Manage")}
-              >
-                <Trees size={20} color="#15803d" aria-hidden="true" />
-              </button>
-              <button
                 onClick={handleAddRoot}
                 disabled={!canAddRoot}
                 type="button"
@@ -1311,6 +1300,16 @@ function NotesPage() {
                 <PencilSparkles size={20} aria-hidden="true" />
               </button>
               <button
+                onClick={handleDelete}
+                disabled={!canDelete}
+                type="button"
+                className="appIconButton appCompactActionButton appCompactActionButtonDanger"
+                title={t("Tree.Delete")}
+                aria-label={t("Tree.Delete")}
+              >
+                <Trash2 size={20} aria-hidden="true" />
+              </button>
+              <button
                 onClick={() => handleSetTreeExpansion(false)}
                 disabled={!hasExpandedNodes || isUpdatingExpansion}
                 type="button"
@@ -1331,14 +1330,15 @@ function NotesPage() {
                 <ChevronsUpDown size={20} aria-hidden="true" />
               </button>
               <button
-                onClick={handleDelete}
-                disabled={!canDelete}
+                onClick={() => {
+                  router.push(getTreeSelectionHref("/trees", "", treeIdParam, visibilityParam));
+                }}
                 type="button"
-                className="appIconButton appCompactActionButton appCompactActionButtonDanger"
-                title={t("Tree.Delete")}
-                aria-label={t("Tree.Delete")}
+                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+                title={t("Tree.Manage")}
+                aria-label={t("Tree.Manage")}
               >
-                <Trash2 size={20} aria-hidden="true" />
+                <Settings size={20} aria-hidden="true" />
               </button>
               {approvalEnabled && canSubmitSelectedNode ? (
                 <button

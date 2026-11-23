@@ -44,6 +44,23 @@
   min-width: 0;
 }
 
+.treeSelectors > .panelHeading {
+  flex-basis: 100%;
+}
+
+.treeSelectors > .toolbarLabel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.treeSelectors > .toolbarLabel:first-of-type {
+  flex: 1 1 12rem;
+}
+
+.treeSelectors select {
+  width: 100%;
+}
+
 .detailsToolbar {
   justify-content: space-between;
 }
