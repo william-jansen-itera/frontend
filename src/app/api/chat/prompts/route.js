@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { listRegisteredAgentFamilies } from '@/server/utils/agent/agentFamilyRegistry';
-import { listSavedPrompts, savePrompt } from '@/server/utils/agent/savedPromptRepository';
+import { deleteSavedPrompt, listSavedPrompts, savePrompt } from '@/server/utils/agent/savedPromptRepository';
 
 export const runtime = 'nodejs';
 
@@ -41,6 +41,7 @@ export async function POST(request) {
       if (!(error instanceof SyntaxError)) {
         throw error;
       }
+
       return NextResponse.json({ error: 'A valid JSON body is required.' }, { status: 400 });
     }
     if (!isValidFamily(payload?.family) || typeof payload?.content !== 'string' || !payload.content.trim()) {
@@ -48,6 +49,24 @@ export async function POST(request) {
     }
     const prompt = await savePrompt({ principal, family: payload.family, content: payload.content });
     return NextResponse.json({ prompt }, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const principal = requireAuthenticatedPrincipal(request);
+    const { searchParams } = new URL(request.url);
+    const family = searchParams.get('family');
+    const id = searchParams.get('id');
+    if (!isValidFamily(family) || !id?.trim() || id.length > 255) {
+      return NextResponse.json({ error: 'A registered agent family and prompt id are required.' }, { status: 400 });
+    }
+    if (!await deleteSavedPrompt({ principal, family, id })) {
+      return NextResponse.json({ error: 'Saved prompt was not found.' }, { status: 404 });
+    }
+    return NextResponse.json({ deleted: true });
   } catch (error) {
     return errorResponse(error);
   }

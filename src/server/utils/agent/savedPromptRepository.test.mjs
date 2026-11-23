@@ -25,6 +25,10 @@ globalThis.__savedPromptCache = {
     const id = parents.get(JSON.stringify([treeId, pathSegments]));
     return id ? { id, isLeafNode: false } : null;
   },
+  async deletePersonalCachePath({ treeId, pathSegments }) {
+    const parentId = parents.get(JSON.stringify([treeId, pathSegments.slice(0, -1)]));
+    return records.delete(JSON.stringify([treeId, parentId, pathSegments.at(-1)]));
+  },
 };
 globalThis.__savedPromptPool = {
   request() {
@@ -45,7 +49,7 @@ registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier.endsWith('/personalCacheTreeRepository')) {
       return {
-        url: `data:text/javascript,${encodeURIComponent('export const { getPersonalCacheContext, replacePersonalCacheNotes, findPersonalCacheLeafPathNode } = globalThis.__savedPromptCache;')}`,
+        url: `data:text/javascript,${encodeURIComponent('export const { getPersonalCacheContext, replacePersonalCacheNotes, findPersonalCacheLeafPathNode, deletePersonalCachePath } = globalThis.__savedPromptCache;')}`,
         shortCircuit: true,
       };
     }
@@ -58,7 +62,7 @@ registerHooks({
     return nextResolve(specifier, context);
   },
 });
-const { savePrompt, listSavedPrompts } = await import('./savedPromptRepository.js');
+const { savePrompt, listSavedPrompts, deleteSavedPrompt } = await import('./savedPromptRepository.js');
 
 test('prompts survive repeated reads, preserve content, deduplicate and remain isolated by application, user and family', async () => {
   const principal = { userId: 'owner' };
@@ -123,4 +127,39 @@ test('a short title already used by an edited note is extended rather than overw
   assert.deepEqual(await listSavedPrompts({ principal, family }), [
     { ...first, content: editedContent }, second,
   ]);
+});
+
+test('delete removes only the selected prompt in the current application, user and family', async () => {
+  const options = { principal: { userId: 'delete-owner' }, family: 'email' };
+  const saved = await savePrompt({ ...options, content: 'Delete this prompt' });
+  const keep = await savePrompt({ ...options, content: 'Keep this prompt' });
+  for (const otherScope of [
+    { ...options, principal: { userId: 'different-owner' } },
+    { ...options, family: 'knowledgeTrees' },
+  ]) {
+    assert.equal(await deleteSavedPrompt({ ...otherScope, id: saved.id }), false);
+  }
+  application = 'another-application';
+  try {
+    assert.equal(await deleteSavedPrompt({ ...options, id: saved.id }), false);
+  } finally {
+    application = 'app-one';
+  }
+  assert.deepEqual(await listSavedPrompts(options), [saved, keep]);
+  assert.equal(await deleteSavedPrompt({ ...options, id: saved.id }), true);
+  assert.deepEqual(await listSavedPrompts(options), [keep]);
+  assert.equal(await deleteSavedPrompt({ ...options, id: saved.id }), false);
+});
+
+test('delete supports legacy and user-renamed titles without touching the collection', async () => {
+  const options = { principal: { userId: 'delete-renamed' }, family: 'email' };
+  const { personalCacheTreeId: treeId } = await globalThis.__savedPromptCache.getPersonalCacheContext(options.principal);
+  for (const id of ['a'.repeat(64), 'My renamed prompt']) {
+    await globalThis.__savedPromptCache.replacePersonalCacheNotes({
+      treeId, pathSegments: ['Chat', 'Prompts', options.family, id], notes: 'Saved content',
+    });
+    assert.equal(await deleteSavedPrompt({ ...options, id }), true);
+  }
+  assert.equal(await deleteSavedPrompt({ ...options, id: options.family }), false);
+  assert.deepEqual(await listSavedPrompts(options), []);
 });

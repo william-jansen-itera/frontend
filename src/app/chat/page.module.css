@@ -95,9 +95,16 @@
 }
 
 .composerCommands {
+  --ui-action-button-size: 34px;
   display: grid;
   align-self: end;
   gap: 0.4rem;
+}
+
+.composerCommands > button:global(.appIconButton),
+.savedPromptRow > button:global(.appIconButton) {
+  padding: 0.25rem;
+  border-radius: 8px;
 }
 
 .promptFeedback,
@@ -114,9 +121,7 @@
   display: grid;
   gap: 0.65rem;
   min-width: 0;
-  padding: 0.85rem;
-  border: 1px solid rgba(148, 163, 184, 0.55);
-  border-radius: var(--ui-control-radius);
+  padding: 0;
 }
 
 .savedPromptPanel p {
@@ -131,10 +136,11 @@
 }
 
 .savedPromptItem {
+  min-width: 0;
   padding: 0.65rem 0.8rem;
   border: 1px solid rgba(148, 163, 184, 0.55);
   border-radius: var(--ui-control-radius);
-  background: #fff;
+  background: #f0f9ff;
   color: #0f172a;
   font: inherit;
   text-align: left;
@@ -143,9 +149,17 @@
   cursor: pointer;
 }
 
+.savedPromptRow {
+  --ui-action-button-size: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.65rem;
+}
+
 .savedPromptItem:hover,
 .savedPromptItem:focus-visible {
-  background: #f0f9ff;
+  background: #e0f2fe;
 }
 
 .followUpComposerCard {

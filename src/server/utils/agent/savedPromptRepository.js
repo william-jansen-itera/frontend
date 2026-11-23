@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  deletePersonalCachePath,
   findPersonalCacheLeafPathNode,
   getPersonalCacheContext,
   replacePersonalCacheNotes,
@@ -42,6 +43,19 @@ export async function savePrompt({ principal, family, content }) {
 export async function listSavedPrompts({ principal, family }) {
   const { personalCacheTreeId: treeId } = await getPersonalCacheContext(principal);
   return listPromptCollection({ treeId, principal, family });
+}
+
+export async function deleteSavedPrompt({ principal, family, id }) {
+  const { personalCacheTreeId: treeId } = await getPersonalCacheContext(principal);
+  const prompts = await listPromptCollection({ treeId, principal, family });
+  if (!prompts.some((prompt) => prompt.id === id)) {
+    return false;
+  }
+  return deletePersonalCachePath({
+    treeId,
+    principal,
+    pathSegments: [...promptCollectionPath(family), id],
+  });
 }
 
 async function listPromptCollection({ treeId, principal, family }) {
