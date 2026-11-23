@@ -18,6 +18,13 @@
   overflow-wrap: anywhere;
 }
 
+.generationStatus {
+  min-width: 0;
+  color: #475569;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
 .toolbarButton {
   flex-shrink: 0;
   box-sizing: border-box;

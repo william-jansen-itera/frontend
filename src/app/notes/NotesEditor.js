@@ -165,17 +165,20 @@ export function NotesEditor({
           <ClipboardPen size={20} aria-hidden="true" />
         </button>
         {onGenerate ? (
-          <button
-            type="button"
-            className={`appIconButton ${styles.toolbarButton}`}
-            onClick={onGenerate}
-            disabled={disabled || !isEditing || !canGenerate || isGenerating}
-            title={t(isGenerating ? "Generating" : "Generate")}
-            aria-label={t(isGenerating ? "Generating" : "Generate")}
-            aria-busy={isGenerating}
-          >
-            <PencilSparkles size={20} aria-hidden="true" />
-          </button>
+          <>
+            <button
+              type="button"
+              className={`appIconButton ${styles.toolbarButton}`}
+              onClick={onGenerate}
+              disabled={disabled || !isEditing || !canGenerate || isGenerating}
+              title={t(isGenerating ? "Generating" : "Generate")}
+              aria-label={t(isGenerating ? "Generating" : "Generate")}
+              aria-busy={isGenerating}
+            >
+              <PencilSparkles size={20} aria-hidden="true" />
+            </button>
+            {isGenerating ? <span className={styles.generationStatus} role="status">{t("Generating")}</span> : null}
+          </>
         ) : null}
         <button
           type="button"
