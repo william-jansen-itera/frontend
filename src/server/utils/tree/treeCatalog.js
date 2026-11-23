@@ -533,6 +533,7 @@ export async function getTreeList(options = {}) {
   const query = `
     SELECT
       CAST(ti.id AS VARCHAR(10)) AS id,
+      (SELECT COUNT(*) FROM tree_nodes tn WHERE tn.tree_instance_id = ti.id AND tn.deleted_at IS NULL) AS nodeCount,
       COALESCE(NULLIF(ti.display_name, ''), root_node.text, CONCAT('Tree ', ti.id)) AS name,
       CAST(COALESCE(ti.description, '') AS NVARCHAR(MAX)) AS description,
       CAST(COALESCE(ti.description_published_to_agent, 0) AS BIT) AS isDescriptionPublished,
@@ -588,7 +589,7 @@ export async function getTreeList(options = {}) {
       .query(query);
 
     return filterTreesForAccess(
-      result.recordset.map((row) => mapTreeRecord(row)),
+      result.recordset.map((row) => ({ ...mapTreeRecord(row), nodeCount: row.nodeCount })),
       { principal, visibility, enforceAccess },
     );
   });

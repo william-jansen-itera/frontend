@@ -183,6 +183,7 @@
       "NewTreeName": "New tree name", "TreeTitlePlaceholder": "Enter tree title", "Create": "Create Tree", "Creating": "Creating...",
       "CurrentTrees": "Current Trees", "Visibility": { "Public": "Public", "Private": "Private" },
       "TreeCount": "{count, plural, one {# tree} other {# trees}}", "TreeId": "Tree {id}",
+      "NodeCount": "{count, plural, one {# node} other {# nodes}}",
       "PublicationHint": "Trees without a saved description are not published to the agent.",
       "Loading": "Loading trees...", "LoadingPage": "Loading...", "Empty": "No trees exist for this application instance yet.",
       "Save": "Save", "Saving": "Saving...", "Populate": "Populate", "Populating": "Populating...", "Open": "Open",

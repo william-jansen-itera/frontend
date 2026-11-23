@@ -869,7 +869,7 @@ function TreesPageContent() {
           if (job.status === "queued" || job.status === "running") {
             setActiveTreeJobs((current) => ({ ...current, [treeId]: job.jobId }));
             setTreePendingState(treeId, "populate", true);
-            updateRowFeedback(treeId, { populateMessage: job.jobType === "populate" ? "Tree population is in progress." : "Tree job is in progress.", populateError: "" });
+            updateRowFeedback(treeId, { populateError: "" });
           } else {
             setTreePendingState(treeId, "populate", false);
           }
@@ -925,14 +925,6 @@ function TreesPageContent() {
             const nextTrees = await listResponse.json();
             if (cancelled) return;
             if (listResponse.ok) applyTreeList(Array.isArray(nextTrees) ? nextTrees : []);
-            updateRowFeedback(treeId, {
-              populateError: "",
-              populateMessage: job.jobType === "populate"
-                ? `Appended ${job.totalNodeCount} nodes across ${job.rootNodeCount} root ${job.rootNodeCount === 1 ? "branch" : "branches"}.`
-                : "Tree job completed.",
-            });
-          } else {
-            updateRowFeedback(treeId, { populateError: job.failureSummary || "Tree job failed.", populateMessage: "" });
           }
         }
       } catch (error) {
@@ -1077,7 +1069,6 @@ function TreesPageContent() {
       infoMessage: "",
       generateError: "",
       populateError: "",
-      populateMessage: "",
       saveError: "",
       syncError: "",
       syncMessage: "",
@@ -1110,7 +1101,6 @@ function TreesPageContent() {
         infoMessage: t("Feedback.DraftGenerated"),
         generateError: "",
         populateError: "",
-        populateMessage: "",
         saveError: "",
         syncError: "",
         syncMessage: "",
@@ -1141,7 +1131,6 @@ function TreesPageContent() {
     updateRowFeedback(treeId, {
       infoMessage: "",
       populateError: "",
-      populateMessage: "",
       saveError: "",
       syncError: "",
       syncMessage: "",
@@ -1180,7 +1169,6 @@ function TreesPageContent() {
       updateRowFeedback(treeId, {
         infoMessage: t(syncError ? "Feedback.DescriptionSavedWithoutPublish" : "Feedback.DescriptionSaved"),
         populateError: "",
-        populateMessage: "",
         saveError: "",
         syncError,
         syncMessage,
@@ -1216,7 +1204,6 @@ function TreesPageContent() {
     updateRowFeedback(treeId, {
       infoMessage: "",
       populateError: "",
-      populateMessage: "",
       saveError: "",
       syncError: "",
       syncMessage: "",
@@ -1251,7 +1238,6 @@ function TreesPageContent() {
       updateRowFeedback(treeId, {
         infoMessage: t(syncError ? "Feedback.DescriptionClearedWithoutPublish" : "Feedback.DescriptionCleared"),
         populateError: "",
-        populateMessage: "",
         saveError: "",
         syncError,
         syncMessage: "",
@@ -1280,7 +1266,6 @@ function TreesPageContent() {
       infoMessage: t(storedDescription ? "Feedback.DescriptionRestored" : "Feedback.DraftRemoved"),
       generateError: "",
       populateError: "",
-      populateMessage: "",
       saveError: "",
       syncError: "",
       syncMessage: "",
@@ -1297,7 +1282,6 @@ function TreesPageContent() {
     if (!storedDescription.trim()) {
       updateRowFeedback(treeId, {
         populateError: "Save a description before populating this tree.",
-        populateMessage: "",
       });
       return;
     }
@@ -1305,7 +1289,6 @@ function TreesPageContent() {
     if (isDescriptionChanged) {
       updateRowFeedback(treeId, {
         populateError: "Save the current description draft before populating this tree.",
-        populateMessage: "",
       });
       return;
     }
@@ -1320,7 +1303,6 @@ function TreesPageContent() {
     setErrorMessage("");
     updateRowFeedback(treeId, {
       populateError: "",
-      populateMessage: "",
     });
 
     try {
@@ -1349,11 +1331,9 @@ function TreesPageContent() {
       setTreeJobs((current) => ({ ...current, [treeId]: data }));
       setActiveTreeJobs((current) => ({ ...current, [treeId]: data.jobId }));
       submitted = true;
-      updateRowFeedback(treeId, { populateError: "", populateMessage: "Tree population is in progress." });
     } catch (error) {
       updateRowFeedback(treeId, {
         populateError: getErrorMessage(error, "Tree could not be populated"),
-        populateMessage: "",
       });
     } finally {
       if (!submitted) {
@@ -1609,7 +1589,10 @@ function TreesPageContent() {
                       <div className={styles.treeMetaRow}>
                         <div className={styles.treeMetaHeader}>
                           <div className={styles.treeIdRow}>
-                            <span className={styles.treeId}>{t("TreeId", { id: treeId })}</span>
+                            <span className={styles.treeId}>
+                              {t("TreeId", { id: treeId })}
+                            </span>
+                            <span className={styles.nodeCount}>{t("NodeCount", { count: tree.nodeCount })}</span>
                           </div>
                         </div>
                         <div className={styles.treeMeta}>
@@ -1680,7 +1663,8 @@ function TreesPageContent() {
                             </button>
                             {canWriteTree ? (
                               <span className={styles.treeJobStatus} role="status">
-                                Job: {treeJob ? `${treeJob.jobType === "populate" ? "Populate" : treeJob.jobType} - ${{ queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed" }[treeJob.status] ?? treeJob.status}` : "None"}
+                                Job: {treeJob ? ({ queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed" }[treeJob.status] ?? treeJob.status) : "None"}
+                                {treeJob?.status === "failed" && treeJob.failureSummary ? ` - ${treeJob.failureSummary}` : ""}
                               </span>
                             ) : null}
                             <Link
@@ -1760,9 +1744,6 @@ function TreesPageContent() {
                           ) : null}
                           {feedback.saveError ? (
                             <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.saveError}</p>
-                          ) : null}
-                          {feedback.populateMessage ? (
-                            <p className={`${styles.rowFeedback} ${styles.rowFeedbackSuccess}`}>{feedback.populateMessage}</p>
                           ) : null}
                           {feedback.populateError ? (
                             <p className={`${styles.rowFeedback} ${styles.rowFeedbackError}`}>{feedback.populateError}</p>

@@ -591,14 +591,10 @@ function NotesPage() {
           tree.close(nodeId);
         }
       });
-
-      if (selectedNodeId) {
-        tree.select(selectedNodeId, { focus: false });
-      }
     } finally {
       isApplyingExpandedStateRef.current = false;
     }
-  }, [treeData, expandedState, selectedNodeId]);
+  }, [treeData, expandedState]);
 
   const handleMove = async ({ dragIds, parentId, index }) => {
     if (!canWriteSelectedTree) {
@@ -1280,7 +1276,7 @@ function NotesPage() {
                 title={t("Tree.Manage")}
                 aria-label={t("Tree.Manage")}
               >
-                <Trees size={20} aria-hidden="true" />
+                <Trees size={20} color="#15803d" aria-hidden="true" />
               </button>
               <button
                 onClick={handleAddRoot}
