@@ -1323,10 +1323,14 @@ export default function ChatPageClient({ includeDebug }) {
                   value={uploadStatus || prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   onKeyDown={handlePromptKeyDown}
-                  placeholder={buildChatPlaceholder(availableChatFamilies, {
+                  placeholder={buildChatPlaceholder(availableChatFamilies, chatFamily, {
                     empty: t("NoChatFamilies"),
                     single: (topic) => t("AskAbout", { topic }),
-                    multiple: (topics, last) => t("AskAboutMany", { topics, last }),
+                    families: {
+                      email: t("Placeholders.Email"),
+                      investment: t("Placeholders.Investment"),
+                      knowledgeTrees: t("Placeholders.KnowledgeTrees"),
+                    },
                   })}
                   className={styles.textArea}
                   rows={4}

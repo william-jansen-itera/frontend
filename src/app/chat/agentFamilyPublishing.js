@@ -55,23 +55,19 @@ export function setChatFamilySearchParam(searchParams, family, availableFamilies
   searchParams.set("family", normalizedFamily);
 }
 
-export function buildChatPlaceholder(availableFamilies, phrases = {}) {
-  const familyLabels = Array.isArray(availableFamilies)
-    ? availableFamilies
-      .map((family) => String(family?.label ?? family?.family ?? "").trim().toLowerCase())
-      .filter(Boolean)
-    : [];
+export function buildChatPlaceholder(availableFamilies, selectedFamily, phrases = {}) {
+  const family = Array.isArray(availableFamilies)
+    ? availableFamilies.find((entry) => entry.family === selectedFamily)
+    : null;
 
-  if (familyLabels.length === 0) {
+  if (!family) {
     return phrases.empty ?? "No chat families are currently available";
   }
 
-  if (familyLabels.length === 1) {
-    return phrases.single?.(familyLabels[0]) ?? `Ask the agent about ${familyLabels[0]}`;
+  if (Object.hasOwn(phrases.families ?? {}, family.family)) {
+    return phrases.families[family.family];
   }
 
-  const leadingLabels = familyLabels.slice(0, -1).join(", ");
-  const trailingLabel = familyLabels[familyLabels.length - 1];
-
-  return phrases.multiple?.(leadingLabels, trailingLabel) ?? `Ask the agent about ${leadingLabels}, or ${trailingLabel}`;
+  const label = String(family.label || family.family).trim().toLowerCase();
+  return phrases.single?.(label) ?? `Ask the agent about ${label}`;
 }
