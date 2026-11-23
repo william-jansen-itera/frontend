@@ -5,7 +5,7 @@ import test from 'node:test';
 const exportsByModule = {
   blobStorage: ['deleteNodeAttachmentBlobIfExists', 'restoreNodeAttachmentBlobIfDeleted', 'uploadNodeAttachment'],
   foundryAgentClient: ['getProjectClient', 'getRequiredFoundryConfig'],
-  treeGenerationService: ['generateChatLeafPathPlan', 'generateChildTitlesFromBreadcrumb', 'generateMergedLeafNotes', 'generateLeafNotesDraft', 'selectChatPlacementCandidates'],
+  treeGenerationService: ['generateChatLeafPathPlan', 'generateChildTitles', 'generateMergedLeafNotes', 'generateLeafNotesDraft', 'selectChatPlacementCandidates'],
   azureSearch: ['requestTreeSqlIndexerRun'],
   logging: ['logException', 'logTrace'],
   secretFunctionClient: ['invokeSecretFunction'],
@@ -40,8 +40,8 @@ registerHooks({
   },
 });
 
-const { createLeafNodeFromChat, previewLeafFromChat, updateTreeNodeDetails } = await import('./treeMutationService.js');
-const { generateChatLeafPathPlan, generateMergedLeafNotes, selectChatPlacementCandidates } = await import('./treeGenerationService.js');
+const { createLeafNodeFromChat, generateChildrenForNode, previewLeafFromChat, updateTreeNodeDetails } = await import('./treeMutationService.js');
+const { generateChatLeafPathPlan, generateChildTitles, generateMergedLeafNotes, selectChatPlacementCandidates } = await import('./treeGenerationService.js');
 const { copyPublicTreeRecords, updateUnchangedLeafNotes } = await import('./treeRecordRepository.js');
 const { getRequiredFoundryConfig: getActualFoundryConfig } = await import('../foundryAgentClient.js');
 
@@ -74,6 +74,48 @@ function prepare(nodes, choose) {
 function node(id, parent, depth, isLeafNode = false) {
   return { id: String(id), parent: parent === null ? null : String(parent), _depth: depth, name: `Topic ${id}`, isLeafNode };
 }
+
+test('child generation receives only existing children of the selected parent', async () => {
+  const nodes = [node(1, null, 0), node(2, 1, 1), node(3, 2, 2), node(4, 1, 1)];
+  let request;
+  globalThis.__placementMocks = {
+    withSqlConnection: async (action) => action(),
+    getNodeGenerationContext: async () => ({ treeName: 'Knowledge', breadcrumbTitles: ['Topic 1'], generatedChildIsLeaf: false }),
+    queryTreeData: async () => nodes,
+    generateChildTitles: async (options) => { request = options; throw new Error('stop before persistence'); },
+  };
+  await assert.rejects(generateChildrenForNode(7, 1), /stop before persistence/);
+  assert.deepEqual(request, {
+    treeName: 'Knowledge', breadcrumbTitles: ['Topic 1'],
+    existingChildTitles: ['Topic 2', 'Topic 4'], generateLeafChildren: false,
+  });
+});
+
+test('child title generation includes sibling exclusions and retries existing or generated duplicates', async () => {
+  const prompts = [];
+  let responses = [];
+  globalThis.__placementMocks = {
+    getRequiredFoundryConfig: () => ({ modelDeploymentName: 'mock-model' }),
+    getProjectClient: () => ({ getOpenAIClient: () => ({ responses: {
+      create: async (request) => {
+        prompts.push(request.input[0].content);
+        return { output_text: JSON.stringify({ children: responses.shift().map((title) => ({ title })) }) };
+      },
+    } }) }),
+  };
+  const options = { treeName: 'Geometry', breadcrumbTitles: ['Solids'], existingChildTitles: ['Surface area'] };
+  for (const duplicateTitles of [[' surface   AREA '], ['Volume', ' volume ']]) {
+    responses = [duplicateTitles, ['Prisms']];
+    assert.deepEqual(await generateChildTitles(options), { children: [{ title: 'Prisms' }] });
+    assert.equal(responses.length, 0);
+  }
+  assert.match(prompts[0], /Tree title:\nGeometry/);
+  assert.match(prompts[0], /Breadcrumb path:\nSolids/);
+  assert.match(prompts[0], /Existing child titles.*\n\["Surface area"\]/);
+  assert.match(prompts[0], /differently worded titles covering the same topic/);
+  responses = [['Surface area'], ['SURFACE AREA']];
+  await assert.rejects(generateChildTitles(options), /distinct from existing children and each other/);
+});
 
 test('new attachment leaf rolls back node and metadata and deletes its blob on failure', async () => {
   const calls = [];

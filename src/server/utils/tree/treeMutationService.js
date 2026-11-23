@@ -6,7 +6,7 @@ import {
 } from '@/server/utils/blobStorage';
 import {
   generateChatLeafPathPlan,
-  generateChildTitlesFromBreadcrumb,
+  generateChildTitles,
   generateMergedLeafNotes,
   generateLeafNotesDraft,
   selectChatPlacementCandidates,
@@ -683,9 +683,14 @@ export async function generateChildrenForNode(treeInstanceId, nodeId) {
       throw createStatusError('Cannot generate child nodes for a leaf node', 400);
     }
 
-    const generatedChildren = await generateChildTitlesFromBreadcrumb({
+    const flatData = await queryTreeData(treeInstanceId);
+    const existingChildTitles = flatData
+      .filter((node) => String(node.parent) === String(nodeId))
+      .map((node) => node.name);
+    const generatedChildren = await generateChildTitles({
       treeName: generationContext.treeName,
       breadcrumbTitles: generationContext.breadcrumbTitles,
+      existingChildTitles,
       generateLeafChildren: generationContext.generatedChildIsLeaf,
     });
 
