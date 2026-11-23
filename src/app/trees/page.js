@@ -972,7 +972,7 @@ function TreesPageContent() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: trimmedName, visibility: visibilityFilter }),
+        body: JSON.stringify({ name: trimmedName, visibility: "private" }),
       });
       const data = await response.json();
 
@@ -980,13 +980,19 @@ function TreesPageContent() {
         throw new Error(data?.error || "Tree could not be created");
       }
 
-      applyTreeList(Array.isArray(data?.trees) ? data.trees : [], {
-        resetNameTreeIds: [data?.createdTree?.id],
-        resetDescriptionTreeIds: [data?.createdTree?.id],
-      });
-      if (!Array.isArray(data?.trees) || !data.trees.some((tree) => String(tree.id) === String(data?.createdTree?.id))) {
-        setErrorMessage("Tree was created, but it is outside the current visibility filter.");
+      const createdTreeId = String(data?.createdTree?.id ?? "");
+      if (!createdTreeId || !Array.isArray(data?.trees) || !data.trees.some((tree) => String(tree.id) === createdTreeId)) {
+        throw new Error("Tree was created, but its updated private tree list could not be loaded. Refresh before trying again.");
       }
+      applyTreeList(data.trees, {
+        resetNameTreeIds: [createdTreeId],
+        resetDescriptionTreeIds: [createdTreeId],
+      });
+      const nextVisibility = setPersistedVisibility("private");
+      const nextSearchParams = new URLSearchParams(searchParams.toString());
+      setVisibilitySearchParam(nextSearchParams, nextVisibility, PUBLIC_PRIVATE_VISIBILITY_VALUES);
+      nextSearchParams.set("treeId", createdTreeId);
+      router.replace(`${pathname}?${nextSearchParams.toString()}`, { scroll: false });
       setNewTreeName("");
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Tree could not be created"));

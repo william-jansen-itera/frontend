@@ -1276,7 +1276,7 @@ function NotesPage() {
                 aria-label={t("Tree.AddRoot")}
               >
                 <Plus size={20} aria-hidden="true" />
-                {t("Tree.Root")}
+                <span className={styles.addRootLabel}>{t("Tree.Root")}</span>
               </button>
               <button
                 onClick={handleAddChild}
