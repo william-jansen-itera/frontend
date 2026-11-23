@@ -1531,14 +1531,16 @@ function NotesPage() {
                   <>
                     <div className={styles.formField}>
                       <span className="appFieldLabel">{t("Details.Notes")}</span>
-                      <span className={styles.auditText}>
-                        {buildAuditLabel(
-                          nodeEditorState.updatedByUserDetails,
-                          nodeEditorState.updatedAt,
-                          t("Details.NotYetUpdated"),
-                        )}
-                      </span>
                       <NotesEditor
+                        toolbarMetadata={
+                          <span className={styles.auditText}>
+                            {buildAuditLabel(
+                              nodeEditorState.updatedByUserDetails,
+                              nodeEditorState.updatedAt,
+                              t("Details.NotYetUpdated"),
+                            )}
+                          </span>
+                        }
                         value={nodeEditorState.notes}
                         onChange={(nextValue) => handleNodeEditorChange("notes", nextValue)}
                         disabled={isNodeDetailsBusy || !canWriteSelectedTree}

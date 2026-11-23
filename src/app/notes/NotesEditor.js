@@ -71,6 +71,7 @@ export function NotesEditor({
   isEditing = false,
   onStartEditing = null,
   onCancelEditing = null,
+  toolbarMetadata = null,
 }) {
   const t = useTranslations("Pages.Notes.Editor");
   const editorRef = useRef(null);
@@ -187,6 +188,7 @@ export function NotesEditor({
         >
           {t("Cancel")}
         </button>
+        {toolbarMetadata ? <span className={styles.toolbarMetadata}>{toolbarMetadata}</span> : null}
       </div>
 
       {isEditing && isPanelOpen && (

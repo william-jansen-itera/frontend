@@ -4,7 +4,7 @@
   padding: 2rem;
   border: var(--surface-border);
   border-radius: var(--surface-radius-hero);
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.3);
   box-shadow: var(--surface-card-shadow-hero);
   backdrop-filter: blur(2px);
   display: grid;

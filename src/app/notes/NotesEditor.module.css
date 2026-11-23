@@ -6,11 +6,20 @@
 
 .toolbar {
   display: flex;
+  align-items: center;
   justify-content: flex-start;
   gap: 8px;
 }
 
+.toolbarMetadata {
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .toolbarButton {
+  flex-shrink: 0;
   box-sizing: border-box;
   min-height: var(--ui-action-button-size);
   appearance: none;
