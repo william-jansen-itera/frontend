@@ -32,6 +32,11 @@
   gap: 8px;
 }
 
+.generationStatus {
+  color: #475569;
+  font-size: 0.82rem;
+}
+
 .addRootButton {
   gap: 0.35rem;
   font-weight: 400;

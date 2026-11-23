@@ -273,15 +273,15 @@ function NotesPage() {
   const approvalEnabled = Boolean(selectedTree?.approvalEnabled);
   const canReviewSelectedTree = Boolean(selectedTree?.currentUserCanReview);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
-  const canAddRoot = Boolean(treeIdParam && canWriteSelectedTree);
-  const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree);
-  const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree);
-  const canDelete = Boolean(selectedNode && canWriteSelectedTree);
+  const canAddRoot = Boolean(treeIdParam && canWriteSelectedTree && !isGeneratingChildren);
+  const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree && !isGeneratingChildren);
+  const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree && !isGeneratingChildren);
+  const canDelete = Boolean(selectedNode && canWriteSelectedTree && !isGeneratingChildren);
   const isLeafSelection = Boolean(selectedNode?.isLeafNode);
   const canEditLeafDetails = Boolean(isLeafSelection && canWriteSelectedTree);
   const canGenerateNotes = Boolean(isLeafSelection && canWriteSelectedTree);
   const canRevealSecret = Boolean(isLeafSelection && nodeEditorState.isSecret && nodeEditorState.secretMetadata?.hasStoredSecret);
-  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isUploadingAttachments || deletingAttachmentId !== null || Boolean(pendingReviewKey) || isRevealingSecret;
+  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isGeneratingChildren || isUploadingAttachments || deletingAttachmentId !== null || Boolean(pendingReviewKey) || isRevealingSecret;
   const isLoadingTrees = !isVisibilityReady || loadedVisibility !== visibilityParam;
   const resolvedTreeIdValue = treeIdParam ?? "";
   const normalizedSecretValue = normalizeEditorComparableValue(nodeEditorState.secretValue);
@@ -597,7 +597,7 @@ function NotesPage() {
   }, [treeData, expandedState]);
 
   const handleMove = async ({ dragIds, parentId, index }) => {
-    if (!canWriteSelectedTree) {
+    if (!canWriteSelectedTree || isGeneratingChildren) {
       return;
     }
 
@@ -629,7 +629,7 @@ function NotesPage() {
   };
 
   const handleToggle = async (id) => {
-    if (isApplyingExpandedStateRef.current) {
+    if (isApplyingExpandedStateRef.current || isGeneratingChildren) {
       return;
     }
 
@@ -666,7 +666,7 @@ function NotesPage() {
 
   const handleSetTreeExpansion = async (isExpanded) => {
     const expandableNodeIds = collectExpandableNodeIds(treeData);
-    if (expandableNodeIds.length === 0 || isUpdatingExpansion) {
+    if (expandableNodeIds.length === 0 || isUpdatingExpansion || isGeneratingChildren) {
       return;
     }
 
@@ -1239,7 +1239,7 @@ function NotesPage() {
                       resetTreeSelectionState();
                       router.push(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam));
                     }}
-                    disabled={availableTrees.length === 0}
+                    disabled={availableTrees.length === 0 || isGeneratingChildren}
                   >
                     {availableTrees.length === 0 ? (
                       <option value="">{t("Tree.NoTrees")}</option>
@@ -1255,6 +1255,7 @@ function NotesPage() {
                 <label className={styles.toolbarLabel}>
                   <select
                     value={visibilityParam}
+                    disabled={isGeneratingChildren}
                     onChange={(event) => {
                       setError(null);
                       resetTreeSelectionState();
@@ -1299,6 +1300,7 @@ function NotesPage() {
               >
                 <PencilSparkles size={20} aria-hidden="true" />
               </button>
+              {isGeneratingChildren ? <span className={styles.generationStatus} role="status">{t("Tree.Generating")}</span> : null}
               <button
                 onClick={handleDelete}
                 disabled={!canDelete}
@@ -1311,7 +1313,7 @@ function NotesPage() {
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(false)}
-                disabled={!hasExpandedNodes || isUpdatingExpansion}
+                disabled={!hasExpandedNodes || isUpdatingExpansion || isGeneratingChildren}
                 type="button"
                 className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.CollapseAll")}
@@ -1321,7 +1323,7 @@ function NotesPage() {
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(true)}
-                disabled={!hasCollapsedNodes || isUpdatingExpansion}
+                disabled={!hasCollapsedNodes || isUpdatingExpansion || isGeneratingChildren}
                 type="button"
                 className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.ExpandAll")}
@@ -1337,6 +1339,7 @@ function NotesPage() {
                 className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.Manage")}
                 aria-label={t("Tree.Manage")}
+                disabled={isGeneratingChildren}
               >
                 <Settings size={20} aria-hidden="true" />
               </button>
@@ -1375,7 +1378,7 @@ function NotesPage() {
               <div className={styles.readOnlyMessage}>{t("Details.ReadOnly")}</div>
             ) : null}
           </div>
-          <div ref={treeContentRef} className={styles.treeContent}>
+          <div ref={treeContentRef} className={styles.treeContent} inert={isGeneratingChildren} aria-busy={isGeneratingChildren}>
             <Tree
               ref={treeRef}
               key={treeIdParam ?? "tree-empty"}
@@ -1393,6 +1396,9 @@ function NotesPage() {
               onMove={handleMove}
               onToggle={handleToggle}
               onSelect={(nodes) => {
+                if (isGeneratingChildren) {
+                  return;
+                }
                 const nextSelectedNode = nodes.length === 1 ? nodes[0].data : null;
                 const nextSelectedNodeId = nextSelectedNode ? String(nextSelectedNode.id) : null;
                 const currentSelectedNodeId = selectedNodeId ? String(selectedNodeId) : null;
@@ -1421,9 +1427,9 @@ function NotesPage() {
                 }
               }}
               disableMultiSelection={true}
-              disableDrag={(node) => !canWriteSelectedTree || !node.draggable}
+              disableDrag={(node) => !canWriteSelectedTree || isGeneratingChildren || !node.draggable}
               disableDrop={({ parentNode, dragNodes }) => {
-                if (!canWriteSelectedTree) {
+                if (!canWriteSelectedTree || isGeneratingChildren) {
                   return true;
                 }
 
@@ -1459,7 +1465,7 @@ function NotesPage() {
               <span className={styles.panelHeading}>{t("Details.Heading")}</span>
               <button
                 onClick={handleSaveNodeDetails}
-                disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
+                disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || isGeneratingChildren || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
                 type="button"
                 className="appIconButton appCompactActionButton appCompactActionButtonPrimary"
                 title={t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
