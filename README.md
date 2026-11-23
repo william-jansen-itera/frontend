@@ -32,6 +32,8 @@ For Populate, enable the Function App's system-assigned managed identity and gra
 
 Optional chat settings:
 
+Chat's right-hand composer buttons save the current draft and open a saved-prompt picker. The top button (`message-square-more`) opens the picker; the lower button (`message-square-plus`) saves. Selecting a saved prompt replaces the draft without sending it; saving does not clear it. Prompts are stored server-side in the current application's authenticated user's private personal-cache tree at `Chat / Prompts / <agent family> / <prompt title>`. New notes use a short identifier such as `Prompt a1b2c3d4`, extending it if that title is already occupied; existing note titles are not renamed. Edit or delete these leaf notes in Notes; reopening the picker reads the current saved content. Identical content is saved once per family, preserving whitespace and line breaks. Collections are separate for each application, user, and family, regardless of chat visibility. This uses the existing tree schema and requires no migration or agent republication.
+
 - `AZURE_AI_AGENT_NAME` defaults to `tree-search-agent`
 - `APPLICATION_DEBUG` controls whether debug data is included in chat and search responses
 
@@ -551,7 +553,7 @@ The investment family's shared persistence uses the public tree selected by `INV
 
 ### Email Tools
 
-- `retrieve_emails` finds and filters a bounded set of messages from a mailbox folder, using a cached snapshot when fresh or IMAP when a refresh is needed.
+- `retrieve_emails` finds and filters a bounded set of messages from a mailbox folder, using a cached snapshot when fresh or IMAP when a refresh is needed. A refresh fetches up to the latest 150 emails; the filtered response still returns at most 25. Use `forceRefresh: true` to replace an older, smaller snapshot immediately. This server-side fetch-window change does not require agent republication.
 - `show_email` displays cached message headers and body text without model analysis; `analyze_email` provides a deeper interpretation of selected messages.
 - `flag_email` adds or removes the flagged/starred state; `delete_email` moves messages to Trash by default or permanently deletes them when requested.
 - `draft_email` saves a new or reply draft without sending, after explicit confirmation; `send_email` delivers a new message, reply, or saved draft through SMTP.

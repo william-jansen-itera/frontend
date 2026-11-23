@@ -84,6 +84,68 @@
 .composerField {
   display: grid;
   gap: 0.45rem;
+  min-width: 0;
+}
+
+.composerInputRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.65rem;
+}
+
+.composerCommands {
+  display: grid;
+  align-self: end;
+  gap: 0.4rem;
+}
+
+.promptFeedback,
+.savedPromptPanel {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.promptFeedback {
+  font-size: 0.9rem;
+}
+
+.savedPromptPanel {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: var(--ui-control-radius);
+}
+
+.savedPromptPanel p {
+  margin: 0;
+}
+
+.savedPromptList {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.savedPromptItem {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: var(--ui-control-radius);
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.savedPromptItem:hover,
+.savedPromptItem:focus-visible {
+  background: #f0f9ff;
 }
 
 .followUpComposerCard {

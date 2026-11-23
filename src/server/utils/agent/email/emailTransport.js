@@ -13,7 +13,7 @@ import {
 } from '@/server/utils/agent/email/tools/unsubscribeEmailTool/unsubscribeDetectionConfig';
 
 const MIN_SCAN_LIMIT = 25;
-const MAX_SCAN_LIMIT = 100;
+const MAX_SCAN_LIMIT = 150;
 const MAX_UNSUBSCRIBE_HTML_ANALYSIS_CHARS = 50000;
 
 export const REFRESH_RETRIEVAL_SCAN_LIMIT = MAX_SCAN_LIMIT;

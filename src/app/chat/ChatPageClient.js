@@ -10,6 +10,7 @@ import enMessages from "../language/en.json";
 import daMessages from "../language/da.json";
 import styles from "./page.module.css";
 import { AgentAnswerContent } from "./AgentAnswerContent";
+import SavedPrompts from "./SavedPrompts";
 import {
   buildChatPlaceholder,
   fetchAvailableChatFamilies,
@@ -848,6 +849,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [availableChatFamilies, setAvailableChatFamilies] = useState([]);
   const [chatFamily, setChatFamily] = useState(null);
   const chatFeedRef = useRef(null);
+  const promptInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const approvalRequestRef = useRef(false);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
@@ -1313,8 +1315,11 @@ export default function ChatPageClient({ includeDebug }) {
             </div>
             <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
               {uploadStatus ? <p role="status" className={styles.visuallyHidden}>{uploadStatus}</p> : null}
+              <div className={styles.composerInputRow}>
               <label className={styles.composerField}>
                 <textarea
+                  ref={promptInputRef}
+                  aria-label={t("Prompt")}
                   value={uploadStatus || prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   onKeyDown={handlePromptKeyDown}
@@ -1328,6 +1333,17 @@ export default function ChatPageClient({ includeDebug }) {
                   disabled={isSubmitting || availableChatFamilies.length === 0}
                 />
               </label>
+              <SavedPrompts
+                key={`${user?.objectId ?? user?.userId ?? ""}:${chatFamily}`}
+                family={chatFamily}
+                prompt={prompt}
+                disabled={isSubmitting || !chatFamily || !user}
+                onSelect={(content) => {
+                  setPrompt(content);
+                  promptInputRef.current?.focus();
+                }}
+              />
+              </div>
               {selectedFile && shouldShowVisibilityControl ? (
                 <div className={`${styles.selectedFile} ${isSubmitting ? styles.selectedFileSubmitted : ""}`} aria-hidden={isSubmitting}>
                   <span>{selectedFile.name}</span>
