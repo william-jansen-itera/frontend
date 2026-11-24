@@ -616,19 +616,61 @@ Answer-state fields are read from the final structured response, not from a spec
 
 ### Where turn state lives
 
-Turn state is split between browser memory and per-request server execution.
+The application distinguishes browser UI state, per-request server execution state, information exchanged with the agent, and durable workflow records. These are related, but they are not the same object. This section describes current behavior, not the proposed lane architecture.
 
-- The client is the main holder of chat-turn UI state. `src/app/chat/ChatPageClient.js` keeps the in-memory `turns` array with fields such as `question`, `answer`, `knowledgeMode`, `isPermissionToBroadenRequest`, `isPersistenceOffer`, `toolInvocations`, `citations`, `familyPayload`, `debug`, and pending/error status.
-- On each new submission, the client rebuilds plain chat history from those turns and sends that history back to `src/app/api/chat/route.js` together with the current message.
-- The server does not load prior turn state from a database or session store. It derives the current turn's normalized state from the current request and from the model/tool results produced during that request.
-- During execution, the server keeps the current turn's tool results in memory, separately from the agent's final structured answer state.
-- Family result builders then shape that per-turn derived state into the response fields returned to the client, such as `answer`, `knowledgeMode`, `isPermissionToBroadenRequest`, `isPersistenceOffer`, citations, family payloads, and debug data.
+#### Browser state and outgoing requests
 
-The application does not keep a separate durable server-side conversation-mode store. There is no independent persisted lane or mode record that carries forward across turns on the server.
+`src/app/chat/ChatPageClient.js` keeps an in-memory `turns` array containing questions, answers, response-language metadata, answer-state flags, citations, tool summaries, family payloads, debug data, and pending/error status.
 
-In practical terms, this means answer state is not maintained in a separate durable server-side conversation store. It is reported and validated per turn, then returned as part of that turn's response payload.
+On a new submission, the browser sends to `src/app/api/chat/route.js`:
 
-The main exception is UI preference persistence such as the selected visibility filter, which is stored separately in browser `localStorage`. That preference storage is not the same thing as persisted chat-turn state.
+- The current message.
+- Previous user and assistant messages as plain `role`/`content` history.
+- The selected agent family, app language, and visibility.
+- Relevant upload identifiers and flags.
+- A request identifier in the HTTP header.
+
+It does not send the complete previous turn objects back to the server. Previous answer-state flags, tool summaries, citations, and family payloads are not automatically replayed as structured agent context. Some workflow references, such as a displayed preview ID, can be present in the replayed message text.
+
+#### Server execution and agent interaction
+
+For each request, the server constructs runtime context and invokes the selected agent. The model receives only information explicitly supplied through published or inline instructions and tool definitions, runtime messages, chat history, the current message, and tool outputs.
+
+During ordinary tool-loop execution:
+
+1. The agent can request tool calls.
+2. The server checks the applicable tool policy, executes permitted calls, and returns their results to the agent. Tools requiring application approval can suspend execution for a separate approval request.
+3. The server accumulates tool invocations and results for the current execution.
+4. The agent produces a final response; a reply does not always require a tool call.
+5. Where a final-response validator is configured, the server validates the response and applicable workflow invariants. A rejected response can trigger bounded correction attempts within the same request. The Knowledge Trees family uses this validation.
+
+This internal exchange can include information that is absent from the normal browser response. It is not automatically a durable conversation-state store.
+
+#### Agent response versus browser response
+
+The agent's final structured response is not forwarded unchanged. Server-side parsers and family result builders validate and reshape it into the browser-facing response.
+
+For example:
+
+| Field or data | Role |
+| --- | --- |
+| `language` | Browser-supplied app-language fallback, included in runtime context. |
+| `responseLanguage` | Agent-reported reply language, returned to the browser. |
+| `languageReason` | Agent-reported explanation of language selection; diagnostic, not part of the normal response. |
+| `knowledgeMode` and persistence flags | Agent-reported answer state, validated and returned where applicable. |
+| Tool results | Evidence and action outcomes used during execution; normally exposed through summaries, citations, or selected result fields. |
+
+For Knowledge Trees, validation checks the structured response and specific behavioral invariants, such as whether a claimed save matches a successful tool outcome and whether a preview includes its actual path and ID. It does not independently establish the factual correctness of every sentence.
+
+Diagnostic information, including internal messages and tool details, may also reach the browser when debug output is enabled. "Internal" therefore does not mean "guaranteed never to reach the browser."
+
+#### What survives between requests
+
+The application currently has no separate durable server-side conversation-mode or lane record. Each new request reconstructs conversational context from browser-supplied history and explicitly loaded workflow records. The Knowledge Trees service currently limits replayed history to the last eight messages, not eight user/assistant pairs. Raw prior-turn tool outputs are not automatically replayed as structured tool history.
+
+Some workflow data is persisted separately, including upload records, save-preview snapshots, personal-cache data, and pending application approvals. These records support particular operations; they are not a persisted copy of the complete conversation. A stored approval continuation is a specific execution-resumption mechanism, not a general conversation-mode store.
+
+Browser preferences such as visibility can survive through `localStorage`, but that is separate from durable server-side conversation state. The browser's in-memory `turns` array is not itself durable chat storage.
 
 ### How information reaches the agent
 
