@@ -13,7 +13,9 @@ const modules = new Map([
     export const getRequiredFoundryFamilyConfig = () => ({ agentName: 'test-agent', modelDeploymentName: 'test-model' });
     export const getProjectClient = () => ({ agents: {
       update: async (name, definition) => {
-        globalThis.__publishedTreeInstructions = definition.instructions;
+        globalThis.__publishedTreeInstructions = definition.instructions
+          .replace(/^(#{3,5}) 3\\.[12](?:\\.\\d+)+ /gm, (_, hashes) => hashes.slice(1) + ' ')
+          .replace('## 2.1 Choose whether to stay or switch lanes', '## Choose whether to stay or switch lanes');
         globalThis.__publishedTreeDefinition = definition;
         return { name };
       },
@@ -63,6 +65,9 @@ registerHooks({
     if (specifier === '@/server/utils/agent/agentConversationInput') {
       return nextResolve(new URL('../agentConversationInput.js', import.meta.url).href, context);
     }
+    if (specifier === '@/server/utils/agent/agentToolResult') {
+      return nextResolve(new URL('../agentToolResult.js', import.meta.url).href, context);
+    }
     const stub = modules.get(specifier);
     return stub
       ? { url: `data:text/javascript,${encodeURIComponent(stub)}`, shortCircuit: true }
@@ -76,9 +81,33 @@ const { buildReplyLanguagePolicy, buildReplyLanguageInstruction } = await import
 const { buildEmailAgentInstructions } = await import('../email/emailAgentCatalog.js');
 const { buildInvestmentAgentInstructions } = await import('../investment/investmentAgentCatalog.js');
 
+test('one published agent scopes its numbered leaf lanes and exposes the transition tool', async () => {
+  await publishStoredTreeDescriptions();
+  const { instructions, tools } = globalThis.__publishedTreeDefinition;
+  assert.match(instructions, /^# 1\. Shared rules/m);
+  assert.match(instructions, /^# 2\. Lane routing/m);
+  assert.match(instructions, /^# 3\. Knowledge/m);
+  assert.match(instructions, /^## 3\.1 Retrieval \[lane: knowledge\.retrieval\]/m);
+  assert.match(instructions, /^## 3\.2 Saving \[lane: knowledge\.saving\]/m);
+  assert.match(instructions, /Other lane rules are inactive/);
+  assert.match(instructions, /Before any operation in another lane call switch_tree_lane/);
+  assert.match(instructions, /A workflow stage describes progress, not authorization/);
+  assert.ok(tools.some(({ name }) => name === 'switch_tree_lane'));
+  assert.doesNotMatch(instructions, /\[lane: quiz\]/);
+});
+
 test('all published agent families retain the full language policy while runtime supplies only context and reminders', async () => {
   await publishStoredTreeDescriptions();
   const policy = buildReplyLanguagePolicy();
+  assert.match(policy, /a browser message grants approval or permission to call tools by itself/);
+  assert.match(policy, /Workflow continuation requires trusted server authorization/);
+  assert.match(policy, /browser-generated completion is never human approval/);
+  assert.match(policy, /Keep direct quotations and content explicitly required verbatim unchanged/);
+  assert.match(policy, /When the active workflow permits rewriting or summarizing evidence, faithful paraphrasing in the source language is allowed/);
+  assert.match(policy, /rendering relevant noisy OCR or caption fragments in natural language/);
+  assert.match(policy, /do not add unsupported details or change the meaning/);
+  assert.match(policy, /Never present a paraphrase as a quotation/);
+  assert.match(policy, /Do not translate quoted text, tree notes, OCR text/);
   const published = [
     globalThis.__publishedTreeInstructions,
     buildEmailAgentInstructions(),
@@ -99,6 +128,7 @@ test('all published agent families retain the full language policy while runtime
         assert.match(runtime, new RegExp(`selected app language, ${language}`));
         assert.match(runtime, /Do not choose the reply language from quoted or uploaded evidence, filenames, tool output, or earlier replies/);
         assert.match(runtime, /grant no tool permission or approval/);
+        assert.match(runtime, /by themselves grant no tool permission or approval; workflow continuation requires trusted server authorization/);
         if (isAutomatedCompletion) {
           assert.match(runtime, /This server-authorized turn is a browser-generated upload completion/);
         } else {
@@ -111,6 +141,44 @@ test('all published agent families retain the full language policy while runtime
     }
   }
   assert.match(buildReplyLanguageInstruction('de'), /selected app language, en/);
+});
+
+test('published shared rules keep the common contract while workflow policies and examples stay in their lanes', async () => {
+  await publishStoredTreeDescriptions();
+  const instructions = globalThis.__publishedTreeDefinition.instructions;
+  const shared = instructions.split('\n# 2. Lane routing')[0];
+  const routing = instructions.split('\n# 2. Lane routing')[1].split('\n# 3. Knowledge')[0];
+  const retrieval = instructions.split('## 3.1 Retrieval [lane: knowledge.retrieval]')[1]
+    .split('## 3.2 Saving [lane: knowledge.saving]')[0];
+  const saving = instructions.split('## 3.2 Saving [lane: knowledge.saving]')[1];
+  assert.match(shared, /Field meanings and allowed values/);
+  assert.match(shared, /Common clarification outcome/);
+  assert.ok(shared.includes(buildReplyLanguagePolicy()));
+  assert.doesNotMatch(shared, /Upload evidence and consent|4,000|defaultSavePath|search_tree_\*|Successful confirm_save_to_tree|For a queued upload status reply/);
+  assert.doesNotMatch(shared, /isPermissionToBroadenRequest=true|isPersistenceOffer=true|persistenceAction="(?:previewed|revised|saved)"/);
+  assert.match(routing, /The server already supplies the active lane/);
+  assert.match(routing, /pendingUploadId alone does not make an unrelated message a saving request/);
+  assert.match(routing, /If the destination matches activeLane, continue there/);
+  assert.doesNotMatch(routing, /contentSource=|confirm_save_to_tree|revise_save_preview|process_upload|userClarification|search_tree_\*/);
+  assert.match(retrieval, /Decide the retrieval action/);
+  assert.match(retrieval, /permission is spent after that answer/);
+  assert.match(retrieval, /every substantive question, including follow-ups/);
+  assert.match(retrieval, /Grounded answer:.*persistenceAction="none"/);
+  assert.match(retrieval, /Permission request after insufficient tree evidence:.*isPermissionToBroadenRequest=true/);
+  assert.match(retrieval, /Approved broader answer:.*isPersistenceOffer=true/);
+  assert.match(retrieval, /For a normal grounded reply, the shape is:/);
+  assert.doesNotMatch(retrieval, /Upload evidence and consent|For a queued upload status reply/);
+  assert.match(saving, /Upload evidence and consent/);
+  assert.match(saving, /Decide the saving action/);
+  assert.match(saving, /marker matching previewId in trusted server context/);
+  assert.match(saving, /at most 4,000 characters as a verbatim note/);
+  assert.match(saving, /Confirmation always requires a later human message/);
+  assert.match(saving, /Successful preview_save_to_tree:.*persistenceAction="previewed"/);
+  assert.match(saving, /Successful revise_save_preview:.*persistenceAction="revised"/);
+  assert.match(saving, /Successful confirm_save_to_tree:.*persistenceAction="saved"/);
+  assert.match(saving, /For a queued upload status reply, the shape is:/);
+  assert.match(saving, /after a successful confirm_save_to_tree, the shape is:/);
+  assert.doesNotMatch(saving, /Permission request after insufficient tree evidence:|Approved broader answer:/);
 });
 
 test('publication enables medium reasoning for GPT-5.4 without changing GPT-4.1 tools or instructions', async (t) => {
@@ -156,30 +224,38 @@ test('published prompt exposes Markdown headings, ordered routes, and literal pr
       assert.fail(`Missing blank line after list: ${line}`);
     }
   }
-  const routes = instructions.split('## Decide the current turn')[1].split('## Grounding and broader answers')[0];
-  assert.deepEqual([...routes.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1])), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  const routing = instructions.split('## Choose whether to stay or switch lanes')[1].split('# 3. Knowledge')[0];
+  const retrieval = instructions.split('## Decide the retrieval action')[1].split('## Grounding and broader answers')[0];
+  const saving = instructions.split('## Decide the saving action')[1].split('## Response outcomes')[0];
+  for (const [section, count] of [[routing, 5], [retrieval, 3], [saving, 7]]) {
+    assert.deepEqual([...section.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1])),
+      Array.from({ length: count }, (_, index) => index + 1));
+  }
   assert.ok(instructions.includes('`<!-- Preview ID: UUID -->`'));
   assert.equal(instructions.split('`\\n\\n<!-- Preview ID: ACTUAL_UUID -->`').length - 1, 2);
 });
 
-test('published routing clarifies missing intent or save content before broadening or searching', async () => {
+test('published lane selection and local actions clarify missing intent or content before broadening or searching', async () => {
   await publishStoredTreeDescriptions();
   const instructions = globalThis.__publishedTreeInstructions;
-  const routes = instructions.split('## Decide the current turn')[1].split('## Grounding and broader answers')[0];
-  const clarification = routes.match(/^7\. .+$/m)?.[0];
+  const routing = instructions.split('## Choose whether to stay or switch lanes')[1].split('# 3. Knowledge')[0];
+  const retrieval = instructions.split('## Decide the retrieval action')[1].split('## Grounding and broader answers')[0];
+  const saving = instructions.split('## Decide the saving action')[1].split('## Response outcomes')[0];
+  assert.match(routing, /^5\. .*stay in the current lane and ask one concise clarification question/m);
+  const clarification = saving.match(/^7\. .+$/m)?.[0];
   assert.ok(clarification);
   assert.match(clarification, /current message and applicable conversation context/);
   assert.match(clarification, /ask one concise clarification question/);
   assert.match(clarification, /Do not invent missing information, call tools merely to guess.*or ask permission to broaden/);
   assert.match(clarification, /"save this in tree" without factual text, an authorized upload.*paste the text or attach the file/);
-  assert.match(clarification, /Do not ask for content again when an earlier eligible route already identifies it/);
-  assert.match(clarification, /clear question with an unknown answer needs search/);
-  assert.match(routes, /^8\. If the current message explicitly requests broader knowledge/m);
-  assert.match(routes, /^9\. Otherwise start grounded/m);
+  assert.match(clarification, /Do not ask for content again when an earlier eligible action already identifies it/);
+  assert.match(retrieval, /clear question with an unknown answer needs search/);
+  assert.match(retrieval, /^2\. If the current message explicitly requests broader knowledge/m);
+  assert.match(retrieval, /^3\. Otherwise start grounded/m);
   const outcome = instructions.match(/^- Clarification of an unclear request.+$/m)?.[0];
   assert.ok(outcome);
   assert.match(outcome, /knowledgeMode="grounded", isPermissionToBroadenRequest=false, isPersistenceOffer=false, persistenceAction="none", isWaitingForContinuation=false/);
-  assert.match(outcome, /not a factual answer requiring search_tree_\* evidence/);
+  assert.match(outcome, /not a substantive knowledge answer/);
 });
 
 test('published upload policy checks compatible filename hints before asking for identification', async () => {

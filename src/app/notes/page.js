@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ChevronsDownUp, ChevronsUpDown, ExternalLink, Paperclip, PencilSparkles, Plus, Save, Settings, Trash2 } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, ExternalLink, Paperclip, PencilSparkles, Plus, RefreshCw, Save, Settings, Trash2 } from "lucide-react";
 import { Tree } from "react-arborist";
 import styles from "./page.module.css";
 import { NotesEditor } from "./NotesEditor";
@@ -247,6 +247,8 @@ function NotesPage() {
   const [availableTrees, setAvailableTrees] = useState([]);
   const [loadedVisibility, setLoadedVisibility] = useState(null);
   const [treeData, setTreeData] = useState([]);
+  const [isRefreshingTree, setIsRefreshingTree] = useState(false);
+  const [treeRefreshError, setTreeRefreshError] = useState(null);
   const [expandedState, setExpandedState] = useState({});
   const [isUpdatingExpansion, setIsUpdatingExpansion] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -265,6 +267,7 @@ function NotesPage() {
   const [isSecretValueVisible, setIsSecretValueVisible] = useState(false);
   const { pageContainerRef, treeContentRef, isStackedLayout, panelHeight, treeHeight } = usePanelLayout();
   const treeRef = useRef();
+  const treeRequestRef = useRef(null);
   const attachmentInputRef = useRef(null);
   const isApplyingExpandedStateRef = useRef(false);
   const [error, setError] = useState(null);
@@ -273,15 +276,15 @@ function NotesPage() {
   const approvalEnabled = Boolean(selectedTree?.approvalEnabled);
   const canReviewSelectedTree = Boolean(selectedTree?.currentUserCanReview);
   const selectedNode = selectedNodeId ? findNodeById(treeData, selectedNodeId) : null;
-  const canAddRoot = Boolean(treeIdParam && canWriteSelectedTree && !isGeneratingChildren);
-  const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree && !isGeneratingChildren);
-  const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree && !isGeneratingChildren);
-  const canDelete = Boolean(selectedNode && canWriteSelectedTree && !isGeneratingChildren);
+  const canAddRoot = Boolean(treeIdParam && canWriteSelectedTree && !isGeneratingChildren && !isRefreshingTree);
+  const canAddChild = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree && !isGeneratingChildren && !isRefreshingTree);
+  const canGenerateChildren = Boolean(selectedNode && !selectedNode.isLeafNode && canWriteSelectedTree && !isGeneratingChildren && !isRefreshingTree);
+  const canDelete = Boolean(selectedNode && canWriteSelectedTree && !isGeneratingChildren && !isRefreshingTree);
   const isLeafSelection = Boolean(selectedNode?.isLeafNode);
   const canEditLeafDetails = Boolean(isLeafSelection && canWriteSelectedTree);
   const canGenerateNotes = Boolean(isLeafSelection && canWriteSelectedTree);
   const canRevealSecret = Boolean(isLeafSelection && nodeEditorState.isSecret && nodeEditorState.secretMetadata?.hasStoredSecret);
-  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isGeneratingChildren || isUploadingAttachments || deletingAttachmentId !== null || Boolean(pendingReviewKey) || isRevealingSecret;
+  const isNodeDetailsBusy = isSavingNodeDetails || isGeneratingNotes || isGeneratingChildren || isUploadingAttachments || deletingAttachmentId !== null || Boolean(pendingReviewKey) || isRevealingSecret || isRefreshingTree;
   const isLoadingTrees = !isVisibilityReady || loadedVisibility !== visibilityParam;
   const resolvedTreeIdValue = treeIdParam ?? "";
   const normalizedSecretValue = normalizeEditorComparableValue(nodeEditorState.secretValue);
@@ -330,6 +333,7 @@ function NotesPage() {
   };
 
   const resetTreeSelectionState = () => {
+    setTreeRefreshError(null);
     setTreeData([]);
     setExpandedState({});
     setSelectedNodeId(null);
@@ -461,9 +465,20 @@ function NotesPage() {
       return;
     }
 
-    fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&visibility=${encodeURIComponent(visibilityParam)}`)
+    const controller = new AbortController();
+    treeRequestRef.current?.abort();
+    treeRequestRef.current = controller;
+
+    fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&visibility=${encodeURIComponent(visibilityParam)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then((res) => res.json())
       .then((flatData) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
         if (Array.isArray(flatData)) {
           const persistedExpandedState = extractExpandedState(flatData);
           const nextSelectedNodeId = getNextSelectedNodeId(
@@ -489,6 +504,7 @@ function NotesPage() {
           setNodeDetailsError(null);
           setIsEditingNotes(false);
           setError(null);
+          setTreeRefreshError(null);
 
           const missingExpandedAncestorIds = nextSelectedNodeId
             ? getAncestorExpandableNodeIds(flatData, nextSelectedNodeId).filter((nodeId) => !persistedExpandedState[String(nodeId)])
@@ -518,6 +534,10 @@ function NotesPage() {
         }
       })
       .catch((err) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
         console.error("Data error:", err);
         setTreeData([]);
         setExpandedState({});
@@ -527,7 +547,16 @@ function NotesPage() {
         setSavedNodeEditorState(nextEditorState);
         setIsEditingNotes(false);
         setError(err.message);
+      })
+      .finally(() => {
+        if (treeRequestRef.current === controller) {
+          setIsRefreshingTree(false);
+        }
       });
+
+    return () => {
+      treeRequestRef.current?.abort();
+    };
   }, [availableTrees, canWriteSelectedTree, isLoadingTrees, treeIdParam, nodeIdParam, visibilityParam]);
 
   // Fetch the details of the selected node when selectedNodeId changes
@@ -625,6 +654,47 @@ function NotesPage() {
       }
     } catch (err) {
       console.error("Failed to update tree:", err);
+    }
+  };
+
+  const handleRefreshTree = async () => {
+    if (!selectedTree || isLoadingTrees || isNodeDetailsBusy || isUpdatingExpansion) {
+      return;
+    }
+
+    if ((hasUnsavedNodeDetailChanges || pendingFiles.length > 0) && !window.confirm(t("Dialogs.RefreshTree"))) {
+      return;
+    }
+
+    const controller = new AbortController();
+    treeRequestRef.current?.abort();
+    treeRequestRef.current = controller;
+    setIsRefreshingTree(true);
+    setTreeRefreshError(null);
+
+    try {
+      const response = await fetch(`/api/notes?treeId=${encodeURIComponent(treeIdParam)}&visibility=${encodeURIComponent(visibilityParam)}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const flatData = await response.json();
+
+      if (!response.ok || !Array.isArray(flatData)) {
+        throw new Error(flatData?.error || t("Tree.RefreshError"));
+      }
+
+      if (!controller.signal.aborted) {
+        applyTreeResponse(flatData);
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        console.error("Tree refresh error:", err);
+        setTreeRefreshError(err.message);
+      }
+    } finally {
+      if (treeRequestRef.current === controller) {
+        setIsRefreshingTree(false);
+      }
     }
   };
 
@@ -1239,7 +1309,7 @@ function NotesPage() {
                       resetTreeSelectionState();
                       router.push(getTreeSelectionHref(pathname, searchParams.toString(), nextTreeId, visibilityParam));
                     }}
-                    disabled={availableTrees.length === 0 || isGeneratingChildren}
+                    disabled={availableTrees.length === 0 || isGeneratingChildren || isRefreshingTree}
                   >
                     {availableTrees.length === 0 ? (
                       <option value="">{t("Tree.NoTrees")}</option>
@@ -1255,7 +1325,7 @@ function NotesPage() {
                 <label className={styles.toolbarLabel}>
                   <select
                     value={visibilityParam}
-                    disabled={isGeneratingChildren}
+                    disabled={isGeneratingChildren || isRefreshingTree}
                     onChange={(event) => {
                       setError(null);
                       resetTreeSelectionState();
@@ -1313,7 +1383,7 @@ function NotesPage() {
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(false)}
-                disabled={!hasExpandedNodes || isUpdatingExpansion || isGeneratingChildren}
+                disabled={!hasExpandedNodes || isUpdatingExpansion || isGeneratingChildren || isRefreshingTree}
                 type="button"
                 className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.CollapseAll")}
@@ -1323,7 +1393,7 @@ function NotesPage() {
               </button>
               <button
                 onClick={() => handleSetTreeExpansion(true)}
-                disabled={!hasCollapsedNodes || isUpdatingExpansion || isGeneratingChildren}
+                disabled={!hasCollapsedNodes || isUpdatingExpansion || isGeneratingChildren || isRefreshingTree}
                 type="button"
                 className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.ExpandAll")}
@@ -1339,7 +1409,7 @@ function NotesPage() {
                 className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
                 title={t("Tree.Manage")}
                 aria-label={t("Tree.Manage")}
-                disabled={isGeneratingChildren}
+                disabled={isGeneratingChildren || isRefreshingTree}
               >
                 <Settings size={20} aria-hidden="true" />
               </button>
@@ -1373,12 +1443,27 @@ function NotesPage() {
                   </button>
                 </>
               ) : null}
+              <button
+                onClick={handleRefreshTree}
+                disabled={!selectedTree || isLoadingTrees || isNodeDetailsBusy || isUpdatingExpansion}
+                type="button"
+                className="appIconButton appCompactActionButton appCompactActionButtonNeutral"
+                title={t(isRefreshingTree ? "Tree.Refreshing" : "Tree.Refresh")}
+                aria-label={t(isRefreshingTree ? "Tree.Refreshing" : "Tree.Refresh")}
+                aria-busy={isRefreshingTree}
+              >
+                <RefreshCw size={20} aria-hidden="true" />
+              </button>
+              {isRefreshingTree ? <span className={styles.generationStatus} role="status">{t("Tree.Refreshing")}</span> : null}
             </div>
+            {treeRefreshError ? (
+              <div className={styles.errorMessage} role="alert">{treeRefreshError}</div>
+            ) : null}
             {selectedTree && !canWriteSelectedTree ? (
               <div className={styles.readOnlyMessage}>{t("Details.ReadOnly")}</div>
             ) : null}
           </div>
-          <div ref={treeContentRef} className={styles.treeContent} inert={isGeneratingChildren} aria-busy={isGeneratingChildren}>
+          <div ref={treeContentRef} className={styles.treeContent} inert={isGeneratingChildren || isRefreshingTree} aria-busy={isGeneratingChildren || isRefreshingTree}>
             <Tree
               ref={treeRef}
               key={treeIdParam ?? "tree-empty"}
@@ -1465,7 +1550,7 @@ function NotesPage() {
               <span className={styles.panelHeading}>{t("Details.Heading")}</span>
               <button
                 onClick={handleSaveNodeDetails}
-                disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || isGeneratingChildren || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
+                disabled={!selectedNode || !canWriteSelectedTree || isSavingNodeDetails || isGeneratingNotes || isGeneratingChildren || isRefreshingTree || !nodeEditorState.name.trim() || !hasUnsavedNodeDetailChanges}
                 type="button"
                 className="appIconButton appCompactActionButton appCompactActionButtonPrimary"
                 title={t(isSavingNodeDetails ? "Details.Saving" : "Details.Save")}
@@ -1476,7 +1561,7 @@ function NotesPage() {
               </button>
             </div>
           </div>
-          <div className={styles.detailsContent}>
+          <div className={styles.detailsContent} inert={isRefreshingTree}>
             {!selectedNode ? (
               <div className={styles.detailsForm}>
                 <div className={styles.emptyState}>

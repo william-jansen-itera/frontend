@@ -11,6 +11,7 @@ import daMessages from "../language/da.json";
 import styles from "./page.module.css";
 import { AgentAnswerContent } from "./AgentAnswerContent";
 import SavedPrompts from "./SavedPrompts";
+import { acceptLaneContext, buildLaneRequestContext } from "./chatLaneContext";
 import {
   buildChatPlaceholder,
   fetchAvailableChatFamilies,
@@ -66,7 +67,7 @@ function createRequestId() {
   }
 
   fallbackRequestSequence += 1;
-  return `request-${fallbackRequestSequence}`;
+  return `request-${Date.now()}-${Math.random().toString(36).slice(2)}-${fallbackRequestSequence}`;
 }
 
 async function waitForUploadNote(uploadId) {
@@ -88,7 +89,7 @@ async function waitForUploadNote(uploadId) {
   throw new Error("File processing is taking longer than expected. Try again later.");
 }
 
-async function continueCompletedUpload(uploadId, message, label, language, visibility, history) {
+async function continueCompletedUpload(uploadId, message, label, language, visibility, history, laneRequest) {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-chat-request-id": createRequestId() },
@@ -99,12 +100,14 @@ async function continueCompletedUpload(uploadId, message, label, language, visib
       language,
       visibility,
       previewUploadId: uploadId,
+      ...laneRequest,
     }),
   });
   const payload = await parseApiResponseBody(response);
   if (!response.ok) {
     const error = new Error(payload?.error || `Could not continue completed upload (${response.status})`);
     error.debug = payload?.debug ?? null;
+    error.laneContext = payload?.laneContext ?? null;
     throw error;
   }
   return payload;
@@ -852,6 +855,7 @@ export default function ChatPageClient({ includeDebug }) {
   const promptInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const approvalRequestRef = useRef(false);
+  const laneContextRef = useRef(null);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
@@ -972,6 +976,8 @@ export default function ChatPageClient({ includeDebug }) {
 
   async function submitTurn({ question, message, file, hasTypedUploadMessage = false }) {
     const turnId = createTurnId();
+    if (!laneContextRef.current) laneContextRef.current = { conversationId: createRequestId(), version: 0 };
+    const laneRequest = chatFamily === "knowledgeTrees" ? buildLaneRequestContext(laneContextRef.current, turnId) : {};
     const submittedLanguage = language;
     const automatedLabel = file && !hasTypedUploadMessage ? t("Upload.AutomatedLabel") : null;
     let completionTurnId = null;
@@ -1039,10 +1045,12 @@ export default function ChatPageClient({ includeDebug }) {
           visibility,
           ...(uploadId ? { uploadId, hasTypedUploadMessage } : {}),
           ...(pendingUploadId ? { pendingUploadId } : {}),
+          ...laneRequest,
         }),
       });
 
       const payload = await parseApiResponseBody(response);
+      if (chatFamily === "knowledgeTrees") laneContextRef.current = acceptLaneContext(laneContextRef.current, payload);
 
       if (!response.ok) {
         throw {
@@ -1094,12 +1102,14 @@ export default function ChatPageClient({ includeDebug }) {
             isBrowserAutomated: Boolean(automatedLabel),
             automatedLabel,
           }]),
-        ]);
+        ], buildLaneRequestContext(payload.laneContext, completionTurn.id));
+        laneContextRef.current = acceptLaneContext(laneContextRef.current, completion);
         setTurns((currentTurns) => currentTurns.map((turn) => turn.id === completionTurnId
           ? finishUploadCompletionTurn(turn, completion, uploadId)
           : turn));
       }
     } catch (error) {
+      if (error?.laneContext) laneContextRef.current = acceptLaneContext(laneContextRef.current, error);
       const messageText = error instanceof Error ? error.message : String(error?.message || "Chat request failed");
 
       setRequestError(messageText);

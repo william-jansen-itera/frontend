@@ -246,9 +246,12 @@
     },
     "Notes": {
       "Loading": "Indlæser...",
-      "Dialogs": { "ThisNode": "denne node", "ThisFile": "denne fil", "DeleteNode": "Vil du slette noden \"{name}\"? Dette kan ikke fortrydes.", "DeleteFile": "Vil du slette filen \"{name}\"? Dette kan ikke fortrydes.", "GenerateChildren": "Vil du generere nye undernoder under \"{name}\"? Eksisterende undernoder bevares, og de nye tilføjes efter dem.", "GenerateNotes": "Vil du generere kladdenoter til \"{name}\"? De indsættes i editoren og gemmes først, når du trykker på Gem." },
+      "Dialogs": { "ThisNode": "denne node", "ThisFile": "denne fil", "DeleteNode": "Vil du slette noden \"{name}\"? Dette kan ikke fortrydes.", "DeleteFile": "Vil du slette filen \"{name}\"? Dette kan ikke fortrydes.", "GenerateChildren": "Vil du generere nye undernoder under \"{name}\"? Eksisterende undernoder bevares, og de nye tilføjes efter dem.", "GenerateNotes": "Vil du generere kladdenoter til \"{name}\"? De indsættes i editoren og gemmes først, når du trykker på Gem.", "RefreshTree": "Vil du opdatere dette træ? Ikke-gemte ændringer og valgte filer bliver kasseret." },
       "Tree": {
         "Heading": "Træ",
+        "Refresh": "Opdater træ",
+        "Refreshing": "Opdaterer...",
+        "RefreshError": "Træet kunne ikke opdateres.",
         "NoTrees": "Ingen træer tilgængelige",
         "Manage": "Administrer",
         "AddRoot": "Tilføj rod",

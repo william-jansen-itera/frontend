@@ -7,7 +7,8 @@ const exportsByModule = {
   agentConversationInput: ['buildInitialAgentInput', 'buildReplyLanguageInstruction'],
   agentDebug: ['appendDebugStep', 'attachDebugToError', 'createAgentDebugState', 'serializeDebugValue'],
   agentFamilyExecution: ['runAgentFamilyExecution'],
-  agentToolResult: ['getAgentToolResultData', 'getAgentToolResultMeta'],
+  agentToolResult: ['getAgentToolResultData', 'getAgentToolResultMeta', 'buildAgentToolResult'],
+  treeConversationRepository: ['beginTreeTurn', 'updateTreeTurn', 'completeTreeTurn', 'failTreeTurn'],
   treeAgentCatalog: [
     'buildAllowedToolInstruction', 'buildRuntimeTreeToolContext', 'buildVisibilityScopeContext',
     'buildVisibilityScopeInstruction', 'getPublishedKnowledgeTreesPromptAgent',
@@ -17,12 +18,12 @@ const exportsByModule = {
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    const name = specifier.split('/').at(-1);
+    const name = specifier.split('/').at(-1).replace(/\.js$/, '');
     if (specifier.startsWith('@/') && name === 'agentAnswerState') {
       return nextResolve(new URL('../agentAnswerState.js', import.meta.url).href, context);
     }
     const exports = exportsByModule[name];
-    if (specifier.startsWith('@/') && exports) {
+    if ((specifier.startsWith('@/') || name === 'treeConversationRepository') && exports) {
       const code = exports.map((key) => `export const ${key} = (...args) => globalThis.__treeServiceMocks.${key}(...args);`).join('\n');
       return { url: `data:text/javascript,${encodeURIComponent(code)}`, shortCircuit: true };
     }
@@ -150,7 +151,18 @@ async function getValidator(uploadId = null, previewUploadId = null, message = '
   history = [], pendingUploadId = null, handlerMap = null, runExecution = null, uploadHasHumanMessage = null,
 } = {}) {
   let validator;
+  const marker = history.at(-1)?.content.match(/<!-- Preview ID: ([\w-]+) -->/)?.[1] ?? null;
+  let laneState = {
+    schemaVersion: 1, conversationId: 'test-conversation', version: 1,
+    activeLane: 'knowledge.saving', stage: marker ? 'awaiting_approval' : 'idle',
+    previewId: marker, uploadId: null,
+  };
   globalThis.__treeServiceMocks = {
+    beginTreeTurn: async () => ({ state: laneState }),
+    updateTreeTurn: async (_, patch) => (laneState = { ...laneState, ...patch, version: laneState.version + 1 }),
+    completeTreeTurn: async (_, response) => response,
+    failTreeTurn: async () => ({}),
+    buildAgentToolResult: (value) => value,
     appendDebugStep: () => {},
     attachDebugToError: (error) => error,
     getProjectClient: () => ({ getOpenAIClient: () => ({}) }),
@@ -162,13 +174,13 @@ async function getValidator(uploadId = null, previewUploadId = null, message = '
     buildInitialAgentInput,
     buildReplyLanguageInstruction: () => '',
     runAgentFamilyExecution: async (options) => {
-      if (previewUploadId) assert.deepEqual([...options.handlerMap.keys()], ['preview_save_to_tree', 'confirm_save_to_tree']);
+      if (previewUploadId) assert.deepEqual([...options.handlerMap.keys()], ['preview_save_to_tree', 'confirm_save_to_tree', 'switch_tree_lane']);
       validator = options.finalResponseValidator;
       await runExecution?.(options);
       return { response: {}, toolInvocations: [], modelCalls: [] };
     },
     buildKnowledgeTreesFamilyResult: async () => ({ familyResult: {} }),
-    buildKnowledgeTreesResponse: () => ({}),
+    buildKnowledgeTreesResponse: () => ({ answer: 'Reply' }),
   };
   await invokeKnowledgeTreesAgent({ message, history, uploadId, previewUploadId, pendingUploadId, uploadHasHumanMessage });
   return validator;
@@ -317,7 +329,7 @@ test('accepting a new broad answer cannot confirm an older or invented preview I
       assert.match(instruction, /even when an older preview exists in history/);
       for (const previewId of [oldId, fakeId]) {
         await assert.rejects(handlerMap.get('confirm_save_to_tree')({ previewId, saveMode: 'create_leaf' }),
-          /call preview_save_to_tree now with contentSource="prior_broad_answer"/);
+          /not active|call preview_save_to_tree now with contentSource="prior_broad_answer"/);
       }
       await handlerMap.get('preview_save_to_tree')({
         contentSource: 'prior_broad_answer', broaderAnswer: 'A new broad answer about fishing.',
@@ -349,8 +361,8 @@ test('confirmation accepts only the immediately displayed ID and preserves the h
     handlerMap: new Map([['confirm_save_to_tree', async (...args) => { calls.push(args); return result; }]]),
     runExecution: async ({ handlerMap }) => {
       const confirm = handlerMap.get('confirm_save_to_tree');
-      await assert.rejects(confirm({ previewId: oldId, saveMode: 'create_leaf' }), /does not match/);
-      await assert.rejects(confirm({ previewId: 'made-up', saveMode: 'create_leaf' }), /does not match/);
+      await assert.rejects(confirm({ previewId: oldId, saveMode: 'create_leaf' }), /not active|does not match/);
+      await assert.rejects(confirm({ previewId: 'made-up', saveMode: 'create_leaf' }), /not active|does not match/);
       const args = { previewId: latestId, saveMode: 'create_leaf' };
       const context = { trace: 'test' };
       assert.equal(await confirm(args, context), result);
@@ -366,11 +378,11 @@ test('creating or revising a preview prevents confirmation in the same human tur
     await getValidator(null, null, 'Use another path.', {
       history: [{ role: 'assistant', content: `Preview?\n\n<!-- Preview ID: ${previewId} -->` }],
       handlerMap: new Map([
-        [tool, async () => ({ toolResultType: 'tree_note_preview' })],
+        [tool, async () => ({ toolResultType: 'tree_note_preview', data: { previewId } })],
         ['confirm_save_to_tree', async () => { confirms += 1; }],
       ]),
       runExecution: async ({ handlerMap, finalResponseValidator }) => {
-        await handlerMap.get(tool)({});
+        await handlerMap.get(tool)({ previewId });
         await assert.rejects(handlerMap.get('confirm_save_to_tree')({ previewId, saveMode: 'create_leaf' }),
           /preview created in this turn requires later human approval/);
         const correction = await finalResponseValidator({ response: savedResponse('Saved.'), toolInvocations: [] });

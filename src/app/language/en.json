@@ -246,9 +246,12 @@
     },
     "Notes": {
       "Loading": "Loading...",
-      "Dialogs": { "ThisNode": "this node", "ThisFile": "this file", "DeleteNode": "Delete node \"{name}\"? This action cannot be undone.", "DeleteFile": "Delete file \"{name}\"? This action cannot be undone.", "GenerateChildren": "Generate new child nodes under \"{name}\"? Existing child nodes will be kept and any generated nodes will be added after them.", "GenerateNotes": "Generate draft notes for \"{name}\"? The generated notes will be inserted into the editor and will not be saved until you press Save." },
+      "Dialogs": { "ThisNode": "this node", "ThisFile": "this file", "DeleteNode": "Delete node \"{name}\"? This action cannot be undone.", "DeleteFile": "Delete file \"{name}\"? This action cannot be undone.", "GenerateChildren": "Generate new child nodes under \"{name}\"? Existing child nodes will be kept and any generated nodes will be added after them.", "GenerateNotes": "Generate draft notes for \"{name}\"? The generated notes will be inserted into the editor and will not be saved until you press Save.", "RefreshTree": "Refresh this tree? Unsaved changes and selected files will be discarded." },
       "Tree": {
         "Heading": "Tree",
+        "Refresh": "Refresh tree",
+        "Refreshing": "Refreshing...",
+        "RefreshError": "The tree could not be refreshed.",
         "NoTrees": "No trees available",
         "Manage": "Manage",
         "AddRoot": "Add Root",

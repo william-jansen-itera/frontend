@@ -22,12 +22,46 @@ const modules = new Map([
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier.endsWith('/treeLaneState')) {
+      return nextResolve(new URL('../../../server/utils/agent/knowledgeTrees/treeLaneState.js', import.meta.url).href, context);
+    }
     const stub = modules.get(specifier === 'next/server' ? specifier : specifier.split('/').at(-1));
     return stub ? { url: `data:text/javascript,${encodeURIComponent(stub)}`, shortCircuit: true } : nextResolve(specifier, context);
   },
 });
 
 const { POST } = await import('./route.js');
+const laneIdentity = { conversationId: 'conversation-1', turnId: 'turn-1', expectedVersion: 0 };
+
+test('chat forwards context identity but never accepts a client lane as authoritative', async () => {
+  globalThis.__chatRouteCalls = [];
+  const request = (extra) => new Request('http://localhost/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'A question', family: 'knowledgeTrees', ...laneIdentity, ...extra }),
+  });
+  const identity = { conversationId: 'conversation-1', turnId: 'turn-1', expectedVersion: 3 };
+  assert.equal((await POST(request({ ...identity, activeLane: 'knowledge.saving' }))).status, 200);
+  for (const [key, value] of Object.entries(identity)) assert.equal(globalThis.__chatRouteCalls[0][key], value);
+  assert.equal(globalThis.__chatRouteCalls[0].activeLane, undefined);
+  assert.equal((await POST(request({ conversationId: '../other' }))).status, 400);
+  assert.equal((await POST(request({ expectedVersion: -1 }))).status, 400);
+  assert.equal(globalThis.__chatRouteCalls.length, 1);
+});
+
+test('Knowledge Trees rejects missing or null conversation identity fields instead of generating defaults', async () => {
+  globalThis.__chatRouteCalls = [];
+  for (const field of Object.keys(laneIdentity)) {
+    for (const value of [undefined, null]) {
+      const response = await POST(new Request('http://localhost/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'A question', family: 'knowledgeTrees', ...laneIdentity, [field]: value }),
+      }));
+      assert.equal(response.status, 400);
+      assert.match(response.body.error, new RegExp(field));
+    }
+  }
+  assert.equal(globalThis.__chatRouteCalls.length, 0);
+});
 
 test('chat route forwards supported locales and defaults unsupported or missing hints to English', async () => {
   globalThis.__chatRouteCalls = [];
@@ -54,6 +88,7 @@ test('locale cannot bypass upload ownership for an automated completion', async 
   globalThis.__chatRouteUploadOwned = false;
   const body = {
     family: 'knowledgeTrees',
+    ...laneIdentity,
     language: 'da',
     message: 'Browser (automated): processed upload',
     previewUploadId: '00000000-0000-0000-0000-000000000002',
@@ -79,7 +114,7 @@ test('only the initial typed upload message is bound; an owned completed clarifi
   globalThis.__chatRouteUploadStatus = 'succeeded';
   const uploadId = '00000000-0000-0000-0000-000000000002';
   const request = (body) => new Request('http://localhost/api/chat', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ family: 'knowledgeTrees', ...body }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ family: 'knowledgeTrees', ...laneIdentity, ...body }),
   });
   assert.equal((await POST(request({ message: 'A fishing trip', uploadId, hasTypedUploadMessage: true }))).status, 200);
   assert.equal(globalThis.__chatRouteCalls.at(-1).uploadHasHumanMessage, true);
@@ -105,7 +140,7 @@ test('completed uploads derive human-message provenance from storage, not a clie
   const uploadId = '00000000-0000-0000-0000-000000000002';
   const request = (body) => new Request('http://localhost/api/chat', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ family: 'knowledgeTrees', ...body }),
+    body: JSON.stringify({ family: 'knowledgeTrees', ...laneIdentity, ...body }),
   });
   for (const originalHumanMessage of [null, '   ', 'Only process this file; do not prepare a save preview.']) {
     globalThis.__chatRouteOriginalHumanMessage = originalHumanMessage;

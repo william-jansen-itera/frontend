@@ -109,6 +109,58 @@ export async function replacePersonalCacheNotes({ treeId, principal, pathSegment
   await withSqlConnection(async () => upsertTreeNodeDetails({ nodeId: leafNode.id, notes, updatedBy }));
 }
 
+export async function mutatePersonalCacheNotes({ treeId, principal, pathSegments, mutate, updatedBy = null }) {
+  const leaf = await ensurePersonalCacheLeafPath({ treeId, principal, pathSegments });
+  const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+  return withSqlConnection(async () => {
+    const transaction = new sql.Transaction();
+    try {
+      await transaction.begin();
+      const lock = await new sql.Request(transaction)
+        .input('resource', sql.NVarChar(255), `personal-cache-note:${treeId}:${leaf.id}`)
+        .query(`
+          DECLARE @result INT;
+          EXEC @result = sys.sp_getapplock @Resource = @resource,
+            @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;
+          SELECT @result AS result;
+        `);
+      if (!Number.isInteger(lock.recordset[0]?.result) || lock.recordset[0].result < 0) {
+        throw new Error('Could not lock the personal-cache record.');
+      }
+      const current = await new sql.Request(transaction)
+        .input('tree_id', sql.Int, Number(treeId))
+        .input('node_id', sql.Int, Number(leaf.id))
+        .input('application_identifier', sql.NVarChar, getRequiredApplicationIdentifier())
+        .input('owner', sql.NVarChar(100), ownerObjectId)
+        .query(`
+          SELECT details.notes
+          FROM tree_nodes nodes
+          INNER JOIN tree_instance tree ON tree.id = nodes.tree_instance_id
+          INNER JOIN application_instance app ON app.id = tree.application_instance_id
+          LEFT JOIN tree_node_details details ON details.tree_node_id = nodes.id
+          WHERE nodes.id = @node_id AND nodes.tree_instance_id = @tree_id
+            AND nodes.deleted_at IS NULL AND nodes.is_leaf_node = 1
+            AND tree.deleted_at IS NULL AND tree.is_private = 1
+            AND LOWER(LTRIM(RTRIM(tree.display_name))) = N'personal cache'
+            AND tree.owner_object_id = @owner AND app.app_identifier = @application_identifier;
+        `);
+      if (!current.recordset[0]) {
+        throw new Error('Personal-cache record was not found for this user.');
+      }
+      const change = mutate(current.recordset[0].notes ?? null);
+      if (!change || typeof change.notes !== 'string') {
+        throw new Error('A personal-cache mutation must synchronously return notes and a result.');
+      }
+      await upsertTreeNodeDetails({ nodeId: Number(leaf.id), notes: change.notes, updatedBy, transaction });
+      await transaction.commit();
+      return change.result;
+    } catch (error) {
+      if (transaction._aborted !== true) await transaction.rollback();
+      throw error;
+    }
+  });
+}
+
 export async function deletePersonalCachePath({ treeId, principal, pathSegments, updatedBy = null }) {
   await assertPersonalCacheOwner({ treeId, principal });
   const pathNode = await withSqlConnection(async () => findTreePathNode({ treeId, pathSegments }));

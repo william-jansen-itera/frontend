@@ -8,6 +8,7 @@ import { logException, logStructuredTrace, logTrace } from '@/server/utils/loggi
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
 import { bindChatUploadHumanMessage, getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
+import { assertTreeContextId } from '@/server/utils/agent/knowledgeTrees/treeLaneState';
 
 export const runtime = 'nodejs';
 
@@ -131,6 +132,20 @@ export async function POST(request) {
 
     const history = normalizeHistory(payload?.history);
     const principal = requireAuthenticatedPrincipal(request);
+    let conversationContext = {};
+    if (family === 'knowledgeTrees') {
+      try {
+        const conversationId = assertTreeContextId(payload?.conversationId, 'conversationId');
+        const turnId = assertTreeContextId(payload?.turnId, 'turnId');
+        const expectedVersion = payload?.expectedVersion;
+        if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+          throw new Error('A non-negative expectedVersion is required.');
+        }
+        conversationContext = { conversationId, turnId, expectedVersion };
+      } catch (error) {
+        return createChatJsonResponse({ error: error.message }, { status: 400, requestId, includeDebug });
+      }
+    }
     const uploadId = String(payload?.uploadId ?? '').trim() || null;
     const pendingUploadId = String(payload?.pendingUploadId ?? '').trim() || null;
     const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
@@ -186,6 +201,7 @@ export async function POST(request) {
       previewUploadId,
       pendingUploadId,
       uploadHasHumanMessage,
+      ...conversationContext,
     });
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route received agent family result', {
       toolsUsedCount: Array.isArray(result?.toolsUsed) ? result.toolsUsed.length : null,
@@ -249,6 +265,7 @@ export async function POST(request) {
       includeDebug
         ? {
           error: error instanceof Error ? error.message : 'Agent request failed',
+          ...(error?.laneContext ? { laneContext: error.laneContext } : {}),
           debug: appendRouteDebugStep(
             error?.debug
               ? {
@@ -275,6 +292,7 @@ export async function POST(request) {
         }
         : {
           error: error instanceof Error ? error.message : 'Agent request failed',
+          ...(error?.laneContext ? { laneContext: error.laneContext } : {}),
         },
       { status: error?.status ?? 500, requestId, includeDebug },
     );

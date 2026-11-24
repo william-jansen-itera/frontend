@@ -24,26 +24,26 @@ Required Foundry settings:
 - `AZURE_AI_PROJECT_ENDPOINT`
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME`
 
-For the deployment named exactly `gpt-5.4`, frontend model calls and published prompt agents explicitly use `reasoning.effort=medium`. The upload-processing and tree-population Function workers apply the same setting. Other deployment names, including `gpt-4.1`, receive no reasoning override. Deploy the updated frontend and workers, and republish each agent to apply this change; no additional application setting is required. Prompts, schemas, and workflow validation are unchanged by this reasoning setting.
+For the deployment named exactly `gpt-5.4`, frontend model calls and published prompt agents explicitly use `reasoning.effort=medium`. The upload-processing and tree-population Function workers apply the same setting. Other deployment names, including `gpt-4.1`, receive no reasoning override. Prompts, schemas, and workflow validation are unchanged by this reasoning setting.
 
-Tree Populate reuses the server-only `AZURE_STORAGE_CONNECTION_STRING` for its Storage Queue; the Function queue worker uses `AzureWebJobsStorage`, which must point to the same storage account. The frontend submits a job ID to the queue and polls its own API for SQL-backed status; it does not call a Populate Function HTTP endpoint, so no additional Function URL or key is needed. The existing purge and secret HTTP functions still use their own URLs and keys. Apply `azure-sql/tree-jobs.sql` and deploy/configure the Function queue worker before enabling the asynchronous frontend route. The shared `tree_jobs` table records typed tree jobs; the Populate worker uses `job_type = 'populate'`. Populate generation uses the Function App's Foundry endpoint/model settings and identity, not the browser; job submission and polling remain authorized by tree write access.
+Tree Populate reuses the server-only `AZURE_STORAGE_CONNECTION_STRING` for its Storage Queue; the Function queue worker uses `AzureWebJobsStorage`, which must point to the same storage account. The frontend submits a job ID to the queue and polls its own API for SQL-backed status; it does not call a Populate Function HTTP endpoint, so no additional Function URL or key is needed. The existing purge and secret HTTP functions still use their own URLs and keys. The shared `tree_jobs` table records typed tree jobs; the Populate worker uses `job_type = 'populate'`. Populate generation uses the Function App's Foundry endpoint/model settings and identity, not the browser; job submission and polling remain authorized by tree write access.
 
 For Populate, enable the Function App's system-assigned managed identity and grant it **Foundry User** (formerly **Azure AI User**) on the Foundry resource. The Function worker uses that identity for Foundry calls when no service-principal credentials are configured on the Function App; the frontend's credentials are not required there.
 
 Optional chat settings:
 
-The chat textarea shows localized, task-oriented help for the currently selected agent family (Email, Investment, or Knowledge Trees), updating immediately when the selection changes. This UI-only text does not require agent republication.
+The chat textarea shows localized, task-oriented help for the currently selected agent family (Email, Investment, or Knowledge Trees), updating immediately when the selection changes.
 
 Each saved prompt in the Insert prompt picker has a trash button that asks for confirmation before permanently deleting its personal-cache note for the current application, user, and agent family. Cancelling leaves the stored prompt unchanged. Deleting a saved prompt leaves the current draft unchanged; failed deletions keep the entry visible and show an error.
 
-Chat's right-hand composer buttons save the current draft and open a saved-prompt picker. The top button (`message-square-more`) opens the picker; the lower button (`message-square-plus`) saves. Selecting a saved prompt replaces the draft without sending it; saving does not clear it. Prompts are stored server-side in the current application's authenticated user's private personal-cache tree at `Chat / Prompts / <agent family> / <prompt title>`. New notes use a short identifier such as `Prompt a1b2c3d4`, extending it if that title is already occupied; existing note titles are not renamed. Edit or delete these leaf notes in Notes; reopening the picker reads the current saved content. Identical content is saved once per family, preserving whitespace and line breaks. Collections are separate for each application, user, and family, regardless of chat visibility. This uses the existing tree schema and requires no migration or agent republication.
+Chat's right-hand composer buttons save the current draft and open a saved-prompt picker. The top button (`message-square-more`) opens the picker; the lower button (`message-square-plus`) saves. Selecting a saved prompt replaces the draft without sending it; saving does not clear it. Prompts are stored server-side in the current application's authenticated user's private personal-cache tree at `Chat / Prompts / <agent family> / <prompt title>`. New notes use a short identifier such as `Prompt a1b2c3d4`, extending it if that title is already occupied; existing note titles are not renamed. Edit or delete these leaf notes in Notes; reopening the picker reads the current saved content. Identical content is saved once per family, preserving whitespace and line breaks. Collections are separate for each application, user, and family, regardless of chat visibility.
 
 - `AZURE_AI_AGENT_NAME` defaults to `tree-search-agent`
 - `APPLICATION_DEBUG` controls whether debug data is included in chat and search responses
 
 Reply-language instructions treat a standalone human `ja` as Danish (`responseLanguage="da"`), regardless of the app-language fallback. Matching ignores case, surrounding whitespace, and trailing punctuation; an explicit language request still wins. This language rule does not change approval or tool-permission handling.
 
-Chat displays the confirm tool's "View note" and "View attachment" links using the same agent-selected language translator as its waiting messages (Danish/English, with the app-language fallback). Only the displayed label is localized; the tool output, saved content, and destination URL remain unchanged. This browser-only change does not require agent republication.
+Chat displays the confirm tool's "View note" and "View attachment" links using the same agent-selected language translator as its waiting messages (Danish/English, with the app-language fallback). Only the displayed label is localized; the tool output, saved content, and destination URL remain unchanged.
 
 Optional Azure AI Search settings:
 
@@ -309,6 +309,8 @@ The notes API checks `assertTreeAccess(...)` against the request principal befor
 
 On the Notes page, a viewer without write access can expand and collapse nodes in a public tree. These toggles change only that viewer's current page state: the client does not send an update request, and reloading restores the stored expansion state. A direct update request still requires owner or editor access on the server.
 
+The Refresh tree command above the Notes tree reloads the selected tree and its selected node's details without reloading the page. It keeps the selection if that node still exists and restores stored expansion state, opening the path to the selected node. Unsaved editor changes or selected files require confirmation before they are discarded; refresh failures are shown above the tree without clearing the current view.
+
 This trust model requires that production API requests cannot bypass Static Web Apps. A direct localhost request can supply a fabricated principal header and is not an authentication test. In a signed-in production check against `GET /api/hello`, a caller-supplied fake principal did not replace the identity returned by the API; that check verifies this route and deployment, not every possible ingress path.
 
 For Azure AI Search SQL indexing, soft-delete detection now depends on the string column `isDeletedMarker` in `dbo.vw_tree_search_nodes`, matched by the datasource policy value `true`. The older computed `bit` column `isDeleted` remains useful for querying and admin UI filtering, but it did not reliably trigger document deletion in the SQL indexer.
@@ -369,7 +371,7 @@ The knowledge-tree agent's behavior comes from several sources, not just its pub
 
 `buildInitialAgentInput` inserts the language and request-context instructions as system messages before replayed history and the current user message. If final-response validation rejects an answer, the shared executor sends a corrective system message using `previous_response_id` to continue the same turn.
 
-In the current `agent_reference` execution mode, static instructions and tool definitions come from the published Foundry agent. Editing their local source does not update that published definition; republish the prompt agent to apply those changes. Per-turn context and validation corrections are generated by the running application.
+In the current `agent_reference` execution mode, static instructions and tool definitions come from the published Foundry agent. Editing their local source does not update that published definition. Per-turn context and validation corrections are generated by the running application.
 
 Server enforcement is a separate layer, not another prompt source. The knowledge-tree service restricts handlers for upload turns and rejects confirmation without an eligible immediately preceding preview, a matching preview ID, or when a new preview was already created in the same turn. Tool handlers also validate access, upload provenance, cached preview state, and offered save modes. Instructions guide the model; they do not themselves authorize a write. Tool results supply the actual IDs, paths, available modes, and operation outcomes used by subsequent steps.
 
@@ -383,9 +385,9 @@ When maintaining these sources:
 
 The goal is one primary home for each rule, not eliminating every repetition. Experience-driven exceptions and examples should be preserved when reorganizing these sources.
 
-All three published agents (`knowledgeTrees`, `email`, and `investment`) include the same complete language policy from `buildReplyLanguagePolicy` in [agentConversationInput.js](src/server/utils/agent/agentConversationInput.js). The shared policy covers explicit language requests, message-language inference, the standalone Danish `ja` rule, automated-completion evidence boundaries, untranslated evidence, and language reporting. Runtime language messages refer to that published policy rather than repeating it: they supply the current app-language fallback, identify authorized upload-completion turns, specify response-envelope requirements, and retain brief evidence-language and no-approval reminders. This applies generically to all three agents without family-specific language-selection branches. The published agents must contain the shared policy before deploying the shortened runtime messages; republish all three prompt agents after changing the shared policy.
+All three published agents (`knowledgeTrees`, `email`, and `investment`) include the same complete language policy from `buildReplyLanguagePolicy` in [agentConversationInput.js](src/server/utils/agent/agentConversationInput.js). The shared policy covers explicit language requests, message-language inference, the standalone Danish `ja` rule, automated-completion evidence boundaries, untranslated evidence, and language reporting. Direct quotations and content explicitly required verbatim stay unchanged; workflows that allow rewriting may faithfully paraphrase evidence in its source language while preserving supported facts, technical terms, measurements, and uncertainty. Browser-generated messages can supply language signals, while workflow continuation requires trusted server authorization and human approval remains separate. Runtime language messages refer to that published policy rather than repeating it: they supply the current app-language fallback, identify authorized upload-completion turns, specify response-envelope requirements, and retain brief evidence-language and no-approval reminders. This applies generically to all three agents without family-specific language-selection branches.
 
-The static knowledge-tree prompt groups output rules, role, reply language, trust boundaries, ordered turn routing, grounding, uploads, saving, and final response formatting under separate headings. Search-evidence guidance belongs with grounding; tool workflow subsections distinguish prerequisites, content-source selection, and presentation. Detailed preview argument rules live in the tool's parameter descriptions: exact human excerpts, original-message versus follow-up provenance, empty fields, routing questions, and preparation of earlier broad answers. The static prompt retains conversational source selection, missing-content recovery, the worked upload example, and consent reminders. These details are redistributed, not discarded.
+The static knowledge-tree prompt uses numbered shared, routing, Knowledge common, retrieval, and saving sections. Shared rules define the JSON response contract and field meanings, reply-language policy, general trust boundaries, truthful success reporting, and the clarification outcome available in either lane. Routing reads the server's active lane, identifies whether the current intent belongs there or requires a switch, and handles ambiguous intent and server-bound automated turns. After a successful switch, the destination lane's ordered action rules choose the workflow. Retrieval owns grounding, broadening permission, save offers, and its response outcomes and example. Saving owns upload evidence and classification, placement, previews, revision, confirmation, and its response outcomes and examples. The shared language policy retains its automated-message language-selection rules. Tool workflow subsections distinguish prerequisites, content-source selection, and presentation. Detailed preview argument rules live in the tool's parameter descriptions: exact human excerpts, original-message versus follow-up provenance, empty fields, routing questions, and preparation of earlier broad answers. The static prompt retains conversational source selection, missing-content recovery, the worked upload example, and consent reminders.
 
 The prompt template is unindented, with blank lines before headings and around lists; optional blank lines after headings are omitted. Both the source text and generated prompt retain their Markdown structure rather than rendering as code blocks. Turn routes use consecutive list numbers, and literal Preview ID examples are formatted as inline code so Markdown previews do not hide them as HTML comments.
 
@@ -419,7 +421,7 @@ Email and knowledge-tree tool results label source-authored content with `meta.c
 
 ### Email deletion approval
 
-Apply `azure-sql/agent-action-approvals.sql` before deploying the chat approval endpoint. The server requires a registered approval policy for each tool; `delete_email` is the only approval-gated tool. A pending action expires after five minutes, and its approve/cancel decision is claimed once for the authenticated principal. The resolved email targets are checked again before any IMAP deletion. The prompt-agent instructions must be published separately with the matching single-confirmation guidance; prompt instructions alone do not authorize a delete. Do not validate this workflow using a real mailbox deletion.
+The server requires a registered approval policy for each tool; `delete_email` is the only approval-gated tool. A pending action expires after five minutes, and its approve/cancel decision is claimed once for the authenticated principal. The resolved email targets are checked again before any IMAP deletion. Prompt instructions alone do not authorize a delete. Do not validate this workflow using a real mailbox deletion.
 
 When the agent calls `delete_email`, the executor pauses that call. The email service invokes the handler in preview-only mode, then stores the tool arguments, resolved-target preview, authenticated principal, expiry, and model continuation (including the original call ID) in `agent_action_approvals`. The browser receives a pending-action ID and shows one Approve/Cancel prompt. The approval endpoint atomically claims that ID for the same principal; replay, another principal, and expired requests cannot authorize execution. Approval invokes the handler with the saved target identities, which must still match the freshly resolved targets before IMAP is called. Cancellation never invokes the delete handler. The service records the outcome and resumes the model with the original call ID; it does not retry a claimed delete automatically.
 
@@ -557,7 +559,7 @@ The investment family's shared persistence uses the public tree selected by `INV
 
 ### Email Tools
 
-- `retrieve_emails` finds and filters a bounded set of messages from a mailbox folder, using a cached snapshot when fresh or IMAP when a refresh is needed. A refresh fetches up to the latest 150 emails; the filtered response still returns at most 25. Use `forceRefresh: true` to replace an older, smaller snapshot immediately. This server-side fetch-window change does not require agent republication.
+- `retrieve_emails` finds and filters a bounded set of messages from a mailbox folder, using a cached snapshot when fresh or IMAP when a refresh is needed. A refresh fetches up to the latest 150 emails; the filtered response still returns at most 25. Use `forceRefresh: true` to replace an older, smaller snapshot immediately.
 - `show_email` displays cached message headers and body text without model analysis; `analyze_email` provides a deeper interpretation of selected messages.
 - `flag_email` adds or removes the flagged/starred state; `delete_email` moves messages to Trash by default or permanently deletes them when requested.
 - `draft_email` saves a new or reply draft without sending, after explicit confirmation; `send_email` delivers a new message, reply, or saved draft through SMTP.
@@ -569,6 +571,9 @@ When `delete_email` moves a message from Inbox to Trash, IMAP assigns it a Trash
 
 ### Knowledge Trees Tools
 
+The lane-switch tool definition and handler factory live in [tools/switchTreeLaneTool/index.js](src/server/utils/agent/knowledgeTrees/tools/switchTreeLaneTool/index.js). [treeLaneRuntime.js](src/server/utils/agent/knowledgeTrees/treeLaneRuntime.js) owns transition persistence and tool guards; [treeLaneState.js](src/server/utils/agent/knowledgeTrees/treeLaneState.js) holds shared lane constants and state validation.
+
+- `switch_tree_lane` requests a server-validated transition between `knowledge.retrieval` and `knowledge.saving`. Search and knowledge answers belong to retrieval; uploads, placement, previews, revision, and confirmation belong to saving. The server persists a successful transition before allowing destination tools, including subsequent calls queued in the same model response. Switching grants neither permission to broaden nor approval to save.
 - `search_tree_<name>_<id>` is generated for each accessible tree with a published description. It searches that tree's notes and attachments for evidence to answer grounded questions; available tools depend on the user's tree access and visibility scope.
 - `preview_save_to_tree` proposes a location for factual text supplied in the current user message, for an already-delivered broad answer after the user accepts its save offer, or for a completed chat upload's classified note or attachment. Select `contentSource` by the origin of the substantive text: a yes to a broad answer's save offer uses `prior_broad_answer` and the answer from history, not `current_user_text` or the approval wording. Do not require the user to repeat an available answer. For direct text, the server checks that the proposed note text is present verbatim in the current message; a rejected source selection must be corrected explicitly, not silently reclassified. For an upload, the server verifies ownership and completion and freezes the stored classification and payload rather than trusting agent-supplied content. If no tree was named, the agent selects the best fit from available trees or asks when the choice is ambiguous. It returns a preview ID; previewing does not write a tree node or attachment.
 - `revise_save_preview` accepts a user's complete `>`-separated path (optionally starting with the tree name) after a preview. The path must end with the note title at the configured leaf depth. It reuses existing branches, previews any missing intermediate nodes, and replaces the previous preview ID; users can revise again before saving.
@@ -587,9 +592,7 @@ The initial default upload message uses the localized browser sender label (`Bro
 3. `preview_save_to_tree` verifies the original human excerpt and any current human clarification, and passes them separately to placement alongside the processed note and filtered caption. It freezes the upload and exact labeled incoming notes in a 30-minute snapshot. A path revision keeps that content. The preview shows the incoming notes, not a predicted final existing-note merge. Nothing is written before separate human approval.
 4. On confirmation, the server rechecks ownership, expiry, original blob metadata, size, and SHA-256. A short extractable file saves the frozen labeled note, including verbatim extraction. If an existing note is selected, the merge happens at confirmation and must retain that incoming block verbatim. An attachment to an existing leaf leaves its notes unchanged; a new leaf stores its labeled incoming notes alongside the original file. Permanent attachments survive the separate daily cleanup of 24-hour staging uploads.
 
-Apply `azure-sql/chat-uploads-save-kind.sql` and the idempotent `original_human_message` migration in `azure-sql/chat-uploads.sql` before deploying the worker/frontend changes. Older completed uploads without classification require a new upload. Republish the Knowledge Trees prompt agent after deploying the code so its published instructions describe the four-source preview. These deployment steps are not performed by local code changes.
-
-**Implementation status:** The four-source upload preview and confirmation behavior is implemented in this codebase. The SQL migration has been applied and the Knowledge Trees Foundry agent republished, as reported by the operator; a live upload smoke test has not been verified here. See [Chat Upload Placement and Notes](docs/chat-upload-placement-plan.md) for the design and verification criteria.
+See [Chat Upload Placement and Notes](docs/chat-upload-placement-plan.md) for the upload preview and confirmation design and verification criteria.
 
 `preview_save_to_tree` searches for an existing destination before proposing new nodes. Its handler calls `previewLeafFromChat`, which selects from the tree's active nodes using these model-call stages:
 
@@ -616,7 +619,7 @@ Answer-state fields are read from the final structured response, not from a spec
 
 ### Where turn state lives
 
-The application distinguishes browser UI state, per-request server execution state, information exchanged with the agent, and durable workflow records. These are related, but they are not the same object. This section describes current behavior, not the proposed lane architecture.
+The application distinguishes browser UI state, per-request server execution state, information exchanged with the agent, and durable workflow records. These are related, but they are not the same object. Knowledge Trees additionally persists a small authoritative lane record; it does not persist the complete chat.
 
 #### Browser state and outgoing requests
 
@@ -629,6 +632,7 @@ On a new submission, the browser sends to `src/app/api/chat/route.js`:
 - The selected agent family, app language, and visibility.
 - Relevant upload identifiers and flags.
 - A request identifier in the HTTP header.
+- For Knowledge Trees, a required `conversationId`, a stable `turnId`, and `expectedVersion`. Missing, null, or invalid values are rejected with HTTP 400; the server does not generate compatibility defaults. These identify the conversation and turn and protect against stale updates; the client cannot select the authoritative lane or stage.
 
 It does not send the complete previous turn objects back to the server. Previous answer-state flags, tool summaries, citations, and family payloads are not automatically replayed as structured agent context. Some workflow references, such as a displayed preview ID, can be present in the replayed message text.
 
@@ -646,6 +650,12 @@ During ordinary tool-loop execution:
 
 This internal exchange can include information that is absent from the normal browser response. It is not automatically a durable conversation-state store.
 
+Knowledge Trees loads its owner- and application-scoped lane record before invoking the agent. A fresh conversation starts in `knowledge.retrieval`. The server injects trusted lane, stage, version, and workflow references as runtime instructions. The agent requests lane changes through `switch_tree_lane`; runtime guards recheck every operation against the current lane. Shared rules and the active lane's rules apply; numbered prompt headings are navigation, while semantic `lane:` identifiers control routing. This remains one family, one published prompt agent, and the existing tool loop. No quiz lane is enabled.
+
+A preview created or revised during a turn still requires a later human confirmation. Confirmation must match both the displayed preview and the durable workflow reference. Leaving saving revokes the old confirmation authority; returning does not restore it. A saving tool result must be reported before switching away on a later turn.
+
+Successful preview and revision tool outputs set the lane record's `previewId` and `awaiting_approval` stage. A successful confirmation clears that reference and sets the stage to `completed`. The lane runtime reads these outcomes from the handlers' tool output, keeping optional debug data separate.
+
 #### Agent response versus browser response
 
 The agent's final structured response is not forwarded unchanged. Server-side parsers and family result builders validate and reshape it into the browser-facing response.
@@ -659,6 +669,7 @@ For example:
 | `languageReason` | Agent-reported explanation of language selection; diagnostic, not part of the normal response. |
 | `knowledgeMode` and persistence flags | Agent-reported answer state, validated and returned where applicable. |
 | Tool results | Evidence and action outcomes used during execution; normally exposed through summaries, citations, or selected result fields. |
+| `laneContext` | Server-generated Knowledge Trees conversation identity, version, active lane, stage, and workflow references; returned at the top level and in `familyPayload`, and also on applicable errors. |
 
 For Knowledge Trees, validation checks the structured response and specific behavioral invariants, such as whether a claimed save matches a successful tool outcome and whether a preview includes its actual path and ID. It does not independently establish the factual correctness of every sentence.
 
@@ -666,7 +677,19 @@ Diagnostic information, including internal messages and tool details, may also r
 
 #### What survives between requests
 
-The application currently has no separate durable server-side conversation-mode or lane record. Each new request reconstructs conversational context from browser-supplied history and explicitly loaded workflow records. The Knowledge Trees service currently limits replayed history to the last eight messages, not eight user/assistant pairs. Raw prior-turn tool outputs are not automatically replayed as structured tool history.
+Knowledge Trees stores its lane record under `Knowledge Trees > Conversations > <conversationId> > State` in the user's private personal-cache tree. It contains the lane (`knowledge.retrieval` or `knowledge.saving`), stage (`idle`, `upload_processing`, `awaiting_details`, `awaiting_approval`, or `completed`), preview/upload references, version, and latest turn ID and status. Stages describe workflow progress, not consent. This uses existing cache-note storage.
+
+Updates use short transactional cache locks and compare-and-set versions; no database lock is held during model calls. Concurrent requests and stale versions fail explicitly rather than overwrite newer state. Reusing the latest turn ID is rejected with HTTP 409, whether the turn is running, completed, or failed and regardless of whether the request content changed. Older requests are rejected when their version is stale. A process interrupted while a turn is marked running is not automatically taken over: check any potentially completed save before starting a fresh conversation (reloading chat creates a new conversation). Corrupt cache state also fails explicitly.
+
+When a Knowledge Trees request needs to create a conversation-state path, it first cleans up a bounded batch of old conversation states for the same owner and application. A completed or failed conversation becomes eligible after seven days without a state-note update, using the existing database `tree_node_details.updated_at` timestamp; each successful state mutation refreshes that timestamp. Cleanup examines at most 20 eligible candidates, oldest first, excludes the conversation being created, and rechecks eligibility under the same transactional path/note locks used by state creation and mutation. A conversation that resumed or changed while cleanup waited is retained.
+
+Cleanup permanently removes only the old conversation branch and its `State` leaf under `Knowledge Trees > Conversations`. Branches with additional nodes, branch notes, or file attachments are retained, and separately stored uploads, preview snapshots, and saved knowledge are untouched. Records still marked `running` are never removed automatically, even if an interrupted process left them behind. Cleanup errors fail the new request explicitly before it claims a running turn.
+
+There is **no scheduled conversation-state cleanup**. Expired candidates remain stored until a new conversation is created by that owner in that application, and a backlog can require multiple creations to clear. The seven-day threshold is a cleanup eligibility rule, not an automatic workflow reset or a separate access-time expiry check.
+
+The browser adopts matching, non-stale server context rather than treating its own copy as authoritative. Automated upload completion is bound to the conversation and version that initiated it. If another turn has advanced that workflow, the callback is rejected rather than switching lanes or overwriting newer work; the user must explicitly continue the upload workflow. Completion is never human save approval.
+
+Conversational text still comes from browser-supplied history and explicitly loaded workflow records. The Knowledge Trees service limits replayed history to the last eight messages, not eight user/assistant pairs. Raw prior-turn tool outputs are not automatically replayed as structured tool history. Other agent families retain their existing state behavior.
 
 Some workflow data is persisted separately, including upload records, save-preview snapshots, personal-cache data, and pending application approvals. These records support particular operations; they are not a persisted copy of the complete conversation. A stored approval continuation is a specific execution-resumption mechanism, not a general conversation-mode store.
 
