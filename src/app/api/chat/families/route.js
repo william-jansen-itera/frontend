@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { listAvailableAgentFamilyStatuses } from '@/server/utils/agent/agentFamilyAvailability';
+import { listAvailableAgentFamilyStatuses } from '@/server/utils/agentOrchestration/agentFamilyAvailability';
 
 export const runtime = 'nodejs';
 

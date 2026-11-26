@@ -10,8 +10,10 @@ import enMessages from "../language/en.json";
 import daMessages from "../language/da.json";
 import styles from "./page.module.css";
 import { AgentAnswerContent } from "./AgentAnswerContent";
+import InteractionCard, { InteractionControl } from "./InteractionCard";
+import { validateInteractionDescriptor } from "@/shared/interactions";
 import SavedPrompts from "./SavedPrompts";
-import { acceptLaneContext, buildLaneRequestContext } from "./chatLaneContext";
+import { acceptLaneContext, buildInteractionReplyContext, buildLaneRequestContext, getInteractionReplyTarget, isInteractionAvailable } from "./chatLaneContext";
 import {
   buildChatPlaceholder,
   fetchAvailableChatFamilies,
@@ -843,6 +845,8 @@ export default function ChatPageClient({ includeDebug }) {
     defaultValue: DEFAULT_CHAT_VISIBILITY,
   });
   const [prompt, setPrompt] = useState("");
+  const [isNormalChatSelected, setIsNormalChatSelected] = useState(false);
+  const [explicitInteractionReplyTarget, setExplicitInteractionReplyTarget] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState("");
   const [turns, setTurns] = useState([]);
@@ -856,6 +860,7 @@ export default function ChatPageClient({ includeDebug }) {
   const fileInputRef = useRef(null);
   const approvalRequestRef = useRef(false);
   const laneContextRef = useRef(null);
+  const submissionRequestRef = useRef(false);
   const defaultChatFamily = resolvePreferredDefaultChatFamily(availableChatFamilies);
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
@@ -869,6 +874,13 @@ export default function ChatPageClient({ includeDebug }) {
   const isDebugEmpty = showTurnInspector && !selectedTurn;
   const isDebugCompactState = isDebugEmpty || isDebugPending;
   const shouldShowVisibilityControl = chatFamily === "knowledgeTrees";
+  const latestInteractionTurn = turns.findLast((turn) => turn.interaction);
+  const availableStructuredReplyTarget = getInteractionReplyTarget(
+    latestInteractionTurn?.interactionReadOnly ? null : latestInteractionTurn?.interaction,
+    chatFamily, laneContextRef.current?.activeLane, false,
+  );
+  const interactionReplyTarget = explicitInteractionReplyTarget ??
+    (isNormalChatSelected ? null : availableStructuredReplyTarget);
 
   const handleVisibilityChange = (event) => {
     const nextVisibility = setVisibility(event.target.value);
@@ -881,6 +893,7 @@ export default function ChatPageClient({ includeDebug }) {
   const handleChatFamilyChange = (event) => {
     const nextFamily = normalizeChatFamilySelection(event.target.value, availableChatFamilies, defaultChatFamily);
     setSelectedFile(null);
+    setExplicitInteractionReplyTarget(null);
     setChatFamily(nextFamily);
     const nextSearchParams = new URLSearchParams(searchParams.toString());
     setChatFamilySearchParam(nextSearchParams, nextFamily, availableChatFamilies, defaultChatFamily);
@@ -974,12 +987,16 @@ export default function ChatPageClient({ includeDebug }) {
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [availableChatFamilies, chatFamily, defaultChatFamily, pathname, requestedFamilyParam, router, searchParams]);
 
-  async function submitTurn({ question, message, file, hasTypedUploadMessage = false }) {
+  async function submitTurn({ question, message, file, hasTypedUploadMessage = false, interactionSubmission = null, interactionContext = null }) {
+    if (submissionRequestRef.current || isSubmitting || !isVisibilityReady || !chatFamily ||
+        turns.some((turn) => turn.approvalRequired)) return;
+    submissionRequestRef.current = true;
+    if (interactionSubmission || interactionContext) setExplicitInteractionReplyTarget(null);
     const turnId = createTurnId();
     if (!laneContextRef.current) laneContextRef.current = { conversationId: createRequestId(), version: 0 };
     const laneRequest = chatFamily === "knowledgeTrees" ? buildLaneRequestContext(laneContextRef.current, turnId) : {};
     const submittedLanguage = language;
-    const automatedLabel = file && !hasTypedUploadMessage ? t("Upload.AutomatedLabel") : null;
+    const automatedLabel = interactionSubmission || (file && !hasTypedUploadMessage) ? t("Upload.AutomatedLabel") : null;
     let completionTurnId = null;
     let uploadId = null;
     let stagedUpload = false;
@@ -990,11 +1007,19 @@ export default function ChatPageClient({ includeDebug }) {
     setRequestError(null);
     setSelectedTurnId(turnId);
     setTurns((currentTurns) => ([
-      ...currentTurns.map((turn) => ({ ...turn, isWaitingForContinuation: false })),
+      ...currentTurns.map((turn) => ({
+        ...turn, isWaitingForContinuation: false,
+        ...(turn.id === latestInteractionTurn?.id && (interactionSubmission || interactionContext) ? {
+          interactionReadOnly: true,
+          interaction: interactionSubmission && ["continue", "submit"].includes(interactionSubmission.action)
+            ? { ...turn.interaction, values: interactionSubmission.values } : turn.interaction,
+        } : {}),
+      })),
       {
         id: turnId,
         question,
         isBrowserAutomated: Boolean(automatedLabel),
+        isInteractionSubmission: Boolean(interactionSubmission || interactionContext),
         automatedLabel,
         attachedFileName: file?.name ?? null,
         originalQuestion: question,
@@ -1017,7 +1042,8 @@ export default function ChatPageClient({ includeDebug }) {
     ]));
 
     try {
-      const pendingUploadId = !file && chatFamily === "knowledgeTrees" ? turns.at(-1)?.availableUploadId ?? null : null;
+      const pendingUploadId = !file && !interactionSubmission && !interactionContext && chatFamily === "knowledgeTrees"
+        ? turns.at(-1)?.availableUploadId ?? null : null;
       if (file) {
         setUploadStatus(t("Upload.Staging"));
         const formData = new FormData();
@@ -1045,17 +1071,21 @@ export default function ChatPageClient({ includeDebug }) {
           visibility,
           ...(uploadId ? { uploadId, hasTypedUploadMessage } : {}),
           ...(pendingUploadId ? { pendingUploadId } : {}),
+          ...(interactionSubmission ? { interactionSubmission } : {}),
+          ...(interactionContext ? { interactionContext } : {}),
           ...laneRequest,
         }),
       });
 
       const payload = await parseApiResponseBody(response);
       if (chatFamily === "knowledgeTrees") laneContextRef.current = acceptLaneContext(laneContextRef.current, payload);
+      const returnedInteraction = payload?.interaction ? validateInteractionDescriptor(payload.interaction) : null;
 
       if (!response.ok) {
         throw {
           message: payload?.error || `Chat request failed (${response.status})`,
           debug: payload?.debug ?? null,
+          interaction: returnedInteraction,
         };
       }
       if (uploadId && !payload?.toolInvocations?.some((invocation) => invocation.toolName === "process_upload" && invocation.resultCount > 0)) {
@@ -1069,6 +1099,7 @@ export default function ChatPageClient({ includeDebug }) {
             responseLanguage: payload?.responseLanguage ?? null,
             debug: payload?.debug ?? null,
             familyPayload: payload?.familyPayload ?? null,
+            interaction: returnedInteraction,
             citations: Array.isArray(payload?.citations) ? payload.citations : [],
             toolsUsed: Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [],
             toolInvocations: Array.isArray(payload?.toolInvocations) ? payload.toolInvocations : [],
@@ -1077,7 +1108,8 @@ export default function ChatPageClient({ includeDebug }) {
             isPersistenceOffer: payload?.isPersistenceOffer === true,
             isPermissionToBroadenRequest: payload?.isPermissionToBroadenRequest === true,
             isWaitingForContinuation: payload?.isWaitingForContinuation === true,
-            availableUploadId: pendingUploadId && !payload?.toolInvocations?.some((invocation) => invocation.toolName === "preview_save_to_tree" && invocation.resultCount > 0) ? pendingUploadId : null,
+            availableUploadId: payload?.laneContext?.activeLane !== "quiz" && pendingUploadId &&
+              !payload?.toolInvocations?.some((invocation) => invocation.toolName === "preview_save_to_tree" && invocation.resultCount > 0) ? pendingUploadId : null,
             originalQuestion: turn.originalQuestion,
             error: null,
             isPending: false,
@@ -1121,6 +1153,7 @@ export default function ChatPageClient({ includeDebug }) {
             debug: error?.debug ?? null,
             error: messageText,
             familyPayload: null,
+            interaction: error?.interaction ?? null,
             toolInvocations: [],
             approvalRequired: null,
             knowledgeMode: KNOWLEDGE_MODE_GROUNDED,
@@ -1133,6 +1166,7 @@ export default function ChatPageClient({ includeDebug }) {
       )));
     } finally {
       setIsSubmitting(false);
+      submissionRequestRef.current = false;
       setUploadStatus("");
       if (stagedUpload) setSelectedFile(null);
     }
@@ -1237,12 +1271,24 @@ export default function ChatPageClient({ includeDebug }) {
       return;
     }
 
+    let interactionContext;
+    try {
+      interactionContext = buildInteractionReplyContext(interactionReplyTarget,
+        latestInteractionTurn?.interaction, chatFamily, laneContextRef.current?.activeLane);
+    } catch {
+      setIsNormalChatSelected(true);
+      setExplicitInteractionReplyTarget(null);
+      setRequestError(t("Interaction.ReplyChanged"));
+      return;
+    }
     setPrompt("");
+    setExplicitInteractionReplyTarget(null);
     await submitTurn({
       question: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
       message: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
       file: shouldShowVisibilityControl ? selectedFile : null,
       hasTypedUploadMessage: Boolean(message && shouldShowVisibilityControl && selectedFile),
+      interactionContext,
     });
   }
 
@@ -1297,6 +1343,7 @@ export default function ChatPageClient({ includeDebug }) {
                     type="file"
                     className={styles.visuallyHidden}
                     accept=".docx,.html,.jpeg,.jpg,.pdf,.png,.pptx,.txt,.xlsx"
+                    disabled={Boolean(interactionReplyTarget)}
                     aria-label={t("Upload.Attach")}
                     onChange={(event) => {
                       const file = event.target.files?.[0] ?? null;
@@ -1309,7 +1356,7 @@ export default function ChatPageClient({ includeDebug }) {
                       event.target.value = "";
                     }}
                   />
-                  <button type="button" className={`appIconButton ${styles.fileAction}`} title={t("Upload.Attach")} aria-label={t("Upload.Attach")} disabled={isSubmitting} onClick={() => fileInputRef.current?.click()}>
+                  <button type="button" className={`appIconButton ${styles.fileAction}`} title={t("Upload.Attach")} aria-label={t("Upload.Attach")} disabled={isSubmitting || Boolean(interactionReplyTarget)} onClick={() => fileInputRef.current?.click()}>
                     <Paperclip size={20} aria-hidden="true" />
                   </button>
                 </>
@@ -1320,20 +1367,44 @@ export default function ChatPageClient({ includeDebug }) {
                 className={`appCompactActionButton appCompactActionButtonNeutral ${styles.promptToolbarButton}`}
                 disabled={isSubmitting || turns.some((turn) => turn.approvalRequired) || (!prompt.trim() && !(shouldShowVisibilityControl && selectedFile)) || !isVisibilityReady || !chatFamily}
               >
-                {t(isSubmitting ? "Thinking" : "Send")}
+                {t(isSubmitting ? "Thinking" : interactionReplyTarget ? "Interaction.SubmitResponse" : "Send")}
               </button>
             </div>
             <form id="chat-prompt-form" onSubmit={handleSubmit} className={styles.composerForm}>
+              {interactionReplyTarget || availableStructuredReplyTarget ? (
+                <div className={styles.interactionReplyMode} role="status">
+                  {interactionReplyTarget ? (
+                    <span>{t(interactionReplyTarget.workflow === "structured-input"
+                      ? "Interaction.ReplyingToPrompt" : "Interaction.Replying",
+                    { prompt: interactionReplyTarget.prompt })}</span>
+                  ) : null}
+                  <button type="button" className={`appCompactActionButton appCompactActionButtonNeutral ${styles.interactionReplyToggle}`}
+                    disabled={isSubmitting || !isVisibilityReady || turns.some((turn) => turn.approvalRequired)}
+                    onClick={() => {
+                      setIsNormalChatSelected(Boolean(interactionReplyTarget));
+                      setExplicitInteractionReplyTarget(null);
+                      if (!interactionReplyTarget) {
+                        setSelectedFile(null);
+                        setRequestError(null);
+                        promptInputRef.current?.focus();
+                      }
+                    }}>
+                    {t(availableStructuredReplyTarget
+                      ? interactionReplyTarget ? "Interaction.IgnorePrompt" : "Interaction.ReplyToPrompt"
+                      : "Interaction.NormalChat")}
+                  </button>
+                </div>
+              ) : null}
               {uploadStatus ? <p role="status" className={styles.visuallyHidden}>{uploadStatus}</p> : null}
               <div className={styles.composerInputRow}>
               <label className={styles.composerField}>
                 <textarea
                   ref={promptInputRef}
-                  aria-label={t("Prompt")}
+                  aria-label={t(interactionReplyTarget ? "Interaction.SubmitResponse" : "Prompt")}
                   value={uploadStatus || prompt}
                   onChange={(event) => setPrompt(event.target.value)}
                   onKeyDown={handlePromptKeyDown}
-                  placeholder={buildChatPlaceholder(availableChatFamilies, chatFamily, {
+                  placeholder={interactionReplyTarget ? t("Interaction.ReplyPlaceholder") : buildChatPlaceholder(availableChatFamilies, chatFamily, {
                     empty: t("NoChatFamilies"),
                     single: (topic) => t("AskAbout", { topic }),
                     families: {
@@ -1430,29 +1501,28 @@ export default function ChatPageClient({ includeDebug }) {
                               {turn.error}
                             </p>
                           ) : turn.approvalRequired ? (
-                            <div className={styles.approvalPrompt} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-                              <p className={styles.messageText}>
-                                {t(turn.approvalRequired.preview?.expunge ? "Approval.Permanent" : "Approval.Trash", {
+                            <InteractionControl key={turn.approvalRequired.id}
+                              title={t("Modes.Authorization")}
+                              prompt={t(turn.approvalRequired.preview?.expunge ? "Approval.Permanent" : "Approval.Trash", {
                                   count: turn.approvalRequired.preview?.targets?.length ?? 0,
-                                })}
-                              </p>
-                              <details>
-                                <summary>{t("Approval.Details")}</summary>
-                                <p>{t("Approval.Account", { provider: turn.approvalRequired.preview?.provider ?? "" })}</p>
-                                <p>{t("Approval.Folder", { folder: turn.approvalRequired.preview?.folder ?? "" })}</p>
-                                <ul>
-                                  {(turn.approvalRequired.preview?.targets ?? []).map((target) => (
-                                    <li key={`${target.requestedFolder}-${target.requestedUid}`}>
-                                      {target.subject || target.requestedUid} ({target.requestedUid}) {target.from ? `- ${target.from}` : ""}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </details>
-                              <div className={styles.approvalActions}>
-                                <button type="button" className="appCompactActionButton appCompactActionButtonNeutral" disabled={isSubmitting} onClick={() => decideApproval(turn.id, turn.approvalRequired.id, "approve")}>{t("Approval.Approve")}</button>
-                                <button type="button" className="appCompactActionButton appCompactActionButtonNeutral" disabled={isSubmitting} onClick={() => decideApproval(turn.id, turn.approvalRequired.id, "cancel")}>{t("Approval.Cancel")}</button>
-                              </div>
-                            </div>
+                              })}
+                              review={{
+                                title: t("Approval.Details"),
+                                details: [
+                                  t("Approval.Account", { provider: turn.approvalRequired.preview?.provider ?? "" }),
+                                  t("Approval.Folder", { folder: turn.approvalRequired.preview?.folder ?? "" }),
+                                ],
+                                items: (turn.approvalRequired.preview?.targets ?? []).map((target) => ({
+                                  id: `${target.requestedFolder}-${target.requestedUid}`,
+                                  text: `${target.subject || target.requestedUid} (${target.requestedUid})${target.from ? ` - ${target.from}` : ""}`,
+                                })),
+                              }}
+                              actions={[
+                                { id: "approve", label: t("Approval.Approve") },
+                                { id: "cancel", label: t("Approval.Cancel") },
+                              ]}
+                              disabled={isSubmitting} translate={t}
+                              onAction={({ action }) => decideApproval(turn.id, turn.approvalRequired.id, action)} />
                           ) : (
                             <AgentAnswerContent
                               answer={turn.answer || t("NoAnswer")}
@@ -1461,10 +1531,36 @@ export default function ChatPageClient({ includeDebug }) {
                               textClassName={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}
                             />
                           )}
+                          {turn.interaction ? (
+                            <InteractionCard key={`${turn.id}-${turn.interaction.version}`}
+                              interaction={turn.interaction}
+                              disabled={isSubmitting || !isVisibilityReady || turns.some((entry) => entry.approvalRequired) ||
+                                !isInteractionAvailable(turn.interaction, chatFamily, laneContextRef.current?.activeLane)}
+                              readOnly={turn.interactionReadOnly || turn.id !== latestInteractionTurn?.id ||
+                                ["completed", "cancelled"].includes(turn.interaction.status)}
+                              translate={t}
+                              onReplyInChat={turn.interaction.workflow === "structured-input" ? undefined : () => {
+                                setSelectedFile(null);
+                                setRequestError(null);
+                                setIsNormalChatSelected(false);
+                                setExplicitInteractionReplyTarget(
+                                  turn.interaction.workflow === "structured-input" ? null : turn.interaction,
+                                );
+                                promptInputRef.current?.focus();
+                              }}
+                              onAction={({ action, values, message }) => submitTurn({
+                                question: message, message,
+                                interactionSubmission: {
+                                  interactionId: turn.interaction.interactionId, stepId: turn.interaction.stepId,
+                                  workflow: turn.interaction.workflow,
+                                  version: turn.interaction.version, submissionId: createRequestId(), action, values,
+                                },
+                              })} />
+                          ) : null}
                         </div>
                       </div>
 
-                      {(!turn.isBrowserAutomated || includeDebug) ? (
+                      {(!turn.isBrowserAutomated || turn.isInteractionSubmission || includeDebug) ? (
                         <div className={`${styles.messageBubbleUser} ${isCompactTurnState ? styles.messageBubblePending : ""}`}>
                           <p className={styles.messageLabel}>{turn.isBrowserAutomated ? turn.automatedLabel : userMessageLabel}</p>
                           <p className={`${styles.messageText} ${isCompactTurnState ? styles.messageTextPending : ""}`}>{turn.question}</p>

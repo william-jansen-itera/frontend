@@ -134,6 +134,21 @@
       "Reject": "Reject", "Rejecting": "Rejecting...", "RejectAll": "Reject All"
     },
     "Chat": {
+      "Interaction": {
+        "Step": "Step {current} of {total}",
+        "Identity": "Interaction ID",
+        "ReadOnly": "This step is read-only.",
+        "ReplyInChat": "Reply to this step",
+        "Replying": "Replying to: {prompt}",
+        "NormalChat": "Return to normal chat",
+        "ReplyToPrompt": "Reply to prompt",
+        "IgnorePrompt": "Ignore prompt",
+        "ReplyingToPrompt": "Replying to prompt: {prompt}",
+        "SubmitResponse": "Submit response",
+        "ReplyPlaceholder": "Respond to the selected interaction step...",
+        "ReplyChanged": "This interaction step changed. Select Reply to this step again.",
+        "Actions": { "back": "Back", "continue": "Continue", "submit": "Submit", "cancel": "Cancel", "resume": "Resume" }
+      },
       "Placeholders": {
         "Email": "Ask me to do something concrete with your email, like find, open, summarize, extract, draft, send, flag, delete, or unsubscribe.",
         "Investment": "Ask me to look up stock prices, analyze buy/sell signals, or review and update your portfolio holdings.",

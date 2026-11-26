@@ -2,7 +2,7 @@ import {
   getProjectClient,
   getRequiredFoundryConfig,
 } from '@/server/utils/foundryAgentClient';
-import { extractUploadFilenameWords } from '../agent/knowledgeTrees/uploadValidation.mjs';
+import { extractUploadFilenameWords } from '../agentOrchestration/agents/knowledgeTrees/uploadValidation.mjs';
 import { validateMergedLeafNotes } from './treeMergeValidation.js';
 
 const MAX_GENERATED_CHILDREN_PER_NODE = 8;

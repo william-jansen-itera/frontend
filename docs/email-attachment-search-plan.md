@@ -16,12 +16,12 @@ Move email cache storage from one shared message leaf to one leaf per email UID,
 11. Phase 3: Add cleanup rules and scope boundaries. Do not attempt a full lifecycle/purge redesign in the first pass. Keep deletion behavior limited to new writes and searches unless attachment cleanup on email delete is already cheap to hook into the existing delete flow.
 
 **Relevant files**
-- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agent/email/emailCacheRepository.js` — change cache path strategy and coordinate per-message attachment persistence.
-- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agent/email/emailTransport.js` — source attachment metadata and determine when parsed attachments are hydrated into the per-message tree leaf.
-- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agent/personalCacheTreeRepository.js` — extend with binary attachment helper(s) or thin wrappers needed by email cache persistence.
-- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agent/investment/investmentTreeRepository.js` — reuse existing leaf attachment persistence behavior for both JSON and binary uploads.
+- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agentOrchestration/agents/email/emailCacheRepository.js` — change cache path strategy and coordinate per-message attachment persistence.
+- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agentOrchestration/agents/email/emailTransport.js` — source attachment metadata and determine when parsed attachments are hydrated into the per-message tree leaf.
+- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agentOrchestration/personalCacheTreeRepository.js` — extend with binary attachment helper(s) or thin wrappers needed by email cache persistence.
+- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agentOrchestration/agents/investment/investmentTreeRepository.js` — reuse existing leaf attachment persistence behavior for both JSON and binary uploads.
 - `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/azureSearch.js` — reuse `searchTreeContent()` and optionally `requestTreeBlobIndexerRun()` for attachment-content search and freshness.
-- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agent/email/emailAgentCatalog.js` — register the new tool and document when it should be used.
+- `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/src/server/utils/agentOrchestration/agents/email/emailAgentCatalog.js` — register the new tool and document when it should be used.
 - `c:/Users/william.jansen/Documents/projects/knowledge application/code2/frontend/azure-search/tree-blob-indexer.json` — reference only; validates that attachment content and file names are already indexed and likely needs no first-pass change.
 
 **Verification**

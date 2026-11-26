@@ -1,0 +1,184 @@
+import { randomUUID } from 'node:crypto';
+import { previewLeafFromChat } from '@/server/utils/tree/treeMutationService';
+import { getOwnedChatUpload } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/chatUploadRepository';
+import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
+import { storeTreePreviewSnapshot } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/lanes/saving/tools/treePreviewSnapshotRepository';
+import {
+  assertWritableRuntimeTree,
+  buildPersistenceToolHandlerResult,
+  buildTreePreviewToolOutput,
+} from '@/server/utils/agentOrchestration/agents/knowledgeTrees/tools/persistenceToolShared';
+
+function buildUploadIncomingNotes(upload, { userDescription, userClarification, placementNote, placementCaption }) {
+  const sections = [
+    ['User description', userDescription],
+    ['User clarification', userClarification],
+    ['Document extraction (verbatim)', upload.saveKind === 'note' ? upload.extractedNoteText : ''],
+    ['Processed placement note', placementNote],
+    ['Generated image caption', placementCaption],
+  ];
+  const notes = sections.filter(([, text]) => String(text ?? '').trim())
+    .map(([label, text]) => `${label}:\n${String(text)}`).join('\n\n');
+  if (notes.length > 4000) {
+    throw new Error('The labeled upload notes exceed 4000 characters. Shorten the human context or choose another way to save this file.');
+  }
+  return notes;
+}
+
+export const previewAddToTreeToolDefinition = {
+  type: 'function',
+  name: 'preview_save_to_tree',
+  description: 'Prepare a preview without saving; final save approval is not required to call this tool when the original request authorizes previewing. Ask for final human approval only after displaying the returned preview. When the human accepts an offer to save an already-delivered broad answer, use contentSource="prior_broad_answer" and that answer from history, not current_user_text: a yes is acceptance, not note text. Use current_user_text only for factual text actually supplied in the current human message. Use completed_upload_note for a server-authorized classified upload; an existing leaf receives the original file without changing notes, and a new leaf receives the file and available labeled placement evidence.',
+  strict: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      toolName: {
+        type: 'string',
+        description: 'The specific dynamic search_tree_* tool that identifies the target tree for the note. Do not substitute a tree name or any other label.',
+      },
+      originalQuestion: {
+        type: 'string',
+        description: 'For current_user_text, derive a short topic question from the subject of the supplied factual text. For completed_upload_note, derive a short topic question for routing, not saved facts. For prior_broad_answer, use the original question that led to the accepted answer. Stored in the cached preview snapshot for confirmation.',
+      },
+      broaderAnswer: {
+        type: 'string',
+        description: 'For prior_broad_answer, use the accepted, already-delivered broad answer from history. Clean it without adding facts: retain substantive details, caveats, meaningful uncertainty, evidence limitations, and useful examples, but remove dialogue, self-reference, tool chatter, offers of further help, and requests for clarification. Write reference notes that stand alone without the original conversation, using clear factual statements, compact paragraphs, and short lists when helpful. Keep the notes within 4000 characters while preserving substantive details rather than over-summarizing. Never substitute the human approval text or require the human to repeat the answer. This text is saved directly for create_leaf or used as new information for merge_existing; prepare it before the preview, not after confirmation. For current_user_text, copy only a substantive factual excerpt verbatim from the current human message, excluding the save request; do not paraphrase, invent facts, or substitute retrieved content. For completed_upload_note, use an empty string; the server retrieves the classified upload payload.',
+      },
+      contentSource: {
+        type: 'string',
+        enum: ['current_user_text', 'prior_broad_answer', 'completed_upload_note'],
+        description: 'Select by the origin of the substantive text, not the message asking to save it. An accepted offer to save an earlier broad answer requires prior_broad_answer, including when the latest human message is only yes. current_user_text requires new factual text in the current human message; approval alone does not qualify. completed_upload_note requires a server-authorized completed upload.',
+      },
+      uploadId: {
+        type: 'string',
+        description: 'For completed_upload_note, copy the exact server-provided upload ID authorized for this turn: previewUploadId on an automated completion turn, or pendingUploadId on a human follow-up to a processed upload. Both use contentSource="completed_upload_note". Otherwise use an empty string.',
+      },
+      userDescription: {
+        type: 'string',
+        description: 'For completed_upload_note, an exact substantive excerpt of the original typed human upload message, or an empty string if it adds no facts. Assign human text by when it was sent, not by what it describes: factual details supplied in a later reply belong in userClarification, never here. Exclude request-only language such as "save this", "yes", "no", and "use what is available", and exclude language instructions. If the original message only says "save this in tree", use an empty string. Never include a generated caption; the server supplies it. The server verifies the excerpt against the owned upload. For non-upload previews use an empty string.',
+      },
+      userClarification: {
+        type: 'string',
+        description: 'For completed_upload_note on a pending-upload human follow-up, an exact substantive excerpt of new factual detail in the current human reply, or an empty string if it adds no facts. Put these later facts here, never in userDescription, even when they describe the original upload. Exclude request-only language such as "save this", "yes", "no", and "use what is available", and exclude language instructions. A bare yes, no, or request to use available evidence adds no facts. Never include a generated caption; the server supplies it. The server verifies the excerpt against the current human reply. On automated completion turns and for non-upload previews use an empty string.',
+      },
+    },
+    required: ['toolName', 'originalQuestion', 'broaderAnswer', 'contentSource', 'uploadId', 'userDescription', 'userClarification'],
+    additionalProperties: false,
+  },
+};
+
+export function createPreviewAddToTreeHandler({ includedTrees, principal, includeDebug, currentUserMessage, currentUploadId = null, previewUploadId = null, pendingUploadId = null }) {
+  return async ({ toolName, originalQuestion, broaderAnswer, contentSource, uploadId, userDescription = '', userClarification = '' }) => {
+    if (previewUploadId && contentSource !== 'completed_upload_note') {
+      throw new Error('Only the completed upload note can be previewed in this turn.');
+    }
+    if (contentSource !== 'completed_upload_note' && uploadId) {
+      throw new Error('An upload ID is only valid for a completed upload preview.');
+    }
+    if (contentSource !== 'completed_upload_note' && (userDescription || userClarification)) {
+      throw new Error('Human upload context is only valid for a completed upload preview.');
+    }
+    let noteText = broaderAnswer;
+    let placementCaption = '';
+    let uploadPayload = null;
+    if (contentSource === 'current_user_text') {
+      const content = String(broaderAnswer ?? '').trim();
+      const message = String(currentUserMessage ?? '').trim();
+      if (!content || content === message || !message.includes(content)) {
+        throw new Error('contentSource="current_user_text" requires factual note text taken from the current user message, not approval alone. If the user accepted an offer to save a specific earlier broad answer, retry with contentSource="prior_broad_answer" and that already-delivered answer from history; do not ask the user to repeat an available answer. Otherwise request the factual text to save.');
+      }
+    } else if (contentSource === 'completed_upload_note') {
+      const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
+      if ((!previewUploadId && !pendingUploadId) || uploadId !== (previewUploadId || pendingUploadId) || !ownerObjectId) {
+        throw new Error('A completed upload must be authorized for this preview.');
+      }
+      const upload = await getOwnedChatUpload({ uploadId, ownerObjectId });
+      if (upload?.status !== 'succeeded' || !['note', 'attachment'].includes(upload.saveKind) ||
+          (upload.saveKind === 'note' && (!String(upload.extractedNoteText ?? '').trim() || upload.extractedNoteText.length > 4000))) {
+        throw new Error('The completed upload classification is not available for preview. Upload the file again.');
+      }
+      const placementNote = String(upload.note ?? '').trim();
+      const originalHumanMessage = String(upload.originalHumanMessage ?? '').trim();
+      const description = String(userDescription ?? '').trim();
+      const clarification = String(userClarification ?? '').trim();
+      if (description && !originalHumanMessage.includes(description)) {
+        throw new Error('The upload description must be taken from the original human message.');
+      }
+      if (clarification && (!pendingUploadId || !String(currentUserMessage ?? '').includes(clarification))) {
+        throw new Error('The upload clarification must be taken from the current human reply.');
+      }
+      const verifiedDescription = description;
+      const verifiedClarification = /^(?:yes|no|ja|nej|use what is available|brug det(?:,? som)? er tilgængeligt)[.!]?$/i.test(clarification)
+        ? '' : clarification;
+      noteText = placementNote;
+      placementCaption = String(upload.caption ?? '').trim();
+      if (!noteText && !placementCaption && !verifiedDescription && !verifiedClarification) {
+        throw new Error('This upload needs a human-provided topic before previewing.');
+      }
+      noteText ||= placementCaption || verifiedDescription || verifiedClarification;
+      uploadPayload = {
+        saveKind: upload.saveKind,
+        uploadId,
+        fileName: upload.fileName,
+        byteSize: upload.byteSize,
+        sha256: upload.sha256,
+        placementNote,
+        placementCaption,
+        userDescription: verifiedDescription,
+        userClarification: verifiedClarification,
+        ...(upload.saveKind === 'note' ? { extractedNoteText: upload.extractedNoteText } : {}),
+      };
+      uploadPayload.incomingNotes = buildUploadIncomingNotes(upload, uploadPayload);
+    } else if (contentSource !== 'prior_broad_answer') {
+      throw new Error('A valid source for the note text is required.');
+    }
+    const match = String(toolName ?? '').trim().match(/_(\d+)$/);
+    const resolvedTreeId = match ? match[1] : '';
+    const targetTree = includedTrees.find((tree) => String(tree.id) === resolvedTreeId);
+
+    if (!targetTree) {
+      throw new Error('A valid writable tree tool context is required to preview saving the note.');
+    }
+
+    try {
+      await assertWritableRuntimeTree({ treeId: resolvedTreeId, principal });
+    } catch (error) {
+      if (error?.message === 'Tree was not found for the active application instance') {
+        throw new Error(`Please check if you have permission to edit the tree "${targetTree.name}".`, { cause: error });
+      }
+      throw error;
+    }
+
+    const selectionCalls = [];
+    const placementPreview = await previewLeafFromChat({
+      treeInstanceId: Number.parseInt(resolvedTreeId, 10),
+      originalQuestion,
+      broaderAnswer: noteText,
+      placementCaption,
+      uploadContext: uploadPayload ? {
+        userDescription: uploadPayload.userDescription,
+        userClarification: uploadPayload.userClarification,
+        placementNote: uploadPayload.placementNote,
+        placementCaption,
+        fileName: uploadPayload.fileName,
+      } : null,
+      onModelCall: includeDebug ? (call) => selectionCalls.push(call) : undefined,
+    });
+    const preview = uploadPayload
+      ? { ...placementPreview, ...uploadPayload, broaderAnswer: uploadPayload.saveKind === 'note' ? uploadPayload.incomingNotes : uploadPayload.placementNote }
+      : { ...placementPreview, saveKind: 'note' };
+
+    const previewId = randomUUID();
+    await storeTreePreviewSnapshot({ previewId, preview, principal });
+
+    return buildPersistenceToolHandlerResult({
+      toolName: previewAddToTreeToolDefinition.name,
+      toolResultType: 'tree_note_preview',
+      toolOutput: buildTreePreviewToolOutput(previewId, preview),
+      untrustedDataPaths: ['treeName', 'createPath', 'mergePath', 'defaultSavePath', 'fileName', 'createLeafNotes', 'incomingNotes'],
+      includeDebug,
+      debug: { placementSelection: { modelCallCount: selectionCalls.length, calls: selectionCalls } },
+    });
+  };
+}

@@ -24,4 +24,4 @@ This document records the intended change; it is not an implementation. Recheck 
 
 ## Scope
 
-Expected files: a new SQL migration; `src/server/utils/agent/agentActionApprovalRepository.js`; the knowledge-tree preview, revision, confirm, catalog, service, and result-builder modules; `src/app/api/chat/approval/route.js`; `src/app/chat/ChatPageClient.js`; and relevant chat locale resources. Reuse existing approval infrastructure. Do not modify the generic execution loop unless a focused failing test shows it is necessary. Email approvals and unrelated tools are out of scope.
+Expected files: a new SQL migration; `src/server/utils/agentOrchestration/agentActionApprovalRepository.js`; the knowledge-tree preview, revision, confirm, catalog, service, and result-builder modules; `src/app/api/chat/approval/route.js`; `src/app/chat/ChatPageClient.js`; and relevant chat locale resources. Reuse existing approval infrastructure. Do not modify the generic execution loop unless a focused failing test shows it is necessary. Email approvals and unrelated tools are out of scope.

@@ -2,9 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
-import { createChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
-import { deleteStagingBlob, uploadStagingBlob } from '@/server/utils/agent/knowledgeTrees/stagingBlob';
-import { validateChatUpload } from '@/server/utils/agent/knowledgeTrees/uploadValidation.mjs';
+import { createChatUpload } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/chatUploadRepository';
+import { deleteStagingBlob, uploadStagingBlob } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/stagingBlob';
+import { validateChatUpload } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/uploadValidation.mjs';
 
 export const runtime = 'nodejs';
 

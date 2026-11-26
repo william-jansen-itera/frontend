@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
-import { getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
-import { extractUploadFilenameWords } from '@/server/utils/agent/knowledgeTrees/uploadValidation.mjs';
+import { getOwnedChatUpload } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/chatUploadRepository';
+import { extractUploadFilenameWords } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/uploadValidation.mjs';
 
 export const runtime = 'nodejs';
 

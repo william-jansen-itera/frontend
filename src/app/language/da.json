@@ -134,6 +134,21 @@
       "Reject": "Afvis", "Rejecting": "Afviser...", "RejectAll": "Afvis alle"
     },
     "Chat": {
+      "Interaction": {
+        "Step": "Trin {current} af {total}",
+        "Identity": "Interaktions-ID",
+        "ReadOnly": "Dette trin kan kun læses.",
+        "ReplyInChat": "Svar på dette trin",
+        "Replying": "Svarer på: {prompt}",
+        "NormalChat": "Tilbage til almindelig chat",
+        "ReplyToPrompt": "Svar på spørgsmålet",
+        "IgnorePrompt": "Ignorer spørgsmålet",
+        "ReplyingToPrompt": "Svarer på spørgsmålet: {prompt}",
+        "SubmitResponse": "Indsend svar",
+        "ReplyPlaceholder": "Svar på det valgte interaktionstrin...",
+        "ReplyChanged": "Dette interaktionstrin er ændret. Vælg Svar på dette trin igen.",
+        "Actions": { "back": "Tilbage", "continue": "Fortsæt", "submit": "Indsend", "cancel": "Annuller", "resume": "Genoptag" }
+      },
       "Placeholders": {
         "Email": "Bed mig om at gøre noget konkret med din e-mail, som at finde, åbne, opsummere, udtrække, skrive kladder, sende, markere, slette eller afmelde.",
         "Investment": "Bed mig om at slå aktiekurser op, analysere købs- og salgssignaler eller gennemgå og opdatere din portefølje.",

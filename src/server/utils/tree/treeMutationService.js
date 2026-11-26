@@ -15,7 +15,7 @@ import { requestTreeSqlIndexerRun } from '@/server/utils/azureSearch';
 import { logException, logTrace } from '@/server/utils/logging';
 import { invokeSecretFunction } from '@/server/utils/secretFunctionClient';
 import { sql, withSqlConnection } from '@/server/utils/sql';
-import { permanentlyDeletePersonalCacheNode } from '@/server/utils/agent/personalCacheTreeRepository';
+import { permanentlyDeletePersonalCacheNode } from '@/server/utils/agentOrchestration/personalCacheTreeRepository';
 import { assertConfiguredTree, listActiveTreeSubtreeAttachments, softDeleteTreeSubtree } from '@/server/utils/tree/treePathRepository';
 import {
   applyAttachmentReviewStatus,

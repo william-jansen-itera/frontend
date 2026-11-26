@@ -8,7 +8,7 @@ const modules = new Map([
     export const resolveAgentFamilySelection = async (family) => ({ family: family || 'knowledgeTrees' });
     export const invokeAgentFamily = async (options) => {
       globalThis.__chatRouteCalls.push(options);
-      return { answer: 'Reply', responseLanguage: 'Danish', agent: { name: 'test-agent' }, toolsUsed: [] };
+      return { answer: 'Reply', responseLanguage: 'Danish', agent: globalThis.__chatRouteServerInteraction ? null : { name: 'test-agent' }, toolsUsed: [] };
     };
   `],
   ['logging', 'export const logException = async () => {}; export const logStructuredTrace = async () => {}; export const logTrace = async () => {};'],
@@ -22,8 +22,11 @@ const modules = new Map([
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier === '@/shared/interactions') {
+      return nextResolve(new URL('../../../shared/interactions.js', import.meta.url).href, context);
+    }
     if (specifier.endsWith('/treeLaneState')) {
-      return nextResolve(new URL('../../../server/utils/agent/knowledgeTrees/treeLaneState.js', import.meta.url).href, context);
+      return nextResolve(new URL('../../../server/utils/agentOrchestration/agents/knowledgeTrees/treeLaneState.js', import.meta.url).href, context);
     }
     const stub = modules.get(specifier === 'next/server' ? specifier : specifier.split('/').at(-1));
     return stub ? { url: `data:text/javascript,${encodeURIComponent(stub)}`, shortCircuit: true } : nextResolve(specifier, context);
@@ -32,6 +35,57 @@ registerHooks({
 
 const { POST } = await import('./route.js');
 const laneIdentity = { conversationId: 'conversation-1', turnId: 'turn-1', expectedVersion: 0 };
+
+test('server-processed card results do not require agent metadata for logging or serialization', async () => {
+  globalThis.__chatRouteCalls = [];
+  globalThis.__chatRouteServerInteraction = true;
+  try {
+    const response = await POST(new Request('http://localhost/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Continue', family: 'knowledgeTrees', ...laneIdentity,
+        interactionSubmission: {
+          interactionId: 'collector-1', stepId: 'topic', version: 2, workflow: 'structured-input',
+          submissionId: 'selection-1', action: 'continue', values: { topic: 'nature' },
+        },
+      }),
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(response.body.agent, null);
+    assert.equal(response.body.answer, 'Reply');
+  } finally {
+    globalThis.__chatRouteServerInteraction = false;
+  }
+});
+
+test('interaction metadata follows the human chat path and cannot masquerade as an upload completion', async () => {
+  globalThis.__chatRouteCalls = [];
+  const submission = {
+    interactionId: 'interaction-1', stepId: 'topic', version: 2,
+    submissionId: 'submission-1', action: 'continue', values: { topic: 'nature' },
+  };
+  const request = (extra = {}) => new Request('http://localhost/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: 'Browser (automated): Continue\nChoose a topic: Nature', family: 'knowledgeTrees',
+      ...laneIdentity, interactionSubmission: submission, ...extra,
+    }),
+  });
+  assert.equal((await POST(request())).status, 200);
+  assert.deepEqual(globalThis.__chatRouteCalls[0].interactionSubmission, submission);
+  for (const extra of [
+    { family: 'email' }, { previewUploadId: '00000000-0000-0000-0000-000000000001' },
+    { interactionSubmission: { ...submission, version: -1 } },
+    { interactionSubmission: { ...submission, action: 'arbitrary_tool' } },
+    { interactionSubmission: { ...submission, workflow: 'unknown-workflow' } },
+  ]) assert.equal((await POST(request(extra))).status, 400);
+  assert.equal(globalThis.__chatRouteCalls.length, 1);
+  const context = { interactionId: 'collector-1', stepId: 'note', version: 2, workflow: 'structured-input' };
+  assert.equal((await POST(request({
+    message: 'This is my note.', interactionSubmission: null, interactionContext: context,
+  }))).status, 200);
+  assert.deepEqual(globalThis.__chatRouteCalls[1].interactionContext, context);
+});
 
 test('chat forwards context identity but never accepts a client lane as authoritative', async () => {
   globalThis.__chatRouteCalls = [];

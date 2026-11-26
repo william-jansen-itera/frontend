@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
-import { listRegisteredAgentFamilies } from '@/server/utils/agent/agentFamilyRegistry';
-import { deleteSavedPrompt, listSavedPrompts, savePrompt } from '@/server/utils/agent/savedPromptRepository';
+import { listRegisteredAgentFamilies } from '@/server/utils/agentOrchestration/agentFamilyRegistry';
+import { deleteSavedPrompt, listSavedPrompts, savePrompt } from '@/server/utils/agentOrchestration/savedPromptRepository';
 
 export const runtime = 'nodejs';
 

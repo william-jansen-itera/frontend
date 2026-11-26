@@ -3,12 +3,13 @@ import { NextResponse } from 'next/server';
 import {
   invokeAgentFamily,
   resolveAgentFamilySelection,
-} from '@/server/utils/agent/agentFamilyInvoker';
+} from '@/server/utils/agentOrchestration/agentFamilyInvoker';
 import { logException, logStructuredTrace, logTrace } from '@/server/utils/logging';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { getAuditMetadata } from '@/server/utils/tree/treeCatalog';
-import { bindChatUploadHumanMessage, getOwnedChatUpload } from '@/server/utils/agent/knowledgeTrees/chatUploadRepository';
-import { assertTreeContextId } from '@/server/utils/agent/knowledgeTrees/treeLaneState';
+import { bindChatUploadHumanMessage, getOwnedChatUpload } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/chatUploadRepository';
+import { assertTreeContextId } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/treeLaneState';
+import { validateInteractionContext, validateInteractionSubmission } from '@/shared/interactions';
 
 export const runtime = 'nodejs';
 
@@ -148,6 +149,21 @@ export async function POST(request) {
     }
     const uploadId = String(payload?.uploadId ?? '').trim() || null;
     const pendingUploadId = String(payload?.pendingUploadId ?? '').trim() || null;
+    const interactionSubmission = payload?.interactionSubmission ?? null;
+    const interactionContext = payload?.interactionContext ?? null;
+    if (interactionSubmission || interactionContext) {
+      if (family !== 'knowledgeTrees' || uploadId || pendingUploadId || previewUploadId ||
+          (interactionSubmission && interactionContext)) {
+        return createChatJsonResponse({ error: 'Interaction input cannot be combined with another family or upload workflow.' },
+          { status: 400, requestId, includeDebug });
+      }
+      try {
+        if (interactionSubmission) validateInteractionSubmission(interactionSubmission);
+        if (interactionContext) validateInteractionContext(interactionContext);
+      } catch (error) {
+        return createChatJsonResponse({ error: error.message }, { status: 400, requestId, includeDebug });
+      }
+    }
     const ownerObjectId = getAuditMetadata(principal).updatedByObjectId;
     let uploadHasHumanMessage = null;
     if (pendingUploadId) {
@@ -201,6 +217,8 @@ export async function POST(request) {
       previewUploadId,
       pendingUploadId,
       uploadHasHumanMessage,
+      ...(interactionSubmission ? { interactionSubmission } : {}),
+      ...(interactionContext ? { interactionContext } : {}),
       ...conversationContext,
     });
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'chat route received agent family result', {
@@ -209,10 +227,10 @@ export async function POST(request) {
 
     await logTrace(
       JSON.stringify({
-        event: 'prompt_agent_invoke_success',
+        event: result.agent ? 'prompt_agent_invoke_success' : 'structured_interaction_success',
         requestId,
         family,
-        agentName: result.agent.name,
+        agentName: result.agent?.name ?? null,
         toolNames: result.toolsUsed,
         userDetails: principal?.userDetails ?? null,
       }),
@@ -266,6 +284,7 @@ export async function POST(request) {
         ? {
           error: error instanceof Error ? error.message : 'Agent request failed',
           ...(error?.laneContext ? { laneContext: error.laneContext } : {}),
+          ...(error?.interaction ? { interaction: error.interaction } : {}),
           debug: appendRouteDebugStep(
             error?.debug
               ? {
@@ -293,6 +312,7 @@ export async function POST(request) {
         : {
           error: error instanceof Error ? error.message : 'Agent request failed',
           ...(error?.laneContext ? { laneContext: error.laneContext } : {}),
+          ...(error?.interaction ? { interaction: error.interaction } : {}),
         },
       { status: error?.status ?? 500, requestId, includeDebug },
     );

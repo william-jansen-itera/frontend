@@ -20,8 +20,8 @@ registerHooks({
     if (stub) {
       return { url: `data:text/javascript,${encodeURIComponent(stub)}`, shortCircuit: true };
     }
-    if (specifier === '@/server/utils/agent/knowledgeTrees/uploadValidation.mjs') {
-      return nextResolve(new URL('../../../../../server/utils/agent/knowledgeTrees/uploadValidation.mjs', import.meta.url).href, context);
+    if (specifier === '@/server/utils/agentOrchestration/agents/knowledgeTrees/uploadValidation.mjs') {
+      return nextResolve(new URL('../../../../../server/utils/agentOrchestration/agents/knowledgeTrees/uploadValidation.mjs', import.meta.url).href, context);
     }
     return nextResolve(specifier, context);
   },

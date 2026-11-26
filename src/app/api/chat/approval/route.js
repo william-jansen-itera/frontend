@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { claimAgentApproval } from '@/server/utils/agent/agentActionApprovalRepository';
-import { resumeEmailAgentApproval } from '@/server/utils/agent/email/emailAgentService';
+import { claimAgentApproval } from '@/server/utils/agentOrchestration/agentActionApprovalRepository';
+import { resumeEmailAgentApproval } from '@/server/utils/agentOrchestration/agents/email/emailAgentService';
 import { requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import { logException } from '@/server/utils/logging';
 

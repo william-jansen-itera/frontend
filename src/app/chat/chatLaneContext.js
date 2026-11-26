@@ -13,5 +13,30 @@ export function acceptLaneContext(current, payload) {
       !Number.isSafeInteger(next.version) || next.version < current.version) {
     throw new Error('The chat response has an invalid or outdated conversation context.');
   }
-  return { conversationId: next.conversationId, version: next.version };
+
+  return { conversationId: next.conversationId, version: next.version, activeLane: next.activeLane };
+}
+
+export function isInteractionAvailable(interaction, family, activeLane) {
+  return Boolean(interaction) && family === 'knowledgeTrees' &&
+    (interaction?.workflow === 'structured-input' || activeLane === 'quiz');
+}
+
+export function getInteractionReplyTarget(interaction, family, activeLane, normalChat) {
+  return !normalChat && interaction?.workflow === 'structured-input' &&
+    isInteractionAvailable(interaction, family, activeLane) &&
+    interaction.status === 'active' && interaction.allowedActions?.includes('cancel')
+    ? interaction : null;
+}
+
+export function buildInteractionReplyContext(target, interaction, family, activeLane) {
+  if (!target) return null;
+  if (!isInteractionAvailable(interaction, family, activeLane) || interaction?.status !== 'active' ||
+      ['interactionId', 'stepId', 'version', 'workflow'].some((key) => target[key] !== interaction[key])) {
+    throw new Error('The interaction reply target changed. Select Reply to this step again.');
+  }
+  return {
+    interactionId: target.interactionId, stepId: target.stepId, version: target.version,
+    workflow: target.workflow,
+  };
 }

@@ -748,21 +748,16 @@
   overflow-wrap: anywhere;
 }
 
-.approvalPrompt {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.approvalPrompt details {
+.interactionCard details {
   color: #334155;
   overflow-wrap: anywhere;
 }
 
-.approvalPrompt summary {
+.interactionCard summary {
   cursor: pointer;
 }
 
-.approvalPrompt ul {
+.interactionCard ul {
   padding-left: 1.25rem;
 }
 
@@ -1415,4 +1410,56 @@ h6.messageHeading { font-size: 1rem; }
 
 .selectedFile span {
   overflow-wrap: anywhere;
+}
+.interactionCard {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--app-border, #888);
+  border-radius: 0.5rem;
+}
+
+.interactionField {
+  border: 0;
+  padding: 0.5rem 0;
+  min-width: 0;
+}
+
+.interactionField textarea {
+  display: block;
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--app-border, #888);
+  border-radius: 0.25rem;
+}
+
+.interactionOption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.interactionSummary {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.interactionIdentity {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.interactionReplyMode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+
+.interactionReplyToggle {
+  margin-inline-start: auto;
+  flex-shrink: 0;
 }

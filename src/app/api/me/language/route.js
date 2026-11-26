@@ -4,7 +4,7 @@ import {
   ensurePersonalCacheLeafPath,
   findPersonalCacheLeafPathNode,
   getPersonalCacheContext,
-} from '@/server/utils/agent/personalCacheTreeRepository';
+} from '@/server/utils/agentOrchestration/personalCacheTreeRepository';
 import { updateTreeNodeDetails } from '@/server/utils/tree/treeMutationService';
 import { getNodeDetails } from '@/server/utils/tree/treeRecordRepository';
 

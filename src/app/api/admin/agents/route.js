@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import { getRelevantPrincipalDetails, requireAuthenticatedPrincipal } from '@/server/utils/auth';
 import {
   getAgentFamilyRegistration,
-} from '@/server/utils/agent/agentFamilyRegistry';
+} from '@/server/utils/agentOrchestration/agentFamilyRegistry';
 import {
   buildAgentFamilyStatus,
   getAgentFamilyStatus,
   listAgentFamilyStatuses,
-} from '@/server/utils/agent/agentFamilyAvailability';
-import { setAgentFamilyActiveState } from '@/server/utils/agent/agentFamilyStateRepository';
+} from '@/server/utils/agentOrchestration/agentFamilyAvailability';
+import { setAgentFamilyActiveState } from '@/server/utils/agentOrchestration/agentFamilyStateRepository';
 
 function getErrorStatus(error, defaultStatus = 500) {
   const status = Number(error?.status);
