@@ -8,7 +8,7 @@ registerHooks({
       return {
         url: `data:text/javascript,${encodeURIComponent(`
           export const getRequiredFoundryConfig = () => ({ modelDeploymentName: 'configured-model', reasoning: { effort: 'medium' } });
-          export const getProjectClient = () => ({ getOpenAIClient: () => ({ responses: { create: (input) => globalThis.__quizModel(input) } }) });
+          export const getProjectClient = () => ({ getOpenAIClient: () => ({ responses: { create: (input, options) => globalThis.__quizModel(input, options) } }) });
         `)}`,
         shortCircuit: true,
       };
@@ -78,6 +78,28 @@ function draft(objectives) {
     return { objectiveId: objective.objectiveId, ...question };
   }) };
 }
+
+function largeQuizFixture(questionCount, leafCount = questionCount) {
+  const source = { leaves: Array.from({ length: leafCount }, (_, index) => ({
+    id: `leaf-${index}`, title: `Topic ${index}`, path: `Topics > Topic ${index}`, notes: `Fact ${index}.`,
+  })) };
+  return { source, plan: {
+    language: 'en', languageReason: 'The notes are English.', title: 'Full supported bank',
+    assessments: source.leaves.map((leaf) => ({ leafId: leaf.id, reason: 'Supported facts.' })),
+    objectives: Array.from({ length: questionCount }, (_, index) => {
+      const leaf = source.leaves[index % leafCount];
+      return {
+        leafId: leaf.id, learningObjective: `Understand objective ${index}`,
+        evidenceBasis: 'note', evidence: [leaf.notes], supportedTypes: ['text'],
+      };
+    }),
+  } };
+}
+const textDraft = (objectives) => ({ questions: objectives.map((objective) => ({
+  objectiveId: objective.objectiveId, type: 'text', question: `Explain ${objective.objectiveId}.`,
+  options: [], correctOptionIds: [], optionExplanations: [],
+  referenceAnswer: 'Grounded reference.', gradingCriteria: 'Essential supported fact.',
+})) });
 
 test('generation makes a grounded planning call then writes only approved coverage-first objectives', async () => {
   const expected = bank();
@@ -168,37 +190,110 @@ test('planning cannot replace a language already selected for the quiz', async (
   assert.equal(calls, 1);
 });
 
-test('all forty-five frozen leaves can be assessed and produce a full supported bank', async () => {
-  const largeSource = { leaves: Array.from({ length: 45 }, (_, index) => ({
-    id: `leaf-${index}`, title: `Topic ${index}`, path: `Topics > Topic ${index}`, notes: `Fact ${index}.`,
-  })) };
-  let calls = 0;
-  globalThis.__quizModel = async (request) => {
-    calls++;
-    const input = JSON.parse(request.input[1].content);
-    if (request.text.format.name === 'quiz_plan') {
-      assert.equal(request.text.format.schema.properties.assessments.maxItems, 45);
-      return output({
-        language: 'en', languageReason: 'The notes are English.',
-        title: 'Full supported bank',
-        assessments: input.leaves.map((leaf) => ({ leafId: leaf.id, reason: 'One supported fact.' })),
-        objectives: input.leaves.map((leaf) => ({
-          leafId: leaf.id, learningObjective: `Understand ${leaf.id}`,
-          evidenceBasis: 'note', evidence: [leaf.notes], supportedTypes: ['text'],
-        })),
+test('one global plan feeds concurrent batches of at most 12 questions and restores approved order', { timeout: 5000 }, async () => {
+  for (const [questionCount, leafCount] of [[12, 12], [13, 13], [45, 45], [45, 2]]) {
+    const fixture = largeQuizFixture(questionCount, leafCount);
+    const batches = [];
+    const completed = [];
+    const signals = new Set();
+    let planningCalls = 0;
+    let active = 0;
+    let peak = 0;
+    let savedLanguage = null;
+    globalThis.__quizModel = async (request, options) => {
+      const input = JSON.parse(request.input[1].content);
+      if (request.text.format.name === 'quiz_plan') {
+        planningCalls++;
+        assert.deepEqual(input.leaves, fixture.source.leaves);
+        assert.equal(request.text.format.schema.properties.assessments.maxItems, 45);
+        return output(fixture.plan);
+      }
+      assert.equal(savedLanguage, 'en');
+      assert.equal(input.language, 'en');
+      const leafIds = new Set(input.objectives.map((objective) => objective.leafId));
+      assert.deepEqual(input.leaves, fixture.source.leaves.filter((leaf) => leafIds.has(leaf.id)));
+      assert.ok(input.objectives.length > 0 && input.objectives.length <= 12);
+      assert.equal(request.text.format.schema.properties.questions.minItems, input.objectives.length);
+      assert.equal(request.text.format.schema.properties.questions.maxItems, input.objectives.length);
+      signals.add(options.signal);
+      active++;
+      peak = Math.max(peak, active);
+      const response = await new Promise((resolve) => {
+        batches.push({ objectives: input.objectives, resolve });
+        if (batches.length === Math.ceil(questionCount / 12)) queueMicrotask(() => {
+          for (const batch of [...batches].reverse()) {
+            batch.resolve(output({ questions: textDraft(batch.objectives).questions.reverse() }));
+          }
+        });
       });
+      active--;
+      completed.push(input.objectives[0].objectiveId);
+      return response;
+    };
+    const result = await generateQuizBank({
+      source: fixture.source, onLanguageSelected: async (language) => { savedLanguage = language; },
+    });
+    assert.equal(planningCalls, 1);
+    assert.equal(peak, Math.ceil(questionCount / 12));
+    assert.ok(peak <= 4);
+    assert.equal(signals.size, 1);
+    assert.deepEqual(batches.map((batch) => batch.objectives.length),
+      questionCount === 45 ? [12, 12, 12, 9] : questionCount === 13 ? [12, 1] : [12]);
+    assert.deepEqual(completed, batches.map((batch) => batch.objectives[0].objectiveId).reverse());
+    assert.equal(result.assessments.length, leafCount);
+    assert.equal(result.questions.length, questionCount);
+    assert.deepEqual(result.questions.map((question) => question.learningObjective),
+      fixture.plan.objectives.map((objective) => objective.learningObjective));
+  }
+});
+
+test('batch writers cannot exchange objective IDs and merged validation rejects cross-batch duplicate questions', async () => {
+  for (const failure of ['exchange-ids', 'duplicate-question']) {
+    const fixture = largeQuizFixture(13);
+    globalThis.__quizModel = async (request) => {
+      if (request.text.format.name === 'quiz_plan') return output(fixture.plan);
+      const value = textDraft(JSON.parse(request.input[1].content).objectives);
+      if (failure === 'exchange-ids') {
+        value.questions[0].objectiveId = value.questions.length === 12 ? 'objective-13' : 'objective-1';
+      } else {
+        value.questions[0].question = 'The same question across both batches.';
+      }
+      return output(value);
+    };
+    await assert.rejects(generateQuizBank({ source: fixture.source }), { status: 502 });
+  }
+});
+
+test('a failed batch cancels and drains sibling calls while preserving the original global question diagnostic', async () => {
+  const fixture = largeQuizFixture(13);
+  let aborted = false;
+  let settled = false;
+  let siblingSignal;
+  globalThis.__quizModel = async (request, options) => {
+    if (request.text.format.name === 'quiz_plan') return output(fixture.plan);
+    const input = JSON.parse(request.input[1].content);
+    if (input.objectives.length === 12) {
+      siblingSignal = options.signal;
+      return new Promise((_, reject) => {
+        options.signal.addEventListener('abort', () => {
+          aborted = true;
+          reject(new Error('Sibling request aborted.'));
+        }, { once: true });
+      }).finally(() => { settled = true; });
     }
-    return output({ questions: input.objectives.map((objective) => ({
-      objectiveId: objective.objectiveId, type: 'text', question: `Explain ${objective.leafId}.`,
-      options: [], correctOptionIds: [], optionExplanations: [],
-      referenceAnswer: 'Grounded reference.', gradingCriteria: 'Essential supported fact.',
-    })) });
+    const value = textDraft(input.objectives);
+    value.questions[0].question = 'Private question content.'.repeat(100);
+    return output(value);
   };
-  const result = await generateQuizBank({ source: largeSource, language: 'en' });
-  assert.equal(calls, 2);
-  assert.equal(result.assessments.length, 45);
-  assert.equal(result.questions.length, 45);
-  assert.equal(new Set(result.questions.map((question) => question.leafId)).size, 45);
+  await assert.rejects(generateQuizBank({ source: fixture.source }), (error) => {
+    assert.equal(error.status, 502);
+    assert.match(error.message, /question 13: question must be nonempty text of at most 2000 characters/);
+    assert.doesNotMatch(error.message, /Private|Sibling/);
+    assert.equal(siblingSignal.reason, error);
+    return true;
+  });
+  assert.equal(aborted, true);
+  assert.equal(settled, true);
 });
 
 test('invalid plans and unanchored evidence fail before the writing call', async () => {
