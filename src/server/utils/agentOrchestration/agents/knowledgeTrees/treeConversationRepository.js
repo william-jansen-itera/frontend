@@ -28,7 +28,7 @@ function conflict(message, state) {
 async function mutateConversation({ principal, conversationId, expectedVersion }, mutate, { cleanupOnCreate = false } = {}) {
   assertTreeContextId(conversationId, 'conversationId');
   const { personalCacheTreeId: treeId, updatedBy } = await getPersonalCacheContext(principal);
-  const pathSegments = ['Knowledge Trees', 'Conversations', conversationId, 'State'];
+  const pathSegments = ['Knowledge Trees', 'Conversations', 'State', conversationId];
   if (cleanupOnCreate && expectedVersion === 0 &&
       !await findPersonalCacheLeafPathNode({ treeId, principal, pathSegments })) {
     await cleanupInactiveTreeConversations({ treeId, principal, conversationId });

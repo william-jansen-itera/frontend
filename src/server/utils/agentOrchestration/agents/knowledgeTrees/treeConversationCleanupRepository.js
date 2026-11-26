@@ -11,16 +11,16 @@ async function findInactiveConversations({ treeId, ownerObjectId, conversationId
     .input('current_conversation_id', sql.NVarChar(100), conversationId)
     .input('state_node_id', sql.Int, stateNodeId)
     .query(`
-      SELECT TOP (20) conversation.id AS conversationNodeId, state_node.id AS stateNodeId
-      FROM tree_nodes conversation
-      INNER JOIN tree_nodes conversations ON conversations.id = conversation.parent_id
-        AND conversations.tree_instance_id = conversation.tree_instance_id
+      SELECT TOP (20) state_node.id AS stateNodeId
+      FROM tree_nodes state_node
+      INNER JOIN tree_nodes state_folder ON state_folder.id = state_node.parent_id
+        AND state_folder.tree_instance_id = state_node.tree_instance_id
+      INNER JOIN tree_nodes conversations ON conversations.id = state_folder.parent_id
+        AND conversations.tree_instance_id = state_node.tree_instance_id
       INNER JOIN tree_nodes family ON family.id = conversations.parent_id
-        AND family.tree_instance_id = conversation.tree_instance_id
-      INNER JOIN tree_nodes state_node ON state_node.parent_id = conversation.id
-        AND state_node.tree_instance_id = conversation.tree_instance_id
+        AND family.tree_instance_id = state_node.tree_instance_id
       INNER JOIN tree_node_details details ON details.tree_node_id = state_node.id
-      INNER JOIN tree_instance tree ON tree.id = conversation.tree_instance_id
+      INNER JOIN tree_instance tree ON tree.id = state_node.tree_instance_id
       INNER JOIN application_instance app ON app.id = tree.application_instance_id
       WHERE tree.id = @tree_id AND tree.deleted_at IS NULL AND tree.is_private = 1
         AND LOWER(LTRIM(RTRIM(tree.display_name))) = N'personal cache'
@@ -29,29 +29,24 @@ async function findInactiveConversations({ treeId, ownerObjectId, conversationId
         AND family.deleted_at IS NULL AND family.is_leaf_node = 0
         AND conversations.text = N'Conversations'
         AND conversations.deleted_at IS NULL AND conversations.is_leaf_node = 0
-        AND conversation.deleted_at IS NULL AND conversation.is_leaf_node = 0
-        AND conversation.text <> @current_conversation_id
-        AND state_node.text = N'State' AND state_node.is_leaf_node = 1
-        AND state_node.deleted_at IS NULL
+        AND state_folder.text = N'State'
+        AND state_folder.deleted_at IS NULL AND state_folder.is_leaf_node = 0
+        AND state_node.deleted_at IS NULL AND state_node.is_leaf_node = 1
+        AND state_node.text <> @current_conversation_id
         ${stateNodeId === null ? '' : 'AND state_node.id = @state_node_id'}
         AND details.updated_at <= DATEADD(HOUR, -24, SYSUTCDATETIME())
         AND JSON_VALUE(CASE WHEN ISJSON(details.notes) = 1 THEN details.notes END, '$.schemaVersion') = N'1'
-        AND JSON_VALUE(CASE WHEN ISJSON(details.notes) = 1 THEN details.notes END, '$.conversationId') = conversation.text
+        AND JSON_VALUE(CASE WHEN ISJSON(details.notes) = 1 THEN details.notes END, '$.conversationId') = state_node.text
         AND NOT EXISTS (
           SELECT 1 FROM tree_nodes extra
           WHERE extra.tree_instance_id = @tree_id
-            AND ((extra.parent_id = conversation.id AND extra.id <> state_node.id)
-              OR extra.parent_id = state_node.id)
+            AND extra.parent_id = state_node.id
         )
         AND NOT EXISTS (
           SELECT 1 FROM tree_node_detail_files files
-          WHERE files.tree_node_id IN (conversation.id, state_node.id)
+          WHERE files.tree_node_id = state_node.id
         )
-        AND NOT EXISTS (
-          SELECT 1 FROM tree_node_details branch_details
-          WHERE branch_details.tree_node_id = conversation.id
-        )
-      ORDER BY details.updated_at, conversation.id;
+      ORDER BY details.updated_at, state_node.id;
     `);
 }
 
@@ -88,9 +83,9 @@ export async function cleanupInactiveTreeConversations({ treeId, principal, conv
         const current = await findInactiveConversations({
           ...scope, stateNodeId: candidate.stateNodeId, transaction,
         });
-        if (current.recordset[0]?.conversationNodeId === candidate.conversationNodeId) {
+        if (current.recordset[0]?.stateNodeId === candidate.stateNodeId) {
           const removed = await permanentlyDeletePersonalCacheSubtree({
-            treeId, rootNodeId: candidate.conversationNodeId, ownerObjectId, transaction,
+            treeId, rootNodeId: candidate.stateNodeId, ownerObjectId, transaction,
           });
           if (!removed) throw new Error('Could not delete the inactive conversation state.');
           deleted += 1;

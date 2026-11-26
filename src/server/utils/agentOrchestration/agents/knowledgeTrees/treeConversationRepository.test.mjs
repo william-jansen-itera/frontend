@@ -74,6 +74,26 @@ test('only creation triggers cleanup, before claiming the new turn and within it
   assert.equal(cleanups.length, 1);
 });
 
+test('conversation IDs are state leaves under the shared State folder without a fallback to the old layout', async () => {
+  setup();
+  const options = request();
+  const prefix = 'app-a:alice:Knowledge Trees/Conversations';
+  const oldKey = `${prefix}/${options.conversationId}/State`;
+  const newKey = `${prefix}/State/${options.conversationId}`;
+  const oldNotes = '{"legacy":"must not be read or changed"}';
+  documents.set(oldKey, oldNotes);
+  const { state } = await beginTreeTurn(options);
+  assert.equal(state.activeLane, 'knowledge.retrieval');
+  assert.equal(JSON.parse(documents.get(newKey)).conversationId, options.conversationId);
+  assert.equal(documents.get(oldKey), oldNotes);
+  assert.equal(cleanups.length, 1);
+  await completeTreeTurn({ ...options, version: 1 }, { answer: 'Done' });
+  assert.equal(JSON.parse(documents.get(newKey)).turn.status, 'completed');
+  documents.delete(newKey);
+  await assert.rejects(beginTreeTurn(request({ turnId: 'turn-b', expectedVersion: 2 })), { status: 410 });
+  assert.equal(documents.get(oldKey), oldNotes);
+});
+
 test('cleanup failure is explicit and does not leave a newly claimed running turn', async () => {
   setup();
   globalThis.__cleanupLaneNotes = async () => { throw new Error('Cleanup unavailable'); };

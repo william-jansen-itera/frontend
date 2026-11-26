@@ -130,7 +130,7 @@ function quizArgs(operation, values = {}) {
 async function savedQuiz(id = null) {
   if (!id) {
     const conversation = JSON.parse(await globalThis.__laneRead({
-      pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+      pathSegments: ['Knowledge Trees', 'Conversations', 'State', context.conversationId],
     }));
     id = conversation.quizId;
   }
@@ -888,7 +888,7 @@ test('quiz setup uses bound sequential collector submissions and automatically c
   setup();
   const currentSetup = async () => {
     const conversation = JSON.parse(await globalThis.__laneRead({
-      pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+      pathSegments: ['Knowledge Trees', 'Conversations', 'State', context.conversationId],
     }));
     return JSON.parse(await globalThis.__laneRead({
       pathSegments: ['Knowledge Trees', 'Quiz Setups', 'By Setup ID', conversation.quizSetupId],
@@ -1023,7 +1023,7 @@ test('cancelling quiz source collection cannot prepare or activate a quiz', asyn
     tools(quizSwitch(), tool('quiz', quizArgs('sources', { treeId: '1' }))),
     async () => {
       const conversation = JSON.parse(await globalThis.__laneRead({
-        pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+        pathSegments: ['Knowledge Trees', 'Conversations', 'State', context.conversationId],
       }));
       const setup = JSON.parse(await globalThis.__laneRead({
         pathSegments: ['Knowledge Trees', 'Quiz Setups', 'By Setup ID', conversation.quizSetupId],
@@ -1150,7 +1150,7 @@ test('resuming a source-selection collection restores its quiz setup in a fresh 
     tools(quizSwitch(), tool('quiz', quizArgs('sources'))),
     async () => {
       const state = JSON.parse(await globalThis.__laneRead({
-        pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+        pathSegments: ['Knowledge Trees', 'Conversations', 'State', context.conversationId],
       }));
       const setup = JSON.parse(await globalThis.__laneRead({
         pathSegments: ['Knowledge Trees', 'Quiz Setups', 'By Setup ID', state.quizSetupId],
@@ -1616,7 +1616,7 @@ test('resuming a pending final Submit can complete the collector and continue in
 test('an expired conversation is rejected before any model or tool work', async () => {
   setup();
   await submit('Hello', [final('Hello.')]);
-  expiredPaths.add(JSON.stringify(['Knowledge Trees', 'Conversations', context.conversationId, 'State']));
+  expiredPaths.add(JSON.stringify(['Knowledge Trees', 'Conversations', 'State', context.conversationId]));
   const count = modelRequests.length;
   await assert.rejects(submit('Continue', []), { status: 410, code: 'CHAT_STATE_EXPIRED' });
   assert.equal(modelRequests.length, count);
@@ -1626,7 +1626,7 @@ test('an expired conversation is rejected before any model or tool work', async 
 test('expiry while awaiting the model remains an explicit expiry even if saving failure status also expires', async () => {
   setup();
   await assert.rejects(submit('Hello', [() => {
-    expiredPaths.add(JSON.stringify(['Knowledge Trees', 'Conversations', context.conversationId, 'State']));
+    expiredPaths.add(JSON.stringify(['Knowledge Trees', 'Conversations', 'State', context.conversationId]));
     return final('Hello.');
   }]), (error) => {
     assert.ok(error instanceof AggregateError);

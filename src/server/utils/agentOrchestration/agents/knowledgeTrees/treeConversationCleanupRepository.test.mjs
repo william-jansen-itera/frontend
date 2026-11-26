@@ -84,26 +84,30 @@ test('cleanup selects a bounded oldest-first batch in the exact owner, applicati
   assert.match(query, /LOWER\(LTRIM\(RTRIM\(tree\.display_name\)\)\) = N'personal cache'/);
   assert.match(query, /family\.parent_id IS NULL AND family\.text = N'Knowledge Trees'/);
   assert.match(query, /conversations\.text = N'Conversations'/);
-  assert.match(query, /state_node\.text = N'State' AND state_node\.is_leaf_node = 1/);
-  assert.match(query, /conversation\.text <> @current_conversation_id/);
+  assert.match(query, /FROM tree_nodes state_node/);
+  assert.match(query, /state_folder\.id = state_node\.parent_id/);
+  assert.match(query, /conversations\.id = state_folder\.parent_id/);
+  assert.match(query, /state_folder\.text = N'State'/);
+  assert.match(query, /state_folder\.deleted_at IS NULL AND state_folder\.is_leaf_node = 0/);
+  assert.match(query, /state_node\.deleted_at IS NULL AND state_node\.is_leaf_node = 1/);
+  assert.match(query, /state_node\.text <> @current_conversation_id/);
   assert.match(query, /details\.updated_at <= DATEADD\(HOUR, -24, SYSUTCDATETIME\(\)\)/);
   assert.match(query, /ISJSON\(details\.notes\) = 1/);
   assert.match(query, /'\$\.schemaVersion'\) = N'1'/);
-  assert.match(query, /'\$\.conversationId'\) = conversation\.text/);
+  assert.match(query, /'\$\.conversationId'\) = state_node\.text/);
   assert.doesNotMatch(query, /'\$\.turn\.status'/);
-  assert.match(query, /ORDER BY details\.updated_at, conversation\.id/);
-  assert.match(query, /extra\.parent_id = conversation\.id AND extra\.id <> state_node\.id/);
-  assert.match(query, /OR extra\.parent_id = state_node\.id/);
-  assert.match(query, /files\.tree_node_id IN \(conversation\.id, state_node\.id\)/);
-  assert.match(query, /branch_details\.tree_node_id = conversation\.id/);
+  assert.match(query, /ORDER BY details\.updated_at, state_node\.id/);
+  assert.match(query, /extra\.parent_id = state_node\.id/);
+  assert.match(query, /files\.tree_node_id = state_node\.id/);
+  assert.doesNotMatch(query, /conversationNodeId|conversation\.|branch_details/);
 });
 
-test('each deletion locks the path and state, rechecks eligibility, and removes only that conversation branch', async () => {
+test('each deletion locks the path and state, rechecks eligibility, and removes only that conversation leaf', async () => {
   setup();
-  candidates = [{ conversationNodeId: 11, stateNodeId: 12 }, { conversationNodeId: 21, stateNodeId: 22 }];
+  candidates = [{ stateNodeId: 12 }, { stateNodeId: 22 }];
   for (const candidate of candidates) rechecked.set(candidate.stateNodeId, [candidate]);
   assert.equal(await cleanupInactiveTreeConversations(options), 2);
-  assert.deepEqual(deletions.map(({ rootNodeId }) => rootNodeId), [11, 21]);
+  assert.deepEqual(deletions.map(({ rootNodeId }) => rootNodeId), [12, 22]);
   for (const [index, deletion] of deletions.entries()) {
     const transaction = globalThis.__cleanupTransactions[index];
     assert.equal(deletion.treeId, 7);
@@ -128,11 +132,12 @@ test('each deletion locks the path and state, rechecks eligibility, and removes 
 test('candidates updated, removed, or changed in scope before the recheck are retained', async () => {
   setup();
   candidates = [
-    { conversationNodeId: 11, stateNodeId: 12 },
-    { conversationNodeId: 21, stateNodeId: 22 },
-    { conversationNodeId: 31, stateNodeId: 32 },
-    { conversationNodeId: 41, stateNodeId: 42 },
+    { stateNodeId: 12 },
+    { stateNodeId: 22 },
+    { stateNodeId: 32 },
+    { stateNodeId: 42 },
   ];
+  rechecked.set(42, [{ stateNodeId: 99 }]);
   assert.equal(await cleanupInactiveTreeConversations(options), 0);
   assert.equal(deletions.length, 0);
   assert.equal(globalThis.__cleanupTransactions.length, 4);
@@ -142,7 +147,7 @@ test('candidates updated, removed, or changed in scope before the recheck are re
 test('cleanup processes at most 20 candidates per creation', async () => {
   setup();
   candidates = Array.from({ length: 25 }, (_, index) => ({
-    conversationNodeId: index * 2 + 1, stateNodeId: index * 2 + 2,
+    stateNodeId: index + 1,
   }));
   for (const candidate of candidates) rechecked.set(candidate.stateNodeId, [candidate]);
   await cleanupInactiveTreeConversations(options);
@@ -156,7 +161,7 @@ test('authentication, query, lock, and deletion failures are explicit and incomp
   assert.equal(queries.length, 0);
   for (const failure of ['initial-query', 'recheck-query', 'path-lock', 'note-lock', 'missing-lock', 'delete']) {
     setup();
-    candidates = [{ conversationNodeId: 11, stateNodeId: 12 }];
+    candidates = [{ stateNodeId: 12 }];
     rechecked.set(12, candidates);
     if (failure === 'initial-query') queryError = { initial: true };
     if (failure === 'recheck-query') queryError = {};
