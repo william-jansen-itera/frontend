@@ -866,6 +866,8 @@ Take again requires the exact current human request in `restartRequest` and the 
 
 Quiz questions reuse the existing interaction card, transport, descriptor validation, normalized-response parser, presentation/input checks, and composer. The default composer replies to the question; **Ignore prompt** keeps normal chat separate until toggled back. Card answers are validated and saved before invoking the agent. Scoped textarea replies preserve the exact human text when accepted; ordinary chat does not silently become an answer.
 
+The final answer's turn keeps the completed quiz card for review. Later turns, including results reads and completed-quiz resume, do not repeat it; active or restarted quizzes still show their current question. Earlier cards and saved results remain unchanged.
+
 **From the card to the agent and tool**
 
 1. The user submits the card; the server validates and saves the answer as pending.

@@ -417,6 +417,65 @@ test('real quiz creation, card grading and textarea grading share cards and comm
   assert.deepEqual(calls, { preview: 0, save: 0, search: 0, process: 0 });
 });
 
+test('completed quiz cards stay in the completion turn, not follow-up replies or saved-results reads', async () => {
+  setup();
+  const started = await createRealQuiz(1);
+  const { result: completed } = await submit('Submit', assessQuizAnswer('correct'),
+    quizSubmission(started.interaction, 'submit', { answer: 'A supported answer.' }));
+  assert.equal(completed.interaction.status, 'completed');
+  const savedVersion = (await savedQuiz()).version;
+  const { result: followup } = await submit('Thank you.', [final('You are welcome.')]);
+  assert.equal(followup.interaction, undefined);
+  assert.equal(followup.familyPayload.interaction, undefined);
+  assert.equal(followup.quiz.status, 'completed');
+  assert.equal((await savedQuiz()).version, savedVersion, 'A follow-up must not re-present the old card');
+
+  for (const operation of ['results', 'resume', 'question']) {
+    const { result } = await submit('Show my completed quiz results.', [
+      tools(tool('quiz', quizArgs(operation, { quizId: started.quiz.quizId }))),
+      final('Your saved quiz is complete.'),
+    ]);
+    assert.equal(result.interaction, undefined);
+    assert.equal(result.familyPayload.interaction, undefined);
+    assert.equal(result.quiz.status, 'completed');
+  }
+
+  const restartRequest = 'Take this quiz again with one question.';
+  const { result: restarted } = await submit(restartRequest, [
+    async () => tools(tool('quiz', quizArgs('restart', {
+      quizId: started.quiz.quizId, version: (await savedQuiz()).version,
+      questionCount: 1, restartRequest,
+    }))),
+    final('Answer the new question.'),
+  ]);
+  assert.equal(restarted.interaction.status, 'active');
+  assert.ok(restarted.interaction.allowedActions.includes('submit'));
+});
+
+test('recovery retains a just-completed quiz card but does not repeat it on later failed turns', async () => {
+  setup();
+  const started = await createRealQuiz(1);
+  let failure;
+  await assert.rejects(submit('Submit', [
+    ...assessQuizAnswer('correct').slice(0, 1),
+    () => { throw new Error('Model unavailable after final grading'); },
+  ], quizSubmission(started.interaction, 'submit', { answer: 'A supported answer.' })), (error) => {
+    failure = error;
+    assert.match(error.message, /Model unavailable after final grading/);
+    assert.equal(error.interaction.status, 'completed');
+    return true;
+  });
+  context = failure.laneContext;
+  await assert.rejects(submit('Thank you.', [
+    () => { throw new Error('Later model failure'); },
+  ]), (error) => {
+    assert.match(error.message, /Later model failure/);
+    assert.equal(error.interaction, null);
+    return true;
+  });
+  assert.equal((await savedQuiz(started.quiz.quizId)).questions.filter((question) => question.resolution).length, 1);
+});
+
 test('new quizzes use the source language rather than chat language and retain it for grading, resume and restart', async () => {
   for (const [chatLanguage, sourceLanguage] of [['en', 'da'], ['da', 'en']]) {
     setup();

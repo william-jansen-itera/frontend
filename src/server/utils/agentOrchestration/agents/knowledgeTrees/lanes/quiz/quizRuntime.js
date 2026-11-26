@@ -58,6 +58,7 @@ export function createQuizRuntime(options) {
   let controls = false;
   let released = true;
   let canPresent = false;
+  let resolvingQuizId = null;
   let humanText = null;
   let restartAttempted = false;
   let awaitingLanguageChoice = false;
@@ -377,6 +378,7 @@ export function createQuizRuntime(options) {
           canPresent = true;
           return result(currentData({ clarification: grade.feedback }));
         }
+        resolvingQuizId = id;
         state = await repository.resolve(principal, id, {
           version: state.version, questionId: current.id,
           outcome: grade.verdict, feedback: grade.feedback,
@@ -432,7 +434,8 @@ export function createQuizRuntime(options) {
       return null;
     },
     async present() {
-      if (!state || !canPresent || !allowed() || state.status === 'preparing') return null;
+      if (!state || !canPresent || !allowed() || state.status === 'preparing' ||
+          state.status === 'completed' && state.id !== resolvingQuizId) return null;
       state = await repository.present(principal, state.id, { ...binding, expectedVersion: state.version });
       return describeQuiz(state);
     },
@@ -440,6 +443,7 @@ export function createQuizRuntime(options) {
     async recovery() {
       if (!state || state.status === 'preparing') return null;
       await read(state.id);
+      if (state.status === 'completed' && state.id !== resolvingQuizId) return null;
       return { ...describeQuiz(state), allowedActions: state.status === 'active' ? ['resume'] : [] };
     },
   };
