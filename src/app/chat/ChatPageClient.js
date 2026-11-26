@@ -850,6 +850,7 @@ export default function ChatPageClient({ includeDebug }) {
   const [availableChatFamilies, setAvailableChatFamilies] = useState([]);
   const [chatFamily, setChatFamily] = useState(null);
   const chatFeedRef = useRef(null);
+  const pendingReplyRef = useRef(null);
   const promptInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const approvalRequestRef = useRef(false);
@@ -859,6 +860,7 @@ export default function ChatPageClient({ includeDebug }) {
 
   const selectedTurn = turns.find((turn) => turn.id === selectedTurnId) ?? turns.at(-1) ?? null;
   const displayedTurns = [...turns].reverse();
+  const pendingTurnId = turns.findLast((turn) => turn.isPending)?.id ?? null;
   const hasObservedDebugData = turns.some((turn) => turn?.debug !== null && turn?.debug !== undefined);
   const showTurnInspector = includeDebug || hasObservedDebugData;
   const isSingleTurnLayout = turns.length === 1;
@@ -1247,12 +1249,18 @@ export default function ChatPageClient({ includeDebug }) {
   }
 
   useEffect(() => {
-    if (!chatFeedRef.current) {
+    if (!chatFeedRef.current || pendingTurnId) {
       return;
     }
 
     chatFeedRef.current.scrollTop = chatFeedRef.current.scrollHeight;
-  }, [turns, isSubmitting]);
+  }, [turns, isSubmitting, pendingTurnId]);
+
+  useEffect(() => {
+    if (pendingTurnId) {
+      pendingReplyRef.current?.scrollIntoView({ behavior: "instant", block: "nearest", inline: "nearest" });
+    }
+  }, [pendingTurnId]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -1474,7 +1482,7 @@ export default function ChatPageClient({ includeDebug }) {
                         </div>
                       ) : null}
 
-                      <div className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""} ${turn.isPending ? styles.messageBubbleAgentThinking : ""}`}>
+                      <div ref={turn.isPending ? pendingReplyRef : null} className={`${styles.messageBubbleAgent} ${isCompactTurnState ? styles.messageBubblePending : ""} ${turn.isPending ? styles.messageBubbleAgentThinking : ""}`}>
                         <div className={styles.messageHeaderRow}>
                           <p className={styles.messageLabel}>{turn.approvalRequired ? t("AgentPaused") : "Agent"}</p>
                         </div>

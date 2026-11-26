@@ -34,6 +34,8 @@ Optional chat settings:
 
 The chat textarea shows localized, task-oriented help for the currently selected agent family (Email, Investment, or Knowledge Trees), updating immediately when the selection changes.
 
+Whenever an agent reply enters its pending state, chat scrolls the Agent / "Working on it..." placeholder into view, including card submissions, upload continuations and approval decisions. It does not keep forcing that scroll while the same reply remains pending.
+
 Each saved prompt in the Insert prompt picker has a trash button that asks for confirmation before permanently deleting its personal-cache note for the current application, user, and agent family. Cancelling leaves the stored prompt unchanged. Deleting a saved prompt leaves the current draft unchanged; failed deletions keep the entry visible and show an error.
 
 Chat's right-hand composer buttons save the current draft and open a saved-prompt picker. The top button (`message-square-more`) opens the picker; the lower button (`message-square-plus`) saves. Selecting a saved prompt replaces the draft without sending it; saving does not clear it. Prompts are stored server-side in the current application's authenticated user's private personal-cache tree at `Chat / Prompts / <agent family> / <prompt title>`. New notes use a short identifier such as `Prompt a1b2c3d4`, extending it if that title is already occupied; existing note titles are not renamed. Edit or delete these leaf notes in Notes; reopening the picker reads the current saved content. Identical content is saved once per family, preserving whitespace and line breaks. Collections are separate for each application, user, and family, regardless of chat visibility.
