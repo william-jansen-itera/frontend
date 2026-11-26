@@ -989,6 +989,8 @@ export default function ChatPageClient({ includeDebug }) {
     if (!laneContextRef.current) laneContextRef.current = { conversationId: createRequestId(), version: 0 };
     const laneRequest = chatFamily === "knowledgeTrees" ? buildLaneRequestContext(laneContextRef.current, turnId) : {};
     const submittedLanguage = interactionSubmission ? getAgentChatLanguage(interactionResponseLanguage, language) : language;
+    const pendingResponseLanguage = interactionSubmission ? submittedLanguage
+      : turns.findLast((turn) => turn.responseLanguage)?.responseLanguage ?? null;
     const submissionTranslator = getAgentChatTranslator(submittedLanguage, language, t);
     const automatedLabel = interactionSubmission || (file && !hasTypedUploadMessage) ? submissionTranslator("Upload.AutomatedLabel") : null;
     let completionTurnId = null;
@@ -1018,7 +1020,7 @@ export default function ChatPageClient({ includeDebug }) {
         attachedFileName: file?.name ?? null,
         originalQuestion: question,
         answer: "",
-        responseLanguage: null,
+        responseLanguage: pendingResponseLanguage,
         debug: null,
         error: null,
         familyPayload: null,

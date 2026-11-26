@@ -34,7 +34,7 @@ Optional chat settings:
 
 The chat textarea shows localized, task-oriented help for the currently selected agent family (Email, Investment, or Knowledge Trees), updating immediately when the selection changes.
 
-Whenever an agent reply enters its pending state, chat scrolls the Agent / "Working on it..." placeholder into view, including card submissions, upload continuations and approval decisions. It does not keep forcing that scroll while the same reply remains pending.
+Whenever an agent reply enters its pending state, chat scrolls the Agent / "Working on it..." placeholder into view, including card submissions, upload continuations and approval decisions. It does not keep forcing that scroll while the same reply remains pending. The waiting message uses the card's language for card submissions (matching "Browser (automated)"), otherwise the latest known agent-reply language, with the interface language as fallback until a chat language is known.
 
 Each saved prompt in the Insert prompt picker has a trash button that asks for confirmation before permanently deleting its personal-cache note for the current application, user, and agent family. Cancelling leaves the stored prompt unchanged. Deleting a saved prompt leaves the current draft unchanged; failed deletions keep the entry visible and show an error.
 
