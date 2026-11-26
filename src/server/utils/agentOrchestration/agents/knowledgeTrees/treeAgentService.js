@@ -63,6 +63,7 @@ export async function invokeKnowledgeTreesAgent(options) {
   });
   const interactionRuntime = createTreeInteractionRuntime({
     ...options,
+    lane,
     isQuizAllowed: () => lane.state.activeLane === QUIZ_LANE &&
       !options.uploadId && !options.previewUploadId,
   });
@@ -81,6 +82,7 @@ export async function invokeKnowledgeTreesAgent(options) {
       throw new AggregateError([error, stateError], 'The turn failed and its status could not be saved. Check action outcomes before retrying.');
     }
     if (error.code === 'CHAT_STATE_EXPIRED') throw error;
+    if (interactionRuntime.toolName === 'quiz' && [403, 404].includes(error.status)) throw error;
     try {
       error.interaction = await interactionRuntime.recovery();
     } catch (recoveryError) {
@@ -106,7 +108,18 @@ async function executeKnowledgeTreesTurn({ message, history = [], principal = nu
   }
 
   const requestStartedAtMs = includeDebug ? Date.now() : null;
-  await interactionRuntime.prepare({ submission: interactionSubmission, context: interactionContext, message: normalizedMessage });
+  const input = { submission: interactionSubmission, context: interactionContext, message: normalizedMessage };
+  const loadTools = () => buildRuntimeTreeToolContext({
+    principal, visibility, enforceAccess: true, includeDebug,
+    currentUserMessage: normalizedMessage, currentUploadId: uploadId,
+    previewUploadId, pendingUploadId, interactionRuntime,
+  });
+  let runtimeTools;
+  if (interactionRuntime.needsCatalog(input)) {
+    runtimeTools = await loadTools();
+    interactionRuntime.configure(runtimeTools);
+  }
+  await interactionRuntime.prepare(input);
   const processedSubmission = await interactionRuntime.processSubmission();
   if (processedSubmission && !processedSubmission.completed) {
     await lane.finishResponse({ answer: processedSubmission.interaction.prompt });
@@ -128,17 +141,8 @@ async function executeKnowledgeTreesTurn({ message, history = [], principal = nu
   const project = getProjectClient();
   const openAIClient = project.getOpenAIClient();
   const agent = await getPublishedKnowledgeTreesPromptAgent();
-  const { handlerMap, toolPolicies, includedTrees } = await buildRuntimeTreeToolContext({
-    principal,
-    visibility,
-    enforceAccess: true,
-    includeDebug,
-    currentUserMessage: normalizedMessage,
-    currentUploadId: uploadId,
-    previewUploadId,
-    pendingUploadId,
-    interactionRuntime,
-  });
+  const { handlerMap, toolPolicies, includedTrees } = runtimeTools ?? await loadTools();
+  interactionRuntime.configure({ includedTrees });
   if (previewUploadId || pendingUploadId) {
     handlerMap.delete('process_upload');
     handlerMap.delete('revise_save_preview');
@@ -176,7 +180,10 @@ async function executeKnowledgeTreesTurn({ message, history = [], principal = nu
       return confirmHandler(args, context);
     });
   }
-  lane.wrapHandlers(handlerMap, toolPolicies);
+  const toolInstruction = () => buildAllowedToolInstruction(includedTrees, {
+    activeLane: lane.state.activeLane, enabledToolNames: [...handlerMap.keys()],
+  });
+  lane.wrapHandlers(handlerMap, toolPolicies, toolInstruction);
   for (const [name, handler] of handlerMap) {
     handlerMap.set(name, (...args) => {
       if (interactionRuntime.controlsTurn && name !== interactionRuntime.toolName) {
@@ -191,7 +198,7 @@ async function executeKnowledgeTreesTurn({ message, history = [], principal = nu
     : null;
   const allowedToolInstruction = [
     buildVisibilityScopeInstruction({ visibility, includedTrees }),
-    buildAllowedToolInstruction(includedTrees),
+    toolInstruction(),
     confirmablePreviewId
       ? `The immediately preceding assistant reply displayed previewId "${confirmablePreviewId}". Only that exact ID is eligible for confirm_save_to_tree, and only if the current human message approves that preview. A request to save different or newer content requires a new preview instead. Never confirm a preview created in this same turn.`
       : 'The immediately preceding assistant reply did not display a preview eligible for human confirmation in this turn. Do not call confirm_save_to_tree or invent a previewId. If the human accepts a broad answer\'s save offer, call preview_save_to_tree with contentSource="prior_broad_answer" and that answer now, even when an older preview exists in history. Do not ask for permission to preview again.',
@@ -340,6 +347,11 @@ async function executeKnowledgeTreesTurn({ message, history = [], principal = nu
     if (interaction) {
       result.interaction = validateInteractionDescriptor(interaction);
       result.familyPayload = { ...result.familyPayload, interaction: result.interaction };
+    }
+    const quiz = interactionRuntime.quizProgress();
+    if (quiz && lane.state.activeLane === QUIZ_LANE && lane.state.quizId === quiz.quizId) {
+      result.quiz = quiz;
+      result.familyPayload = { ...result.familyPayload, quiz };
     }
     return result;
   } catch (error) {

@@ -2,6 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { acceptLaneContext, buildInteractionReplyContext, buildLaneRequestContext, getInteractionReplyTarget, isInteractionAvailable } from './chatLaneContext.js';
 
+test('real quiz cards default to prompt replies only in quiz and honor Ignore prompt', () => {
+  const card = { interactionId: 'quiz-1', stepId: 'question-1', version: 3,
+    workflow: 'quiz', status: 'active', allowedActions: ['submit', 'reveal'] };
+  assert.equal(getInteractionReplyTarget(card, 'knowledgeTrees', 'quiz', false), card);
+  assert.equal(getInteractionReplyTarget(card, 'knowledgeTrees', 'quiz', true), null);
+  assert.equal(getInteractionReplyTarget(card, 'knowledgeTrees', 'knowledge.retrieval', false), null);
+  assert.equal(getInteractionReplyTarget({ ...card, status: 'pending', allowedActions: ['resume'] }, 'knowledgeTrees', 'quiz', false), null);
+  assert.equal(getInteractionReplyTarget({ ...card, status: 'completed', allowedActions: [] }, 'knowledgeTrees', 'quiz', false), null);
+  assert.deepEqual(buildInteractionReplyContext(card, card, 'knowledgeTrees', 'quiz'), {
+    interactionId: 'quiz-1', stepId: 'question-1', version: 3, workflow: 'quiz',
+  });
+});
+
 test('active cards default to response mode and follow clarification and advancement until normal chat is selected', () => {
   const card = { interactionId: 'interaction-1', stepId: 'topic', version: 3,
     workflow: 'structured-input', status: 'active', allowedActions: ['continue', 'cancel'] };
@@ -31,7 +44,7 @@ test('ordinary chat stays separate while explicit replies bind the exact current
   }
   assert.throws(() => buildInteractionReplyContext(card, card, 'email', 'quiz'), /target changed/);
   assert.equal(isInteractionAvailable({ workflow: 'interaction-test' }, 'knowledgeTrees', 'knowledge.retrieval'), false);
-  assert.equal(isInteractionAvailable({ workflow: 'interaction-test' }, 'knowledgeTrees', 'quiz'), true);
+  assert.equal(isInteractionAvailable({ workflow: 'interaction-test' }, 'knowledgeTrees', 'quiz'), false);
 });
 
 test('chat sends only stable identity and version, and adopts server context on success or error', () => {

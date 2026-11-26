@@ -75,11 +75,32 @@ registerHooks({
   },
 });
 
-const { publishStoredTreeDescriptions } = await import('./treeAgentCatalog.js');
+const { publishStoredTreeDescriptions, buildAllowedToolInstruction } = await import('./treeAgentCatalog.js');
 const { getRequiredFoundryConfig: getActualFoundryConfig } = await import('../../../foundryAgentClient.js');
 const { buildReplyLanguagePolicy, buildReplyLanguageInstruction } = await import('../../agentConversationInput.js');
 const { buildEmailAgentInstructions } = await import('../email/emailAgentCatalog.js');
 const { buildInvestmentAgentInstructions } = await import('../investment/investmentAgentCatalog.js');
+
+test('tool guidance scopes callable tools to the active lane and preserves tree IDs as metadata', () => {
+  const trees = [{ id: 1, name: 'Topics' }];
+  const enabledToolNames = ['search_tree_topics', 'preview_save_to_tree', 'process_upload', 'quiz',
+    'switch_tree_lane', 'collect_structured_input'];
+  for (const [activeLane, permitted, forbidden] of [
+    ['knowledge.retrieval', 'search_tree_topics', ['quiz', 'process_upload', 'preview_save_to_tree']],
+    ['knowledge.saving', 'preview_save_to_tree', ['search_tree_topics', 'quiz']],
+    ['quiz', 'quiz', ['search_tree_topics', 'process_upload', 'preview_save_to_tree']],
+  ]) {
+    const instruction = buildAllowedToolInstruction(trees, { activeLane, enabledToolNames });
+    assert.ok(instruction.includes(`- ${permitted}\n`));
+    for (const name of forbidden) assert.equal(instruction.includes(`- ${name}\n`), false);
+    assert.match(instruction, /treeId=1/);
+    assert.match(instruction, /metadata, not permission/);
+  }
+  const disabled = buildAllowedToolInstruction(trees, {
+    activeLane: 'knowledge.saving', enabledToolNames: ['preview_save_to_tree', 'switch_tree_lane'],
+  });
+  assert.doesNotMatch(disabled, /process_upload/);
+});
 
 test('one published agent scopes its numbered leaf lanes and exposes the transition tool', async () => {
   await publishStoredTreeDescriptions();
@@ -95,14 +116,20 @@ test('one published agent scopes its numbered leaf lanes and exposes the transit
   assert.match(instructions, /A workflow stage describes progress, not authorization/);
   const switchTool = tools.find(({ name }) => name === 'switch_tree_lane');
   assert.ok(switchTool.parameters.properties.activeLane.enum.includes('quiz'));
-  const testTool = tools.find(({ name }) => name === 'test_multistep_interaction');
-  assert.ok(testTool?.strict);
-  assert.deepEqual(testTool.parameters.properties.operation.enum, ['start', 'process', 'status', 'resume']);
-  assert.match(instructions, /test quiz interaction/);
-  assert.match(testTool.description, /Use only in the quiz lane/);
+  assert.equal(tools.some(({ name }) => name === 'test_multistep_interaction'), false);
+  assert.doesNotMatch(instructions, /test_multistep_interaction|test quiz interaction|fixed interaction/);
   const collector = tools.find(({ name }) => name === 'collect_structured_input');
   assert.ok(collector?.strict);
-  assert.doesNotMatch(instructions, /test structured interaction|Shared structured input collection|collect_structured_input/);
+  assert.doesNotMatch(instructions, /test structured interaction|Shared structured input collection/);
+  const quiz = tools.find(({ name }) => name === 'quiz');
+  assert.ok(quiz?.strict);
+  assert.ok(quiz.parameters.properties.operation.enum.includes('answer'));
+  assert.ok(quiz.parameters.properties.operation.enum.includes('restart'));
+  assert.match(quiz.parameters.properties.restartRequest.description, /exact entire current human message/);
+  assert.equal(quiz.parameters.properties.operation.enum.includes('record_answer'), false);
+  assert.equal(quiz.parameters.properties.questions, undefined);
+  assert.equal(quiz.parameters.properties.verdict, undefined);
+  assert.match(instructions, /Start collect_structured_input with that specification/);
   assert.doesNotMatch(instructions, /Every step response returns to you before advancement/);
 });
 
@@ -169,6 +196,7 @@ test('published shared rules keep the common contract while workflow policies an
   assert.doesNotMatch(shared, /isPermissionToBroadenRequest=true|isPersistenceOffer=true|persistenceAction="(?:previewed|revised|saved)"/);
   assert.match(routing, /The server already supplies the active lane/);
   assert.match(routing, /pendingUploadId alone does not make an unrelated message a saving request/);
+  assert.match(routing, /^5\. A request to list saved quizzes, start\/resume a quiz, repeat the current quiz question, .* belongs to quiz\./m);
   assert.match(routing, /If the destination matches activeLane, continue there/);
   assert.doesNotMatch(routing, /contentSource=|confirm_save_to_tree|revise_save_preview|process_upload|userClarification|search_tree_\*/);
   assert.match(retrieval, /Decide the retrieval action/);
@@ -182,8 +210,22 @@ test('published shared rules keep the common contract while workflow policies an
   assert.doesNotMatch(retrieval, /test_multistep_interaction/);
   assert.doesNotMatch(saving, /test_multistep_interaction/);
   assert.match(quiz, /only when quiz is active/);
-  assert.match(quiz, /test_multistep_interaction operation="process"/);
-  assert.match(quiz, /actual quiz generation.*are not implemented/);
+  assert.doesNotMatch(quiz, /test_multistep_interaction/);
+  assert.match(quiz, /Quizzes use the quiz tool/);
+  assert.match(quiz, /The tool grades and returns saved feedback/);
+  assert.match(quiz, /The card presents the question and answer options; do not copy, paraphrase or list them in chat/);
+  assert.match(quiz, /Let the human expand that review; do not narrate answerReview\.optionExplanations/);
+  assert.doesNotMatch(quiz, /explain EVERY option|show saved feedback and the returned next question/);
+  assert.match(quiz, /sources -> collect_structured_input for tree selection -> WAIT for human Submit -> sources with setupId -> collect_structured_input for root selection -> WAIT for human Submit -> check saved quizzes -> prepare with setupId -> offer default 25 or a custom size from 1-45 -> WAIT for size choice -> create/);
+  assert.match(quiz, /offer Continue \(unfinished\), Take again \(a saved bank exists\), or Generate fresh, and WAIT/);
+  assert.match(quiz, /restart the SAME quiz, not create an attempt record/);
+  assert.match(quiz, /randomly sample the newly chosen size from the full bank with note coverage first/);
+  assert.match(quiz, /Before starting a new quiz or taking one again, offer 25 questions by default with the option to choose any integer from 1 to 45, and WAIT/);
+  assert.match(quiz, /Resume never asks for a new size or changes the existing selection, order or progress/);
+  assert.match(quiz, /create returns the first question card -> WAIT for human input -> answer or reveal/);
+  assert.match(quiz, /show the tool's clarification and returned card -> WAIT for a complete restated human answer -> answer/);
+  assert.match(quiz, /preparing -> create; pending captured input -> answer or reveal matching the captured action/);
+  assert.match(quiz, /Use question only to re-present the current question card without advancing/);
   assert.doesNotMatch(quiz, /Permission request after insufficient tree evidence:|Successful confirm_save_to_tree:/);
   assert.match(saving, /Upload evidence and consent/);
   assert.match(saving, /Decide the saving action/);

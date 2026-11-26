@@ -1,6 +1,6 @@
 import { createInteractionRepository } from '@/server/utils/agentOrchestration/interactions/interactionRepository';
 import {
-  interactionError, interpretInteractionText, validateInteractionContext, validateInteractionSubmission,
+  interactionError, validateInteractionContext, validateInteractionSubmission,
 } from '@/shared/interactions';
 import { buildAgentToolResult, buildUntrustedContentMeta } from '@/server/utils/agentOrchestration/agentToolResult';
 export function createInteractionRuntime({
@@ -36,7 +36,7 @@ export function createInteractionRuntime({
       if (context) validateInteractionContext(context);
       if (submission && context) throw interactionError('Supply either a submission or an interaction context.');
       const reference = submission ?? context;
-      if (reference.workflow !== undefined && reference.workflow !== definition.id) {
+      if (reference.workflow !== definition.id) {
         throw interactionError('The response belongs to another interaction workflow.', 409);
       }
       state = await repository.read(principal, reference.interactionId);
@@ -44,7 +44,7 @@ export function createInteractionRuntime({
       if (reference.version !== state.version || reference.stepId !== descriptor.stepId) {
         throw interactionError('This interaction changed. Resume it before submitting.', 409);
       }
-      const input = submission ?? (parseResponse ? null : interpretInteractionText(descriptor, message, turnId));
+      const input = submission;
       if (input?.action === 'resume') {
         if (Object.keys(input.values).length) throw interactionError('Resume cannot submit field values.');
         explicitlyResumed = true;
@@ -55,7 +55,7 @@ export function createInteractionRuntime({
         throw interactionError('Resume this interaction in this conversation before submitting.', 409);
       }
       canPresent = true;
-      if (!submission && parseResponse) {
+      if (!submission) {
         if (state.status !== 'active' || state.pending) throw interactionError('Resume this interaction before replying.', 409);
         humanText = message;
         controlsTurn = true;
@@ -68,12 +68,13 @@ export function createInteractionRuntime({
     },
     async processSubmission() {
       if (!captured && !explicitlyResumed) return null;
+      const resumed = explicitlyResumed;
       assertAllowed();
       await process(state.id, { ...binding, resume: explicitlyResumed });
       captured = false;
       explicitlyResumed = false;
       canPresent = true;
-      return { interaction: definition.describe(state), language: state.language, completed };
+      return { interaction: definition.describe(state), language: state.language, completed, resumed };
     },
     instruction() {
       const descriptor = state ? definition.describe(state) : null;
@@ -138,13 +139,13 @@ export function createInteractionRuntime({
         }
         if (state && interactionId !== state.id) throw interactionError('Use the active interaction identity.', 409);
         if (args.operation === 'respond') {
-          if (!parseResponse || humanText === null || captured) {
+          if (humanText === null || captured) {
             throw interactionError('No explicit human reply to this step is available to interpret.', 409);
           }
           const response = parseResponse(args.response, definition.describe(state));
           state = await repository.capture(principal, {
             interactionId: state.id, stepId: definition.describe(state).stepId, version: state.version,
-            action: response.action, values: response.values, submissionId: turnId,
+            workflow: state.workflow, action: response.action, values: response.values, submissionId: turnId,
           }, binding);
           captured = true;
           humanText = null;

@@ -10,7 +10,7 @@ function readState(notes, conversationId) {
   if (notes === null || notes === '') {
     return {
       schemaVersion: 1, conversationId, version: 0, activeLane: RETRIEVAL_LANE,
-      stage: 'idle', previewId: null, uploadId: null, turn: null,
+      stage: 'idle', previewId: null, uploadId: null, quizId: null, quizSetupId: null, turn: null,
     };
   }
   const state = validateTreeConversation(JSON.parse(notes));

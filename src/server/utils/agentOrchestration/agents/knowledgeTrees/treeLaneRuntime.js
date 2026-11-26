@@ -16,12 +16,21 @@ export function createTreeLaneRuntime({ state, persist, previewUploadId, uploadI
   return {
     get state() { return current; },
     get confirmationRevoked() { return switchedAway; },
+    async bindQuiz(quizId) {
+      if (current.activeLane !== QUIZ_LANE) throw new Error('Switch to quiz before binding a quiz.');
+      await update({ quizId, quizSetupId: null });
+    },
+    async bindQuizSetup(quizSetupId) {
+      if (current.activeLane !== QUIZ_LANE) throw new Error('Switch to quiz before selecting its sources.');
+      await update({ quizSetupId, quizId: null });
+    },
     instruction: () => buildTreeLaneInstruction(current),
-    wrapHandlers(handlerMap, toolPolicies) {
+    wrapHandlers(handlerMap, toolPolicies, getToolInstruction = () => null) {
       handlerMap.set(SWITCH_TREE_LANE_TOOL, createSwitchTreeLaneHandler({
         getState: () => current,
         previewUploadId,
         uploadId,
+        getToolInstruction,
         transition: async (activeLane) => {
           if (current.activeLane === SAVING_LANE && savingResultThisTurn) {
             throw new Error('Report the saving workflow result in this lane first. A preview requires a later human reply; switch lanes on that later turn if requested.');
@@ -30,6 +39,7 @@ export function createTreeLaneRuntime({ state, persist, previewUploadId, uploadI
           await update({
             activeLane, stage: 'idle', previewId: null,
             uploadId: activeLane === SAVING_LANE ? uploadId ?? pendingUploadId ?? null : null,
+            quizId: null, quizSetupId: null,
           });
         },
       }));

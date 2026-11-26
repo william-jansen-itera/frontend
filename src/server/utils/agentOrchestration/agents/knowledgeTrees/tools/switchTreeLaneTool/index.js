@@ -20,7 +20,7 @@ export const switchTreeLaneToolDefinition = {
   },
 };
 
-export function createSwitchTreeLaneHandler({ getState, transition, previewUploadId, uploadId }) {
+export function createSwitchTreeLaneHandler({ getState, transition, previewUploadId, uploadId, getToolInstruction = () => null }) {
   return async ({ activeLane, reason }) => {
     assertTreeLane(activeLane);
     if (typeof reason !== 'string' || !reason.trim()) throw new Error('A lane switch requires a reason from the current human request.');
@@ -31,7 +31,7 @@ export function createSwitchTreeLaneHandler({ getState, transition, previewUploa
     return buildAgentToolResult({
       sourceToolFamily: 'knowledgeTrees', toolName: SWITCH_TREE_LANE_TOOL,
       toolResultType: 'tree_lane_context',
-      data: { ...buildTreeLaneContext(state), instruction: buildTreeLaneInstruction(state) },
+      data: { ...buildTreeLaneContext(state), instruction: [buildTreeLaneInstruction(state), getToolInstruction()].filter(Boolean).join('\n\n') },
     });
   };
 }

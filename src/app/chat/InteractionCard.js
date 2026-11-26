@@ -73,7 +73,7 @@ export function InteractionControl({
   );
 }
 
-export default function InteractionCard({ interaction, disabled, readOnly, translate, onAction, onReplyInChat }) {
+export default function InteractionCard({ interaction, disabled, readOnly, translate, onAction }) {
   const yesNoField = interaction.allowedActions.includes("submit") ? null
     : interaction.fields.find((field) => field.type === "yes_no");
   const actions = interaction.allowedActions.flatMap((action) => (
@@ -85,7 +85,6 @@ export default function InteractionCard({ interaction, disabled, readOnly, trans
       }]
   ));
   return (
-    <>
     <InteractionControl
       title={interaction.title} prompt={interaction.prompt} progress={interaction.progress}
       summary={interaction.summary} review={interaction.review}
@@ -103,13 +102,5 @@ export default function InteractionCard({ interaction, disabled, readOnly, trans
             answer?.label ?? translate(`Interaction.Actions.${action}`)),
         });
       }} />
-    {onReplyInChat && !readOnly && interaction.status === "active" ? (
-      <button type="button" className="appCompactActionButton appCompactActionButtonNeutral"
-        disabled={disabled} onKeyDown={(event) => event.stopPropagation()}
-        onClick={(event) => { event.stopPropagation(); onReplyInChat(); }}>
-        {translate("Interaction.ReplyInChat")}
-      </button>
-    ) : null}
-    </>
   );
 }

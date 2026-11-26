@@ -35,7 +35,7 @@ export function buildTreeAgentInstructions() {
     'Saving replies are grounded tool statuses or workflow clarifications, with isPersistenceOffer=false and isPermissionToBroadenRequest=false. A lane-switch result does not itself constitute saving or evidence for a factual answer.',
     numberHeadings(buildSavingInstructions(), '4'),
     '# 5. Quiz [lane: quiz]',
-    'Applies only when activeLane is quiz. This is a sibling of retrieval and saving, not a sub-workflow of either. It currently hosts the fixed interaction-testing tool, not real quiz functionality.',
+    'Applies only when activeLane is quiz. This is a sibling of retrieval and saving, not a sub-workflow of either. It owns source-grounded quiz generation, assessment, results, and resume.',
     numberHeadings(buildQuizInstructions(), '5'),
   ].join('\n\n');
 }

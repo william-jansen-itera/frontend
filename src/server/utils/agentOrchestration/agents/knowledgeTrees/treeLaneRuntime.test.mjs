@@ -26,11 +26,25 @@ function runtime(extra = {}, handlers = new Map()) {
       return state;
     },
   });
-  lane.wrapHandlers(handlers, new Map());
+  lane.wrapHandlers(handlers, new Map(), extra.getToolInstruction);
   return { lane, handlers, conflict: () => { failPersist = true; } };
 }
 const preview = (id = 'preview-a') => ({ toolOutput: { toolResultType: 'tree_note_preview', data: { previewId: id } } });
 const switchLane = (handlers, activeLane) => handlers.get('switch_tree_lane')({ activeLane, reason: 'The current human requested this workflow.' });
+
+test('switch responses refresh tool guidance and detach quiz bindings without deleting domain state', async () => {
+  let lane;
+  const instance = runtime({
+    state: { activeLane: 'quiz', quizId: 'quiz-a', quizSetupId: null },
+    getToolInstruction: () => `Tools now available for ${lane.state.activeLane}`,
+  });
+  lane = instance.lane;
+  const switched = await switchLane(instance.handlers, 'knowledge.retrieval');
+  assert.match(switched.data.instruction, /Tools now available for knowledge.retrieval/);
+  assert.equal(lane.state.quizId, null);
+  assert.equal(lane.state.quizSetupId, null);
+  await assert.rejects(lane.bindQuiz('quiz-a'), /Switch to quiz/);
+});
 
 test('tools are rechecked after every lane transition, including calls queued in one batch', async () => {
   let searches = 0;
@@ -65,23 +79,23 @@ test('retrying an earlier proposal cannot resurrect a preview replaced by revisi
   assert.equal(lane.state.previewId, 'preview-b');
 });
 
-test('quiz is a separate lane: its test tool requires switching and cannot execute retrieval or saving tools', async () => {
+test('quiz is a separate lane: its tool requires switching and cannot execute retrieval or saving tools', async () => {
   let tests = 0;
   let searches = 0;
   const handlers = new Map([
-    ['test_multistep_interaction', async () => { tests++; return {}; }],
+    ['quiz', async () => { tests++; return {}; }],
     ['search_tree_topics_1', async () => { searches++; return {}; }],
     ['preview_save_to_tree', async () => preview()],
     ['unknown_tool', async () => { throw new Error('Must never execute'); }],
   ]);
   const { lane } = runtime({}, handlers);
-  await assert.rejects(handlers.get('test_multistep_interaction')({}), /not allowed in knowledge.retrieval/);
+  await assert.rejects(handlers.get('quiz')({}), /not allowed in knowledge.retrieval/);
   await switchLane(handlers, 'knowledge.saving');
-  await assert.rejects(handlers.get('test_multistep_interaction')({}), /not allowed in knowledge.saving/);
+  await assert.rejects(handlers.get('quiz')({}), /not allowed in knowledge.saving/);
   const switched = await switchLane(handlers, 'quiz');
   assert.equal(switched.data.activeLane, 'quiz');
   assert.match(switched.data.instruction, /Knowledge common rules apply only.*never quiz/);
-  await handlers.get('test_multistep_interaction')({});
+  await handlers.get('quiz')({});
   assert.equal(tests, 1);
   await assert.rejects(handlers.get('search_tree_topics_1')({}), /not allowed in quiz/);
   await assert.rejects(handlers.get('preview_save_to_tree')({}), /not allowed in quiz/);

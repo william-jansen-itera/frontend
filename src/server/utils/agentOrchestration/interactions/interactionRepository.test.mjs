@@ -36,15 +36,15 @@ registerHooks({
   },
 });
 const { createInteractionRepository } = await import('./interactionRepository.js');
-const { interactionTestDefinition: definition } = await import('../agents/knowledgeTrees/lanes/quiz/tools/testInteractionTool/definition.js');
-const { createInteractionTestRuntime } = await import('../agents/knowledgeTrees/lanes/quiz/tools/testInteractionTool/index.js');
-const { formatInteractionMessage, interpretInteractionText, validateInteractionDescriptor } = await import('../../../../shared/interactions.js');
+const { formatInteractionMessage } = await import('../../../../shared/interactions.js');
 const { structuredInputDefinition, validateCollectionSpecification } = await import('../agents/knowledgeTrees/tools/collectStructuredInputTool/definition.js');
 const { buildCollectionTestSpecification } = await import('../agents/knowledgeTrees/tools/collectStructuredInputTool/sampleSpecification.js');
 const { createTreeInteractionRuntime } = await import('../agents/knowledgeTrees/treeInteractionRuntime.js');
 const owner = { userId: 'owner', app: 'app' };
 const binding = { conversationId: 'conversation-1', turnId: 'turn-1' };
+const definition = structuredInputDefinition;
 const repository = createInteractionRepository(definition);
+const createCollection = (language = 'en') => repository.create(owner, language, buildCollectionTestSpecification(language));
 let cleanups;
 
 function setup() {
@@ -195,7 +195,7 @@ test('clarification and ordinary chat do not advance or authorize interpreted va
   }), { status: 409 });
   await assert.rejects(collectorRuntime('wrong-workflow', { isQuizAllowed: () => true }).prepare({
     context: { ...reference(card), workflow: 'interaction-test' }, message: 'Nature',
-  }), /Invalid saved interaction/);
+  }), /Use only the owning interaction tool/);
   await assert.rejects(collectorRuntime('wrong-owner', { principal: { ...owner, userId: 'other' } }).prepare({
     context: reference(card), message: 'Nature',
   }), { status: 404 });
@@ -235,35 +235,14 @@ test('one-step collections submit their fields directly, reject Continue and inc
   }
 });
 
-test('saved version-one collections retain their separate review and empty final Submit', async () => {
+test('only current saved workflow versions are accepted, without migration or reinterpretation', async () => {
   const documents = setup();
-  const specification = buildCollectionTestSpecification();
-  specification.steps = specification.steps.slice(0, 1);
-  const state = await collectorRepository.create(owner, 'en', specification);
-  for (const [key, notes] of documents) {
-    const saved = JSON.parse(notes);
-    if (saved.id === state.id) documents.set(key, JSON.stringify({ ...saved, workflowVersion: 1 }));
+  const state = await collectorRepository.create(owner, 'en', buildCollectionTestSpecification());
+  const [key] = documents.keys();
+  for (const workflowVersion of [1, 99]) {
+    documents.set(key, JSON.stringify({ ...state, workflowVersion }));
+    await assert.rejects(collectorRepository.read(owner, state.id), /Invalid saved interaction/);
   }
-  let card = structuredInputDefinition.describe(await collectorRepository.read(owner, state.id));
-  let saved = await collectorRepository.present(owner, state.id, { ...binding, expectedVersion: card.version });
-  let runtime = collectorRuntime('legacy-collector-answer');
-  card = structuredInputDefinition.describe(saved);
-  await runtime.prepare({ submission: {
-    ...reference(card), action: 'continue', values: { topic: 'nature' }, submissionId: 'legacy-topic',
-  } });
-  await runtime.collect(collectorArgs('process', card.interactionId));
-  card = await runtime.present();
-  assert.equal(card.stepId, 'review');
-  assert.equal(card.review.items.length, 1);
-  assert.equal(card.progress.total, 2);
-  runtime = collectorRuntime('legacy-collector-submit');
-  await runtime.prepare({ context: reference(card), message: 'Submit' });
-  await runtime.collect(collectorArgs('respond', card.interactionId, null, { action: 'submit', fields: [] }));
-  assert.equal(runtime.controlsTurn, false);
-  saved = await collectorRepository.read(owner, card.interactionId);
-  assert.equal(saved.workflowVersion, 1);
-  assert.equal(saved.status, 'completed');
-  assert.deepEqual(saved.values, { topic: { topic: 'nature' } });
 });
 
 test('collector resume uses its own workflow and upload-bound collection is rejected', async () => {
@@ -312,7 +291,7 @@ test('creation alone triggers scoped cleanup before saving; cleanup failure prev
     await assert.rejects(repository.read(owner, options.interactionId), { status: 404 });
     cleanups.push(options);
   };
-  const state = await present(await repository.create(owner, 'en'));
+  const state = await present(await createCollection());
   assert.deepEqual(cleanups, [{ treeId: 'app:owner', principal: owner, interactionId: state.id }]);
   await repository.read(owner, state.id);
   await step(state, 'continue', { topic: 'nature' });
@@ -322,7 +301,7 @@ test('creation alone triggers scoped cleanup before saving; cleanup failure prev
     newId = interactionId;
     throw new Error('Cleanup unavailable');
   };
-  await assert.rejects(repository.create(owner, 'en'), /Cleanup unavailable/);
+  await assert.rejects(createCollection(), /Cleanup unavailable/);
   await assert.rejects(repository.read(owner, newId), /not found/);
 });
 async function present(state, turnId = binding.turnId, conversationId = binding.conversationId) {
@@ -331,7 +310,7 @@ async function present(state, turnId = binding.turnId, conversationId = binding.
 function input(state, action, values = {}, submissionId = `submission-${state.version}`) {
   return {
     interactionId: state.id, version: state.version, stepId: definition.describe(state).stepId,
-    action, values, submissionId,
+    workflow: state.workflow, action, values, submissionId,
   };
 }
 async function step(state, action, values = {}) {
@@ -340,99 +319,9 @@ async function step(state, action, values = {}) {
   return present(await repository.process(owner, state.id, turn), turn.turnId);
 }
 
-test('resume without an ID uses scoped lookup and finishes pending input once in a new conversation', async () => {
-  setup();
-  let state = await present(await repository.create(owner, 'en'));
-  state = await step(state, 'continue', { topic: 'nature' });
-  await repository.capture(owner, input(state, 'continue', { note: 'Accepted before interruption.' }), {
-    ...binding, turnId: 'interrupted-input',
-  });
-  let lookups = 0;
-  globalThis.__interactionLookup = async (options) => {
-    lookups++;
-    assert.deepEqual(options, { treeId: 'app:owner', principal: owner, workflow: 'interaction-test' });
-    return state.id;
-  };
-  const runtime = createInteractionTestRuntime({
-    principal: owner, conversationId: 'fresh-conversation', turnId: 'resume-turn', isAllowed: () => true,
-  });
-  await runtime.handle({ operation: 'resume', interactionId: null });
-  const card = await runtime.present();
-  assert.equal(card.interactionId, state.id);
-  assert.match(runtime.validateAnswer({ answer: `Resume ${state.id.toUpperCase()}` }), /Remove the interaction ID/);
-  assert.equal(runtime.validateAnswer({
-    answer: 'Your saved interaction is ready.', knowledgeMode: 'grounded', isPersistenceOffer: false,
-    isPermissionToBroadenRequest: false, isWaitingForContinuation: false, persistenceAction: 'none',
-  }), null);
-  assert.equal(card.stepId, 'features');
-  assert.equal(card.collectedValues.note.note, 'Accepted before interruption.');
-  assert.equal((await repository.read(owner, state.id)).presentation.conversationId, 'fresh-conversation');
-  await runtime.handle({ operation: 'resume', interactionId: null });
-  assert.equal((await runtime.present()).stepId, 'features');
-  assert.equal(lookups, 1);
-});
-
-test('no latest match or lookup failure never creates a replacement interaction', async () => {
-  for (const fail of [false, true]) {
-    const documents = setup();
-    globalThis.__interactionLookup = async () => {
-      if (fail) throw new Error('Lookup unavailable');
-      return null;
-    };
-    const runtime = createInteractionTestRuntime({ principal: owner, ...binding, isAllowed: () => true });
-    await assert.rejects(runtime.handle({ operation: 'resume', interactionId: null }),
-      fail ? /Lookup unavailable/ : { status: 404, message: /No unfinished, unexpired/ });
-    await assert.rejects(runtime.handle({ operation: 'start', interactionId: null }), { status: 409, message: /replacement/ });
-    assert.equal(documents.size, 0);
-    assert.equal(await runtime.present(), null);
-  }
-});
-
-test('lookup selection is rechecked under mutation and cannot silently move to another interaction', async () => {
-  setup();
-  const state = await present(await repository.create(owner, 'en'));
-  let lookups = 0;
-  globalThis.__interactionLookup = async () => {
-    lookups++;
-    await step(state, 'cancel');
-    return state.id;
-  };
-  const runtime = createInteractionTestRuntime({ principal: owner, ...binding, isAllowed: () => true });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await assert.rejects(runtime.handle({ operation: 'resume', interactionId: null }), {
-      status: 409, message: /no longer unfinished/,
-    });
-  }
-  assert.equal(lookups, 1);
-  assert.equal((await repository.read(owner, state.id)).status, 'cancelled');
-});
-
-test('resume without an ID preserves trusted context and cannot redirect a captured submission', async () => {
-  setup();
-  const state = await present(await repository.create(owner, 'en'));
-  globalThis.__interactionLookup = async () => { throw new Error('Bound context must not trigger lookup'); };
-  const resume = createInteractionTestRuntime({
-    principal: owner, conversationId: 'fresh-conversation', turnId: 'resume-turn', isAllowed: () => true,
-  });
-  await resume.prepare({ context: {
-    interactionId: state.id, stepId: 'topic', version: state.version,
-  }, message: 'resume' });
-  await resume.handle({ operation: 'resume', interactionId: null });
-  const card = await resume.present();
-  const capture = createInteractionTestRuntime({
-    principal: owner, conversationId: 'fresh-conversation', turnId: 'answer-turn', isAllowed: () => true,
-  });
-  await capture.prepare({ submission: {
-    interactionId: state.id, stepId: card.stepId, version: card.version,
-    action: 'continue', values: { topic: 'nature' }, submissionId: 'captured-input',
-  } });
-  await assert.rejects(capture.handle({ operation: 'resume', interactionId: null }), /Process the captured/);
-  assert.equal((await repository.read(owner, state.id)).pending.submissionId, 'captured-input');
-});
-
 test('submitted values persist before processing, steps complete once, and plain/tool response messages are readable', async () => {
   setup();
-  let state = await present(await repository.create(owner, 'en'));
+  let state = await present(await createCollection());
   const submission = input(state, 'continue', { topic: 'nature' });
   const pending = await repository.capture(owner, submission, { ...binding, turnId: 'answer-turn' });
   assert.equal(pending.stepIndex, 0);
@@ -446,12 +335,9 @@ test('submitted values persist before processing, steps complete once, and plain
   state = await step(state, 'continue', { note: 'An actual human note.' });
   const descriptor = definition.describe(state);
   assert.match(formatInteractionMessage(descriptor, 'continue', { features: ['navigation'] }, 'Continue'), /Navigation/);
-  assert.equal(interpretInteractionText(descriptor, 'Navigation', 'typed-turn').values.features[0], 'navigation');
   state = await step(state, 'continue', { features: ['navigation'] });
   assert.equal(state.stepIndex, 3);
-  state = await step(state, 'continue', { feedback: 'yes' });
-  assert.equal(state.stepIndex, 4);
-  state = await step(state, 'submit');
+  state = await step(state, 'submit', { feedback: 'yes' });
   assert.equal(state.status, 'completed');
   assert.deepEqual(definition.describe(state).allowedActions, []);
   await assert.rejects(repository.capture(owner, input(state, 'back'), { ...binding, turnId: 'later' }), /not available/);
@@ -459,14 +345,12 @@ test('submitted values persist before processing, steps complete once, and plain
 
 test('Back preserves values until an edit invalidates dependent steps; invalid fields do not advance', async () => {
   setup();
-  let state = await present(await repository.create(owner, 'en'));
+  let state = await present(await createCollection());
   await assert.rejects(repository.capture(owner, input(state, 'back'), { ...binding, turnId: 'back' }), /not available/);
   await assert.rejects(repository.capture(owner, input(state, 'continue', { topic: 'invented' }), { ...binding, turnId: 'bad' }), /Invalid value/);
   state = await step(state, 'continue', { topic: 'nature' });
   state = await step(state, 'continue', { note: 'Keep until changed.' });
   state = await step(state, 'continue', { features: [] });
-  state = await step(state, 'continue', { feedback: 'no' });
-  state = await step(state, 'back');
   state = await step(state, 'back');
   state = await step(state, 'back');
   assert.equal(state.values.note.note, 'Keep until changed.');
@@ -478,75 +362,15 @@ test('Back preserves values until an edit invalidates dependent steps; invalid f
   assert.equal(state.status, 'cancelled');
 });
 
-test('Yes and No collect ordinary values and advance to review, including Danish typed input and changed answers', async () => {
-  for (const [language, answer, label] of [['en', 'yes', 'Yes'], ['da', 'no', 'Nej']]) {
-    setup();
-    let state = await present(await repository.create(owner, language));
-    state = await step(state, 'continue', { topic: 'nature' });
-    state = await step(state, 'continue', { note: 'Review this test input.' });
-    state = await step(state, 'continue', { features: ['navigation'] });
-    const descriptor = validateInteractionDescriptor(definition.describe(state));
-    assert.equal(descriptor.stepId, 'feedback');
-    assert.equal(descriptor.fields[0].type, 'yes_no');
-    assert.equal(descriptor.review.items.length, 3);
-    assert.ok(descriptor.review.items.some((item) => item.text.includes('Review this test input.')));
-    const typed = interpretInteractionText(descriptor, label, 'yes-no-input');
-    assert.equal(typed.action, 'continue');
-    assert.deepEqual(typed.values, { feedback: answer });
-    assert.match(formatInteractionMessage(descriptor, typed.action, typed.values, label), new RegExp(label));
-    assert.equal(interpretInteractionText(descriptor, 'maybe', 'unclear-input'), null);
-    await assert.rejects(repository.capture(owner, input(state, 'continue', { feedback: 'maybe' }), {
-      ...binding, turnId: 'invalid-answer',
-    }), /Invalid value/);
-    assert.throws(() => validateInteractionDescriptor({
-      ...descriptor, fields: [{ ...descriptor.fields[0], options: [{ id: 'maybe', label: 'Maybe' }] }],
-    }), /Yes\/No step/);
-    assert.throws(() => validateInteractionDescriptor({
-      ...descriptor, review: { ...descriptor.review, items: [{ id: 'bad', text: null }] },
-    }), /Invalid interaction review/);
-    state = await step(state, typed.action, typed.values);
-    assert.equal(state.status, 'active');
-    assert.equal(definition.describe(state).stepId, 'review');
-    assert.deepEqual(state.values.feedback, { feedback: answer });
-    assert.ok(definition.describe(state).summary.includes(label));
-    state = await step(state, 'back');
-    assert.equal(definition.describe(state).values.feedback, answer);
-    const changed = answer === 'yes' ? 'no' : 'yes';
-    state = await step(state, 'continue', { feedback: changed });
-    assert.deepEqual(state.values.feedback, { feedback: changed });
-    assert.equal(state.status, 'active');
-    state = await step(state, 'submit');
-    assert.equal(state.status, 'completed');
-  }
-});
-
-test('saved version-one tests keep their original four-step review and completion flow', async () => {
-  const documents = setup();
-  const created = await repository.create(owner, 'en');
-  assert.equal(created.workflowVersion, 2);
-  const [key] = documents.keys();
-  documents.set(key, JSON.stringify({
-    ...created, workflowVersion: 1, stepIndex: 2,
-    values: { topic: { topic: 'nature' }, note: { note: 'Existing input.' } },
-  }));
-  let state = await present(await repository.read(owner, created.id));
-  state = await step(state, 'continue', { features: [] });
-  assert.equal(state.workflowVersion, 1);
-  assert.equal(definition.describe(state).stepId, 'review');
-  assert.deepEqual(definition.describe(state).progress, { current: 4, total: 4 });
-  state = await step(state, 'submit');
-  assert.equal((await repository.read(owner, state.id)).status, 'completed');
-  documents.set(key, JSON.stringify({ ...state, workflowVersion: 99 }));
-  await assert.rejects(repository.read(owner, state.id), /Invalid saved interaction/);
-});
-
 test('presentation, ownership, application, versions and pending recovery are enforced independently of history', async () => {
   setup();
-  let state = await repository.create(owner, 'da');
-  assert.match(definition.describe(state).title, /flertrinsinteraktion/);
+  let state = await createCollection('da');
+  assert.equal(definition.describe(state).workflow, 'structured-input');
   await assert.rejects(repository.capture(owner, input(state, 'continue', { topic: 'nature' }), binding), /not presented/);
   state = await present(state);
   const submission = input(state, 'continue', { topic: 'nature' });
+  await assert.rejects(repository.capture(owner, { ...submission, workflow: 'quiz' },
+    { ...binding, turnId: 'wrong-workflow' }), /changed or is not presented/);
   await assert.rejects(repository.capture(owner, submission, binding), /not presented/);
   await assert.rejects(repository.read({ ...owner, userId: 'other' }, state.id), /not found/);
   await assert.rejects(repository.read({ ...owner, app: 'other' }, state.id), /not found/);
@@ -560,34 +384,4 @@ test('presentation, ownership, application, versions and pending recovery are en
   state = await present(recovered, 'resume', 'new-conversation');
   await assert.rejects(repository.capture(owner, input(state, 'continue', { note: 'stale tab' }), { ...binding, turnId: 'later' }), /not presented/);
   await assert.rejects(repository.present(owner, state.id, { ...binding, expectedVersion: state.version - 1 }), /changed/);
-});
-
-test('runtime requires captured human input, preserves pending input on agent failure, and resumes without double advancement', async () => {
-  setup();
-  const runtime = (turnId, extra = {}) => createInteractionTestRuntime({
-    principal: owner, ...binding, turnId, language: 'en', isAllowed: () => true, ...extra,
-  });
-  const start = runtime('start');
-  await start.handle({ operation: 'start', interactionId: null });
-  const card = await start.present();
-  validateInteractionDescriptor(card);
-  const attempt = runtime('answer');
-  await attempt.prepare({ submission: {
-    interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-    action: 'continue', values: { topic: 'technology' }, submissionId: 'human-submission',
-  } });
-  assert.match(attempt.instruction(), /captured a deliberate human submission/);
-  assert.match(attempt.validateAnswer({ knowledgeMode: 'grounded', persistenceAction: 'none' }), /Process or resume/);
-  const recovery = await attempt.recovery();
-  assert.equal(recovery.status, 'pending');
-  assert.deepEqual(recovery.allowedActions, ['resume']);
-  const resume = runtime('resume');
-  await resume.handle({ operation: 'resume', interactionId: card.interactionId });
-  const next = await resume.present();
-  assert.equal(next.stepId, 'note');
-  await assert.rejects(resume.handle({ operation: 'process', interactionId: card.interactionId }), /No human submission/);
-  const again = runtime('again');
-  await again.handle({ operation: 'resume', interactionId: card.interactionId });
-  assert.equal((await again.present()).stepId, 'note');
-  await assert.rejects(runtime('wrong-lane', { isAllowed: () => false }).handle({ operation: 'resume', interactionId: card.interactionId }), /Switch to quiz/);
 });

@@ -1,5 +1,5 @@
 const ID = /^[a-z0-9][a-z0-9-]{0,99}$/i;
-const ACTIONS = new Set(['back', 'continue', 'submit', 'cancel', 'resume']);
+const ACTIONS = new Set(['back', 'continue', 'submit', 'cancel', 'resume', 'reveal']);
 
 export function interactionError(message, status = 400) {
   return Object.assign(new Error(message), { status });
@@ -17,7 +17,7 @@ export function validateInteractionContext(value) {
   }
   assertInteractionId(value.interactionId);
   assertInteractionId(value.stepId);
-  if (value.workflow !== undefined && !['interaction-test', 'structured-input'].includes(value.workflow)) {
+  if (!['structured-input', 'quiz'].includes(value.workflow)) {
     throw interactionError('Unknown interaction workflow.');
   }
   if (!Number.isSafeInteger(value.version) || value.version < 0) throw interactionError('Invalid interaction version.');
@@ -30,7 +30,8 @@ export function validateInteractionSubmission(value) {
   });
   if (!value || Object.keys(value).some((key) =>
     !['interactionId', 'stepId', 'version', 'workflow', 'submissionId', 'action', 'values'].includes(key)) ||
-      !ACTIONS.has(value.action) || !value.values || typeof value.values !== 'object' || Array.isArray(value.values)) {
+      !ACTIONS.has(value.action) || value.action === 'reveal' && value.workflow !== 'quiz' ||
+      !value.values || typeof value.values !== 'object' || Array.isArray(value.values)) {
     throw interactionError('Invalid interaction submission.');
   }
   assertInteractionId(value.submissionId);
@@ -47,10 +48,12 @@ export function validateInteractionDescriptor(value) {
       !Array.isArray(value.fields) || !Array.isArray(value.allowedActions) ||
       new Set(value.allowedActions).size !== value.allowedActions.length ||
       (['completed', 'cancelled'].includes(value.status) && value.allowedActions.length > 0) ||
-      value.allowedActions.some((action) => !ACTIONS.has(action))) {
+      value.allowedActions.some((action) => !ACTIONS.has(action) || action === 'reveal' && value.workflow !== 'quiz')) {
     throw interactionError('Invalid interaction descriptor.');
   }
-  validateInteractionContext({ interactionId: value.interactionId, stepId: value.stepId, version: value.version });
+  validateInteractionContext({
+    interactionId: value.interactionId, stepId: value.stepId, version: value.version, workflow: value.workflow,
+  });
   if (new Set(value.fields.map((field) => field.id)).size !== value.fields.length) {
     throw interactionError('Duplicate interaction fields.');
   }
@@ -99,36 +102,6 @@ export function validateInteractionValues(fields, values) {
     result[field.id] = value;
   }
   return result;
-}
-
-export function interpretInteractionText(descriptor, text, submissionId) {
-  const command = text.trim().toLocaleLowerCase();
-  const commands = {
-    back: 'back', tilbage: 'back', continue: 'continue', 'fortsæt': 'continue',
-    submit: 'submit', complete: 'submit', afslut: 'submit', indsend: 'submit', cancel: 'cancel',
-    annuller: 'cancel', resume: 'resume', genoptag: 'resume',
-  };
-  let action = commands[command];
-  let values = {};
-  if (!action && descriptor.status === 'active' && descriptor.fields.length === 1) {
-    const field = descriptor.fields[0];
-    if (field.type === 'text') {
-      values = { [field.id]: text };
-    } else {
-      const parts = field.type === 'multiple_choice' ? text.split(',').map((part) => part.trim()) : [text.trim()];
-      const selected = parts.map((part) => field.options.find((option) =>
-        [option.id, option.label].some((candidate) => candidate.toLocaleLowerCase() === part.toLocaleLowerCase()))?.id);
-      if (selected.some((id) => !id)) return null;
-      values = { [field.id]: field.type === 'multiple_choice' ? selected : selected[0] };
-    }
-    action = 'continue';
-  }
-  if (!action) return null;
-  if (action === 'continue' && !Object.keys(values).length) values = descriptor.values;
-  return {
-    interactionId: descriptor.interactionId, stepId: descriptor.stepId, version: descriptor.version,
-    action, values: ['continue', 'submit'].includes(action) ? values : {}, submissionId,
-  };
 }
 
 export function formatInteractionMessage(descriptor, action, values, actionLabel) {

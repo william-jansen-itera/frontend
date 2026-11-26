@@ -101,7 +101,8 @@ export async function POST(request) {
     const payload = await request.json();
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'request json parsed') : routeDebug;
     const previewUploadId = String(payload?.previewUploadId ?? '').trim() || null;
-    const message = String(payload?.message ?? '').trim();
+    const rawMessage = String(payload?.message ?? '');
+    const message = payload?.interactionContext?.workflow === 'quiz' ? rawMessage : rawMessage.trim();
     const resolvedFamily = await resolveAgentFamilySelection(payload?.family);
     routeDebug = includeDebug ? appendRouteDebugStep(routeDebug, 'agent family resolved', {
       requestedFamily: String(payload?.family ?? '').trim() || null,
@@ -124,7 +125,7 @@ export async function POST(request) {
       }),
     );
 
-    if (!message) {
+    if (!message.trim()) {
       return createChatJsonResponse(
         { error: 'A non-empty message is required.' },
         { status: 400, requestId, includeDebug },

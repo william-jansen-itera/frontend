@@ -31,8 +31,9 @@ import { createProcessUploadHandler, processUploadToolDefinition } from '@/serve
 import { KNOWLEDGE_TREES_FAMILY } from '@/server/utils/agentOrchestration/agents/knowledgeTrees/tools/persistenceToolShared';
 import { buildTreeAgentInstructions as buildAgentInstructions } from './instructions/index.js';
 import { switchTreeLaneToolDefinition } from './tools/switchTreeLaneTool/index.js';
-import { testInteractionToolDefinition } from './lanes/quiz/tools/testInteractionTool/toolDefinition.js';
 import { collectStructuredInputToolDefinition } from './tools/collectStructuredInputTool/toolDefinition.js';
+import { quizToolDefinition } from './lanes/quiz/tools/quizTool/toolDefinition.js';
+import { isTreeLaneToolAllowed, RETRIEVAL_LANE } from './treeLaneState.js';
 
 export { KNOWLEDGE_TREES_FAMILY };
 
@@ -100,18 +101,18 @@ function applyStoredToolDescriptions(treeList) {
 
 
 
-export function buildAllowedToolInstruction(includedTrees) {
-  const allowedToolNames = includedTrees
-    .map((tree) => buildToolName(tree))
-    .filter(Boolean);
-
-  if (allowedToolNames.length === 0) {
-    return null;
-  }
+export function buildAllowedToolInstruction(includedTrees, { activeLane = RETRIEVAL_LANE, enabledToolNames = null } = {}) {
+  const candidates = enabledToolNames ?? [
+    ...includedTrees.map((tree) => buildToolName(tree)),
+    ...buildPersistenceToolDefinitions().map((tool) => tool.name), processUploadToolDefinition.name,
+  ];
+  const allowedToolNames = candidates.filter((name) => isTreeLaneToolAllowed(activeLane, name));
 
   return [
-    'Authorized tree search catalog (callable only while knowledge.retrieval is active; switch there first from other lanes):',
+    `Callable tools in the current ${activeLane} lane (all other lane tools are unavailable until a successful switch):`,
     allowedToolNames.map((toolName) => `- ${toolName}`).join('\n'),
+    'Authorized tree identifiers for destination/source selection (metadata, not permission to execute search tools outside retrieval):',
+    includedTrees.length ? includedTrees.map((tree) => `- treeId=${tree.id}: ${tree.displayName ?? tree.name}`).join('\n') : 'No eligible searchable trees.',
   ].join('\n');
 }
 
@@ -160,7 +161,7 @@ export function buildVisibilityScopeInstruction(options = {}) {
 }
 
 function buildPersistenceToolDefinitions() {
-  return [previewAddToTreeToolDefinition, reviseTreePreviewToolDefinition, confirmAddToTreeToolDefinition, switchTreeLaneToolDefinition, collectStructuredInputToolDefinition, testInteractionToolDefinition];
+  return [previewAddToTreeToolDefinition, reviseTreePreviewToolDefinition, confirmAddToTreeToolDefinition, switchTreeLaneToolDefinition, collectStructuredInputToolDefinition, quizToolDefinition];
 }
 
 function buildPersistenceToolPreview() {
@@ -168,8 +169,9 @@ function buildPersistenceToolPreview() {
     name: tool.name,
     description: tool.description,
     sourceType: 'static',
-    sourceLabel: [testInteractionToolDefinition.name, collectStructuredInputToolDefinition.name].includes(tool.name)
-      ? 'Built-in interaction tool' : 'Built-in persistence tool',
+    sourceLabel: tool.name === quizToolDefinition.name ? 'Built-in quiz tool'
+      : tool.name === collectStructuredInputToolDefinition.name
+        ? 'Built-in interaction tool' : 'Built-in persistence tool',
     includedInToolSet: true,
     includedInPromptAgent: true,
     treeId: null,
@@ -258,13 +260,13 @@ export async function buildRuntimeTreeToolContext(options = {}) {
     previewUploadId: options.previewUploadId ?? null,
     pendingUploadId: options.pendingUploadId ?? null,
   });
-  handlerMap.set(testInteractionToolDefinition.name, (args) => {
-    if (!options.interactionRuntime) throw new Error('A trusted interaction runtime is required.');
-    return options.interactionRuntime.handle(args);
-  });
   handlerMap.set(collectStructuredInputToolDefinition.name, (args) => {
     if (!options.interactionRuntime) throw new Error('A trusted interaction runtime is required.');
     return options.interactionRuntime.collect(args);
+  });
+  handlerMap.set(quizToolDefinition.name, (args) => {
+    if (!options.interactionRuntime) throw new Error('A trusted interaction runtime is required.');
+    return options.interactionRuntime.quiz(args);
   });
 
   return {
@@ -277,8 +279,8 @@ export async function buildRuntimeTreeToolContext(options = {}) {
       [confirmAddToTreeToolDefinition.name, { requiresUserApproval: false }],
       [processUploadToolDefinition.name, { requiresUserApproval: false }],
       [switchTreeLaneToolDefinition.name, { requiresUserApproval: false }],
-      [testInteractionToolDefinition.name, { requiresUserApproval: false }],
       [collectStructuredInputToolDefinition.name, { requiresUserApproval: false }],
+      [quizToolDefinition.name, { requiresUserApproval: false }],
     ]),
   };
 }

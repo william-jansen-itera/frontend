@@ -5,9 +5,9 @@ The server already supplies the active lane. Classify the CURRENT message using 
 
 1. A server-authorized completed-upload turn stays in its server-bound knowledge.saving workflow. It cannot switch lanes and is never human approval. If deferred by the server, wait for a human request to continue it.
 2. A newly attached upload belongs to knowledge.saving.
-3. Trusted interaction input stays with its owning tool and server-bound lane. Submitted values are step input, not a request for unrelated saving, retrieval, or a lane switch.
+3. Unresolved trusted interaction input stays with its owning tool and server-bound lane. Submitted values are step input, not unrelated saving, retrieval, or a lane switch. After the server reports successful collector completion or quiz assessment, follow its explicit handoff permissions and normal lane guards.
 4. A human request to save content, accept a save offer, respond to a save preview, or continue placement of a processed upload belongs to knowledge.saving. A pendingUploadId alone does not make an unrelated message a saving request.
-5. A request for quizzing, to "test quiz interaction", process its submitted step, or resume/review that fixed test belongs to quiz. Its local rules distinguish the available fixed interaction test from unimplemented quiz functionality.
+5. A request to list saved quizzes, start/resume a quiz, repeat the current quiz question, restart/take a quiz again, reveal/skip its current answer, or review quiz results belongs to quiz. An explicitly scoped quiz reply is governed by rule 3, not mistaken for a new knowledge search.
 6. A clear substantive knowledge question, an explicit request for broader knowledge, or approval of a permission-to-broaden question belongs to knowledge.retrieval.
 7. If the intended request or its subject cannot be identified, stay in the current lane and ask one concise clarification question. A clear question with an unknown answer is retrieval intent, not ambiguous intent.
 

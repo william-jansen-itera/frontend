@@ -82,6 +82,88 @@ function clientWithResponses(responses) {
 const deleteCall = { type: 'function_call', name: 'delete_email', call_id: 'delete-1', arguments: '{"uids":["1"]}' };
 const responseConfig = { type: 'direct_model', model: 'mock', instructions: 'mock', tools: [] };
 
+function lookupRounds(count) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `round-${index + 1}`, status: 'completed',
+    output: [{ type: 'function_call', name: 'lookup', call_id: `lookup-${index + 1}`, arguments: JSON.stringify({ index }) }],
+  }));
+}
+
+test('the fifth tool synthesis is returned and can still receive final-format corrections', async () => {
+  for (const corrections of [0, 2]) {
+    const client = clientWithResponses([
+      ...lookupRounds(5),
+      ...Array.from({ length: corrections + 1 }, (_, index) => ({
+        id: `answer-${index}`, output: [], output_text: index === corrections ? 'Final answer' : 'Invalid format',
+      })),
+    ]);
+    let executed = 0;
+    const result = await runAgentFamilyExecution({
+      openAIClient: client, responseConfig, initialInput: [],
+      handlerMap: new Map([['lookup', async ({ index }) => {
+        executed++;
+        if (index === 2) throw new Error('Rejected generated question');
+        return { count: 1 };
+      }]]),
+      toolPolicies: new Map([['lookup', { requiresUserApproval: false }]]),
+      finalResponseValidator: async ({ response }) => response.output_text === 'Final answer' ? null : 'Correct the format.',
+    });
+    assert.equal(result.response.output_text, 'Final answer');
+    assert.equal(executed, 5);
+    assert.equal(result.toolInvocations.length, 5);
+    assert.match(result.toolInvocations[2].output.error, /Rejected generated question/);
+    assert.equal(client.requests.length, 6 + corrections);
+    assert.ok(client.requests.slice(5).every((request) => request.tool_choice === 'none'));
+  }
+});
+
+test('final-format corrections before tool execution do not consume the five tool rounds', async () => {
+  const client = clientWithResponses([
+    { id: 'invalid-1', output: [] }, { id: 'invalid-2', output: [] },
+    ...lookupRounds(5), { id: 'done', output: [], output_text: 'Done' },
+  ]);
+  let executed = 0;
+  const result = await runAgentFamilyExecution({
+    openAIClient: client, responseConfig, initialInput: [],
+    handlerMap: new Map([['lookup', async () => { executed++; return {}; }]]),
+    toolPolicies: new Map([['lookup', { requiresUserApproval: false }]]),
+    finalResponseValidator: async ({ response }) => response.id.startsWith('invalid') ? 'Correct the format.' : null,
+  });
+  assert.equal(executed, 5);
+  assert.equal(result.response.id, 'done');
+  assert.equal(client.requests.at(-1).tool_choice, 'none');
+});
+
+test('a sixth tool round is rejected without invoking its handler', async () => {
+  const client = clientWithResponses(lookupRounds(6));
+  let executed = 0;
+  const debug = { stepsComplete: [], timings: { modelCalls: [] } };
+  await assert.rejects(runAgentFamilyExecution({
+    openAIClient: client, responseConfig, initialInput: [],
+    handlerMap: new Map([['lookup', async () => { executed++; return {}; }]]),
+    toolPolicies: new Map([['lookup', { requiresUserApproval: false }]]),
+    debug,
+  }), /exceeded the maximum number of tool rounds/);
+  assert.equal(executed, 5);
+  assert.equal(client.requests.length, 6);
+  assert.equal(client.requests.at(-1).tool_choice, 'none');
+  assert.equal(debug.stepsComplete.at(-1).completedToolRounds, 5);
+});
+
+test('approval resumed in the fifth tool round can return its final response without replaying the handler', async () => {
+  const client = clientWithResponses([{ id: 'done', output: [], output_text: 'Approved action completed.' }]);
+  const result = await runAgentFamilyExecution({
+    openAIClient: client, responseConfig, initialInput: [],
+    handlerMap: new Map([['delete_email', async () => { throw new Error('Approved action must not replay'); }]]),
+    toolPolicies: new Map([['delete_email', { requiresUserApproval: true }]]),
+    resumeState: { round: 4, responseId: 'approval-response', functionCalls: [deleteCall], outputs: [], nextIndex: 0 },
+    approvedCall: { round: 4, index: 0, callId: deleteCall.call_id, output: { deleted: true } },
+  });
+  assert.equal(result.response.id, 'done');
+  assert.equal(result.toolInvocations.length, 1);
+  assert.equal(client.requests[0].tool_choice, 'none');
+});
+
 test('final response validation retries reach the agent, but exhaustion hides internal instructions from the user', async () => {
   const client = clientWithResponses([
     { id: 'response-1', output: [] },

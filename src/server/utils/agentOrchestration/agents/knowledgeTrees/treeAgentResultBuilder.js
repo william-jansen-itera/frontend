@@ -16,6 +16,7 @@ import { KNOWLEDGE_TREES_FAMILY } from '@/server/utils/agentOrchestration/agents
 import { getTreeList } from '@/server/utils/tree/treeCatalog';
 
 function buildCitationEntries(result, toolName) {
+  if (toolName === 'quiz') return [];
   const normalizedResult = getAgentToolResultData(result);
 
   return (normalizedResult?.results ?? []).map((entry) => ({
@@ -49,6 +50,22 @@ function dedupeCitations(citations) {
 function parseToolTreeId(toolName) {
   const match = String(toolName ?? '').trim().match(/_(\d+)$/);
   return match ? match[1] : '';
+}
+
+function summarizeQuizArguments(rawArguments) {
+  let args = rawArguments;
+  if (typeof args === 'string') {
+    try {
+      args = JSON.parse(args);
+    } catch {
+      return { argumentParseError: 'Quiz tool arguments contain invalid JSON.' };
+    }
+  }
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return { argumentParseError: 'Quiz tool arguments must be a JSON object.' };
+  }
+  return Object.fromEntries(Object.entries(args).filter(([key]) =>
+    ['operation', 'quizId', 'setupId', 'treeId', 'rootIds', 'questionId', 'version', 'questionCount', 'language', 'offset'].includes(key)));
 }
 
 async function enrichToolInvocationsWithTreeAccess(toolInvocations, principal) {
@@ -103,7 +120,10 @@ export async function buildKnowledgeTreesFamilyResult({
     debug?.timings?.phases?.responseShaping ?? null,
     async () => readAgentTurnState({
       finalResponse,
-      finalToolInvocations,
+      finalToolInvocations: finalToolInvocations.map((invocation) => invocation.toolName !== 'quiz' ? invocation : {
+        ...invocation,
+        arguments: summarizeQuizArguments(invocation.arguments),
+      }),
       answerStateOptions: {
         allowBroadMode: true,
         allowPersistence: true,

@@ -61,7 +61,7 @@ test('server-processed card results do not require agent metadata for logging or
 test('interaction metadata follows the human chat path and cannot masquerade as an upload completion', async () => {
   globalThis.__chatRouteCalls = [];
   const submission = {
-    interactionId: 'interaction-1', stepId: 'topic', version: 2,
+    interactionId: 'interaction-1', stepId: 'topic', version: 2, workflow: 'structured-input',
     submissionId: 'submission-1', action: 'continue', values: { topic: 'nature' },
   };
   const request = (extra = {}) => new Request('http://localhost/api/chat', {
@@ -78,6 +78,8 @@ test('interaction metadata follows the human chat path and cannot masquerade as 
     { interactionSubmission: { ...submission, version: -1 } },
     { interactionSubmission: { ...submission, action: 'arbitrary_tool' } },
     { interactionSubmission: { ...submission, workflow: 'unknown-workflow' } },
+    { interactionSubmission: { ...submission, workflow: 'interaction-test' } },
+    { interactionSubmission: { ...submission, workflow: undefined } },
   ]) assert.equal((await POST(request(extra))).status, 400);
   assert.equal(globalThis.__chatRouteCalls.length, 1);
   const context = { interactionId: 'collector-1', stepId: 'note', version: 2, workflow: 'structured-input' };
@@ -85,6 +87,21 @@ test('interaction metadata follows the human chat path and cannot masquerade as 
     message: 'This is my note.', interactionSubmission: null, interactionContext: context,
   }))).status, 200);
   assert.deepEqual(globalThis.__chatRouteCalls[1].interactionContext, context);
+});
+
+test('scoped quiz textarea replies retain raw whitespace while ordinary messages keep normal trimming', async () => {
+  globalThis.__chatRouteCalls = [];
+  const message = '  Complete answer.\n  ';
+  const context = { interactionId: 'quiz-1', stepId: 'question-1', version: 2, workflow: 'quiz' };
+  const request = (extra = {}) => new Request('http://localhost/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, family: 'knowledgeTrees', ...laneIdentity, ...extra }),
+  });
+  assert.equal((await POST(request({ interactionContext: context }))).status, 200);
+  assert.equal(globalThis.__chatRouteCalls[0].message, message);
+  assert.equal((await POST(request())).status, 200);
+  assert.equal(globalThis.__chatRouteCalls[1].message, message.trim());
+  assert.equal((await POST(request({ interactionContext: context, message: ' \n ' }))).status, 400);
 });
 
 test('chat forwards context identity but never accepts a client lane as authoritative', async () => {

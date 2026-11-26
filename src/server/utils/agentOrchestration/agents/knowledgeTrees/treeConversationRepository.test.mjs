@@ -111,6 +111,18 @@ test('running turns, changed retries, and stale versions cannot execute another 
   await assert.rejects(beginTreeTurn(request({ turnId: 'turn-b', expectedVersion: 0 })), /state changed/);
 });
 
+test('saved conversations missing current quiz bindings are rejected rather than upgraded', async () => {
+  setup();
+  await beginTreeTurn(request());
+  const [key, notes] = [...documents.entries()][0];
+  const state = JSON.parse(notes);
+  delete state.quizId;
+  delete state.quizSetupId;
+  documents.set(key, JSON.stringify(state));
+  await assert.rejects(beginTreeTurn(request({ turnId: 'turn-b', expectedVersion: state.version })), /valid quizId/);
+  assert.equal(documents.get(key), JSON.stringify(state));
+});
+
 test('quiz lane persists across turns without reusing saving workflow stages', async () => {
   setup();
   const options = request();

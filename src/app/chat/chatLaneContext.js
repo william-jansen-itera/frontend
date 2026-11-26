@@ -19,13 +19,15 @@ export function acceptLaneContext(current, payload) {
 
 export function isInteractionAvailable(interaction, family, activeLane) {
   return Boolean(interaction) && family === 'knowledgeTrees' &&
-    (interaction?.workflow === 'structured-input' || activeLane === 'quiz');
+    (interaction.workflow === 'structured-input' || interaction.workflow === 'quiz' && activeLane === 'quiz');
 }
 
 export function getInteractionReplyTarget(interaction, family, activeLane, normalChat) {
-  return !normalChat && interaction?.workflow === 'structured-input' &&
+  return !normalChat && ['structured-input', 'quiz'].includes(interaction?.workflow) &&
     isInteractionAvailable(interaction, family, activeLane) &&
-    interaction.status === 'active' && interaction.allowedActions?.includes('cancel')
+    interaction.status === 'active' && interaction.allowedActions?.includes(
+      interaction.workflow === 'quiz' ? 'submit' : 'cancel',
+    )
     ? interaction : null;
 }
 

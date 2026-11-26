@@ -5,6 +5,34 @@ import test from 'node:test';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier.endsWith('/quizModel.js')) {
+      return {
+        url: `data:text/javascript,${encodeURIComponent(`
+          export const generateQuizBank = async (input) => {
+            globalThis.__laneQuizPlanningCalls++;
+            const language = input.language ?? globalThis.__laneQuizLanguage;
+            await input.onLanguageSelected(language);
+            if (language === 'und') return {
+              requiresLanguageChoice: true, languageReason: 'No dominant source language.', supportedLanguages: ['en', 'da'],
+            };
+            return { ...await globalThis.__laneQuizGenerate({ ...input, language }), language };
+          };
+          export const gradeQuizFreeAnswer = (input) => globalThis.__laneQuizGrade(input);
+        `)}`,
+        shortCircuit: true,
+      };
+    }
+    if (specifier.endsWith('/quizSources.js')) {
+      return {
+        url: `data:text/javascript,${encodeURIComponent(`
+          export const listQuizTrees = (options) => globalThis.__laneQuizSources('trees', options);
+          export const listQuizRoots = (options) => globalThis.__laneQuizSources('roots', options);
+          export const prepareQuizSources = (options) => globalThis.__laneQuizSources('prepare', options);
+          export const assertQuizSourceAccess = (options) => globalThis.__laneQuizSources('access', options);
+        `)}`,
+        shortCircuit: true,
+      };
+    }
     if (specifier.endsWith('/interactionLookupRepository.js')) {
       return {
         url: `data:text/javascript,${encodeURIComponent('export const findLatestActiveInteractionId = (options) => globalThis.__laneLookup(options);')}`,
@@ -32,7 +60,11 @@ registerHooks({
         export const findPersonalCacheLeafPathNode = () => globalThis.__laneFind();
         export const mutatePersonalCacheNotes = (options) => globalThis.__laneMutate(options);
         export const readPersonalCacheNotes = (options) => globalThis.__laneRead(options);`,
-      treeCatalog: 'export const getTreeList = async () => [{ id: 1, currentUserCanWrite: true }]; export const assertTreeAccess = async () => { throw new Error("Unexpected access check in a tool-result builder"); };',
+      treeCatalog: 'export const getTreeList = async () => [{ id: 1, currentUserCanWrite: true }]; export const assertTreeAccess = async () => { throw new Error("Unexpected access check in a tool-result builder"); }; export const getAuditMetadata = () => ({ updatedByObjectId: "owner" });',
+      sql: `export const getRequiredApplicationIdentifier = () => 'app'; export const withSqlConnection = async (action) => action();
+        export const sql = { Int: 'int', NVarChar: () => 'nvarchar', Request: class {
+          input() { return this; } async query() { return { recordset: globalThis.__laneQuizRows ?? [] }; }
+        } };`,
       treeAgentCatalog: `
         export const KNOWLEDGE_TREES_FAMILY = 'knowledgeTrees';
         export const getPublishedKnowledgeTreesPromptAgent = async () => { globalThis.__laneFoundry.push('agent'); return { id: 'agent', name: 'agent', version: '1' }; };
@@ -53,8 +85,10 @@ registerHooks({
   },
 });
 const { invokeKnowledgeTreesAgent } = await import('./treeAgentService.js');
+const { buildKnowledgeTreesFamilyResult } = await import('./treeAgentResultBuilder.js');
 const { buildPersistenceToolHandlerResult } = await import('./tools/persistenceToolShared.js');
 const { buildCollectionTestSpecification } = await import('./tools/collectStructuredInputTool/sampleSpecification.js');
+const { quizToolDefinition } = await import('./lanes/quiz/tools/quizTool/toolDefinition.js');
 const previewId = 'c125d350-4cae-4ad4-a69c-419324125e00';
 const uploadId = '60b8daca-abcd-4321-8000-000000000001';
 const path = 'Topics > Fish';
@@ -67,6 +101,8 @@ let modelRequests;
 let turnSequence;
 let responses;
 let expiredPaths;
+let quizSourceChanged;
+let quizAccessAllowed;
 
 function final(answer, extra = {}) {
   return {
@@ -86,7 +122,71 @@ function tools(...output) {
   return { id: `tools-${Math.random()}`, output };
 }
 function quizSwitch() {
-  return tool('switch_tree_lane', { activeLane: 'quiz', reason: 'The human requested the interaction test or its resume.' });
+  return tool('switch_tree_lane', { activeLane: 'quiz', reason: 'The human requested a quiz or its resume.' });
+}
+function quizArgs(operation, values = {}) {
+  return { ...Object.fromEntries(Object.keys(quizToolDefinition.parameters.properties).map((key) => [key, null])), operation, ...values };
+}
+async function savedQuiz(id = null) {
+  if (!id) {
+    const conversation = JSON.parse(await globalThis.__laneRead({
+      pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+    }));
+    id = conversation.quizId;
+  }
+  return JSON.parse(await globalThis.__laneRead({ pathSegments: ['Knowledge Trees', 'Quizzes', 'By Quiz ID', id] }));
+}
+const quizBank = [
+  { leafId: '11', question: 'Where do fish live?', referenceAnswer: 'Fish live in water.', gradingCriteria: 'Mentions water.' },
+  { leafId: '12', question: 'What covers birds?', referenceAnswer: 'Birds have feathers.', gradingCriteria: 'Mentions feathers.' },
+].map((question) => ({
+  ...question, type: 'text', options: [], correctOptionIds: [], optionExplanations: [], learningObjective: question.question,
+}));
+async function createRealQuiz(questionCount = null) {
+  const { result } = await submit('Quiz me about Animals.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', {
+        quizId: state.id, version: state.version, questionCount,
+      })));
+    },
+    final('Answer the first question.'),
+  ]);
+  return result;
+}
+
+function quizSubmission(card, action, values = {}) {
+  return { interactionSubmission: {
+    interactionId: card.interactionId, stepId: card.stepId, version: card.version,
+    workflow: 'quiz', submissionId: `quiz-input-${turnSequence + 1}`, action, values,
+  } };
+}
+
+function currentQuizOperation(operation, extra = {}) {
+  return async () => {
+    const state = await savedQuiz();
+    return tools(tool('quiz', quizArgs(operation, {
+      quizId: state.id, version: state.version,
+      questionId: state.questions.find((item) => !item.resolution).id, ...extra,
+    })));
+  };
+}
+
+function assessQuizAnswer(verdict, response = null) {
+  return [
+    async () => {
+      const state = await savedQuiz();
+      globalThis.__laneQuizGrade = async () => ({
+        verdict, feedback: verdict === 'correct' ? 'Correct.' : 'That is not correct.',
+      });
+      return tools(tool('quiz', quizArgs('answer', {
+        quizId: state.id, version: state.version, questionId: state.questions.find((item) => !item.resolution).id,
+        response,
+      })));
+    },
+    final('Feedback and the next saved question, or final results.'),
+  ];
 }
 function setup() {
   const documents = new Map();
@@ -96,7 +196,7 @@ function setup() {
     const match = [...documents.entries()].reverse().find(([path, notes]) => {
       const state = JSON.parse(notes);
       return path.includes('"Interactions"') && !expiredPaths.has(path) &&
-        state.workflow === 'interaction-test' && state.status === 'active';
+        state.workflow === 'structured-input' && state.status === 'active';
     });
     return match ? JSON.parse(match[1]).id : null;
   };
@@ -117,6 +217,42 @@ function setup() {
   calls = { preview: 0, save: 0, search: 0, process: 0 };
   modelRequests = [];
   globalThis.__laneFoundry = [];
+  globalThis.__laneQuizRows = [];
+  globalThis.__laneQuizLanguage = 'en';
+  globalThis.__laneQuizPlanningCalls = 0;
+  globalThis.__laneQuizGenerate = async ({ source }) => ({
+    title: 'Animals quiz', questions: structuredClone(quizBank),
+    assessments: source.leaves.map((leaf) => ({
+      leafId: leaf.id, supportedTypes: ['text'], questionCount: 1, reason: 'One supported fact.',
+    })),
+  });
+  globalThis.__laneQuizGrade = async () => ({ verdict: 'correct', feedback: 'Correct.' });
+  quizSourceChanged = false;
+  quizAccessAllowed = true;
+  globalThis.__laneQuizSources = async (operation, options) => {
+    assert.ok(options.includedTrees.some((tree) => String(tree.id) === '1'));
+    if (!quizAccessAllowed || options.treeId && String(options.treeId) !== '1') {
+      throw Object.assign(new Error('Quiz source access denied'), { status: 403 });
+    }
+    if (operation === 'access') return '1';
+    if (operation === 'trees') return {
+      trees: [{ id: '1', optionId: 'tree-1', label: 'Animals', updatedAt: null }],
+      total: 1, limitedToRecent: false,
+    };
+    if (operation === 'roots') return {
+      treeId: '1', roots: [{ id: '10', optionId: 'root-10', label: 'Animals' }],
+      total: 1, matching: 1, requiresNarrowing: false,
+    };
+    assert.deepEqual(options.rootIds, ['10']);
+    return {
+      treeId: '1', rootIds: ['10'], fingerprint: (quizSourceChanged ? 'b' : 'a').repeat(64),
+      leaves: [
+        { id: '11', rootId: '10', title: 'Fish', path: 'Animals > Fish', notes: 'Fish live in water.', revision: null },
+        { id: '12', rootId: '10', title: 'Birds', path: 'Animals > Birds', notes: 'Birds have feathers.', revision: null },
+      ],
+      excludedLeaves: [],
+    };
+  };
   turnSequence = 0;
   globalThis.__laneMutate = async (options) => {
     assertNotExpired(options);
@@ -135,11 +271,11 @@ function setup() {
   };
   globalThis.__laneTools = ({ interactionRuntime }) => ({
     includedTrees: [{ id: 1, isPrivate: true }],
-    toolPolicies: new Map(['search_tree_topics_1', 'preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree', 'process_upload', 'test_multistep_interaction', 'collect_structured_input']
+    toolPolicies: new Map(['search_tree_topics_1', 'preview_save_to_tree', 'revise_save_preview', 'confirm_save_to_tree', 'process_upload', 'collect_structured_input', 'quiz']
       .map((name) => [name, { requiresUserApproval: false }])),
     handlerMap: new Map([
-      ['test_multistep_interaction', (args) => interactionRuntime.handle(args)],
       ['collect_structured_input', (args) => interactionRuntime.collect(args)],
+      ['quiz', (args) => interactionRuntime.quiz(args)],
       ['search_tree_topics_1', async () => {
         calls.search++;
         return { count: 1, results: [{ treeId: 1, nodeId: 2, title: 'Fish' }] };
@@ -182,6 +318,933 @@ async function submit(message, nextResponses, extra = {}) {
   assert.equal(responses.length, 0);
   return { request, result };
 }
+
+test('quiz invocation summaries parse JSON arguments and retain safe metadata without human answers', async () => {
+  for (const serialize of [JSON.stringify, (value) => value]) {
+    const args = quizArgs('answer', {
+      quizId: 'quiz-id', setupId: 'setup-id', treeId: '1', rootIds: ['10'],
+      questionId: 'question-1', version: 3, questionCount: 25, offset: 0,
+      response: { action: 'submit', fields: [{ id: 'answer', value: 'PRIVATE_HUMAN_ANSWER', selections: null }] },
+      revealRequest: 'PRIVATE_REVEAL_MESSAGE',
+      restartRequest: 'PRIVATE_RESTART_MESSAGE',
+    });
+    const { familyResult } = await buildKnowledgeTreesFamilyResult({
+      finalResponse: final('Reporting the quiz tool result.'),
+      finalToolInvocations: [{ toolName: 'quiz', arguments: serialize(args), output: { count: 1 } }],
+    });
+    const summary = familyResult.familyPayload.responseToolInvocations[0];
+    assert.deepEqual(summary.arguments, {
+      operation: 'answer', quizId: 'quiz-id', setupId: 'setup-id', treeId: '1', rootIds: ['10'],
+      version: 3, questionCount: 25, questionId: 'question-1', language: null, offset: 0,
+    });
+    assert.equal(summary.resultCount, 1);
+    assert.doesNotMatch(JSON.stringify(summary), /PRIVATE_|response|revealRequest|restartRequest/);
+  }
+});
+
+test('malformed quiz arguments remain diagnosable without exposing raw input or breaking result shaping', async () => {
+  for (const args of ['{"response":"PRIVATE_ANSWER"', 'null', '[]']) {
+    const { familyResult } = await buildKnowledgeTreesFamilyResult({
+      finalResponse: final('The tool rejected the call.'),
+      finalToolInvocations: [{ toolName: 'quiz', arguments: args, output: { count: 0 } }],
+    });
+    const summary = familyResult.familyPayload.responseToolInvocations[0];
+    assert.match(summary.arguments.argumentParseError, /Quiz tool arguments/);
+    assert.doesNotMatch(JSON.stringify(summary), /PRIVATE_ANSWER/);
+  }
+});
+
+test('a rejected empty source selection still reports the prepare operation and selected root IDs', async () => {
+  setup();
+  const sourceProvider = globalThis.__laneQuizSources;
+  const message = 'Selected roots contain no eligible leaves; select roots containing nonempty ordinary-note leaves.';
+  globalThis.__laneQuizSources = async (operation, options) => {
+    if (operation === 'prepare') throw Object.assign(new Error(message), { status: 400 });
+    return sourceProvider(operation, options);
+  };
+  let generated = false;
+  globalThis.__laneQuizGenerate = async () => { generated = true; throw new Error('Generation must not start'); };
+  const { result } = await submit('Quiz me about this root.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    final('The selected root has no eligible notes. Nothing was generated.'),
+  ]);
+  const invocation = result.familyPayload.responseToolInvocations.find((call) => call.toolName === 'quiz');
+  assert.equal(invocation.arguments.operation, 'prepare');
+  assert.equal(invocation.arguments.treeId, '1');
+  assert.deepEqual(invocation.arguments.rootIds, ['10']);
+  assert.equal(generated, false);
+  assert.ok(JSON.stringify(modelRequests.at(-1).request.input).includes(message));
+});
+
+test('real quiz creation, card grading and textarea grading share cards and commit exact server progress', async () => {
+  setup();
+  const started = await createRealQuiz();
+  assert.equal(started.interaction.workflow, 'quiz');
+  assert.equal(started.interaction.stepId, 'question-1');
+  assert.equal(started.interaction.prompt, 'Where do fish live?');
+  assert.equal(started.quiz.total, 2);
+  assert.equal(started.quiz.remaining, 2);
+  assert.deepEqual(started.familyPayload.responseToolInvocations.filter((call) => call.toolName === 'quiz')
+    .map((call) => call.arguments.operation), ['prepare', 'create']);
+  assert.equal(JSON.stringify(started.interaction).includes('referenceAnswer'), false);
+  assert.equal(JSON.stringify(started.toolInvocations).includes('Fish live in water.'), false);
+  assert.equal(JSON.stringify(started.toolInvocations).includes('Mentions water.'), false);
+  const count = modelRequests.length;
+  const { result: second } = await submit('Submit', assessQuizAnswer('correct'),
+    quizSubmission(started.interaction, 'submit', { answer: 'In water.' }));
+  assert.equal(modelRequests.length, count + 2, 'The agent calls answer once; grading is owned by the tool');
+  assert.equal(second.interaction.stepId, 'question-2');
+  assert.equal(second.interaction.prompt, 'What covers birds?');
+  assert.equal(second.quiz.correct, 1);
+  assert.equal(second.quiz.remaining, 1);
+  const card = second.interaction;
+  const { result: completed } = await submit('Fur.', assessQuizAnswer('incorrect', {
+    action: 'submit', fields: [{ id: 'answer', value: 'Fur.', selections: null }],
+  }), { interactionContext: {
+    interactionId: card.interactionId, stepId: card.stepId, version: card.version, workflow: 'quiz',
+  } });
+  assert.equal(completed.interaction.status, 'completed');
+  assert.equal(completed.interaction.prompt, 'What covers birds?');
+  assert.deepEqual(completed.interaction.values, { answer: 'Fur.' });
+  assert.deepEqual(completed.interaction.allowedActions, []);
+  assert.equal(completed.quiz.correct, 1);
+  assert.equal(completed.quiz.incorrect, 1);
+  assert.equal(completed.quiz.skipped, 0);
+  assert.equal(completed.quiz.answered, 2);
+  assert.equal(completed.quiz.remaining, 0);
+  assert.equal(completed.quiz.percentage, 50);
+  assert.equal(completed.quiz.provisional, false);
+  assert.deepEqual(calls, { preview: 0, save: 0, search: 0, process: 0 });
+});
+
+test('new quizzes use the source language rather than chat language and retain it for grading, resume and restart', async () => {
+  for (const [chatLanguage, sourceLanguage] of [['en', 'da'], ['da', 'en']]) {
+    setup();
+    globalThis.__laneQuizLanguage = sourceLanguage;
+    const sources = globalThis.__laneQuizSources;
+    globalThis.__laneQuizSources = async (...args) => {
+      const snapshot = await sources(...args);
+      if (snapshot.leaves && sourceLanguage === 'da') {
+        snapshot.leaves[0].notes = 'Fisk lever i vand.';
+        snapshot.leaves[1].notes = 'Fugle har fjer.';
+      }
+      return snapshot;
+    };
+    const generate = globalThis.__laneQuizGenerate;
+    let generations = 0;
+    globalThis.__laneQuizGenerate = async (input) => {
+      generations++;
+      assert.equal(input.language, sourceLanguage);
+      const bank = await generate(input);
+      if (sourceLanguage === 'da') {
+        bank.questions[0].question = 'Hvor lever fisk?';
+        bank.questions[0].referenceAnswer = 'Fisk lever i vand.';
+        bank.questions[0].gradingCriteria = 'Svaret skal omfatte vand.';
+      }
+      return bank;
+    };
+    const { result: started } = await submit(chatLanguage === 'da' ? 'Start en quiz om dyr.' : 'Quiz me about Animals.', [
+      tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+      async () => {
+        const state = await savedQuiz();
+        assert.equal(state.language, null, 'Preparation must not adopt the chat language');
+        return tools(tool('quiz', quizArgs('create', { quizId: state.id, version: state.version })));
+      },
+      final(chatLanguage === 'da' ? 'Svar i kortet.' : 'Answer in the card.', {
+        responseLanguage: chatLanguage, languageReason: 'The current human message determines reply language.',
+      }),
+    ], { language: chatLanguage });
+    assert.equal((await savedQuiz()).language, sourceLanguage);
+    assert.equal(started.interaction.prompt, sourceLanguage === 'da' ? 'Hvor lever fisk?' : 'Where do fish live?');
+    let grades = 0;
+    globalThis.__laneQuizGrade = async (input) => {
+      grades++;
+      assert.equal(input.language, sourceLanguage);
+      return { verdict: 'correct', feedback: sourceLanguage === 'da' ? 'Korrekt.' : 'Correct.' };
+    };
+    await submit('Submit', [
+      currentQuizOperation('answer'), final('Continue in the card.'),
+    ], quizSubmission(started.interaction, 'submit', { answer: 'Water.' }));
+    assert.equal(grades, 1);
+    globalThis.__laneQuizLanguage = chatLanguage;
+    let state = await savedQuiz();
+    await submit('Resume this quiz.', [
+      tools(tool('quiz', quizArgs('resume', { quizId: state.id }))), final('Continue in the card.'),
+    ]);
+    state = await savedQuiz();
+    const message = 'Take this quiz again.';
+    await submit(message, [
+      tools(tool('quiz', quizArgs('restart', { quizId: state.id, version: state.version, restartRequest: message }))),
+      final('Answer in the card.'),
+    ]);
+    assert.equal((await savedQuiz()).language, sourceLanguage);
+    assert.equal(generations, 1);
+  }
+});
+
+test('unclear source language waits for a new human choice, preserving the requested quiz size across resume', async () => {
+  setup();
+  globalThis.__laneQuizLanguage = 'und';
+  const { result: waiting } = await submit('Make a one-question quiz.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', { quizId: state.id, version: state.version, questionCount: 1 })));
+    },
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', { quizId: state.id, version: state.version, language: 'en' })));
+    },
+    final('The source language is unclear. English or Danish?'),
+  ]);
+  let state = await savedQuiz();
+  assert.equal(state.language, 'und');
+  assert.equal(state.questionCount, 1);
+  assert.equal(state.status, 'preparing');
+  assert.equal(state.bank.length, 0);
+  assert.ok(!waiting.interaction);
+  assert.equal(globalThis.__laneQuizPlanningCalls, 1);
+  assert.match(JSON.stringify(modelRequests.at(-1).request.input), /Wait for a new human language choice/);
+  await submit('Continue this quiz.', [
+    tools(tool('quiz', quizArgs('resume', { quizId: state.id }))),
+    async () => {
+      const latest = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', { quizId: latest.id, version: latest.version })));
+    },
+    final('Please choose English or Danish.'),
+  ]);
+  assert.equal(globalThis.__laneQuizPlanningCalls, 1, 'Resume must not rerun inference while waiting for the human');
+  state = await savedQuiz();
+  const { result: started } = await submit('English, please.', [
+    tools(tool('quiz', quizArgs('create', { quizId: state.id, version: state.version, language: 'en' }))),
+    final('Answer in the card.'),
+  ]);
+  state = await savedQuiz();
+  assert.equal(state.language, 'en');
+  assert.equal(state.status, 'active');
+  assert.equal(state.questionCount, 1);
+  assert.equal(started.quiz.total, 1);
+  assert.equal(globalThis.__laneQuizPlanningCalls, 2);
+});
+
+test('a failed creation can recover on round five and return the committed first question', async () => {
+  setup();
+  const generate = globalThis.__laneQuizGenerate;
+  let generationCalls = 0;
+  globalThis.__laneQuizGenerate = async (input) => {
+    generationCalls++;
+    if (generationCalls === 1) throw new Error('Invalid typed quiz question 1: options must contain 3 to 6 entries');
+    return generate(input);
+  };
+  const create = async () => {
+    const state = await savedQuiz();
+    return tools(tool('quiz', quizArgs('create', { quizId: state.id, version: state.version })));
+  };
+  const { result } = await submit('Generate a quiz about Animals.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('list'))),
+    tools(tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    create,
+    async () => tools(tool('quiz', quizArgs('resume', { quizId: (await savedQuiz()).id }))),
+    create,
+    final('Answer the first question.'),
+  ]);
+  assert.equal(generationCalls, 2);
+  assert.equal(modelRequests.length, 6);
+  assert.equal(modelRequests.at(-1).request.tool_choice, 'none');
+  assert.equal(result.interaction.stepId, 'question-1');
+  assert.equal(result.interaction.prompt, 'Where do fish live?');
+  assert.equal(result.quiz.remaining, 2);
+  const state = await savedQuiz();
+  assert.equal(state.status, 'active');
+  assert.equal(state.bank.length, 2);
+  assert.equal(state.questions.length, 2);
+  assert.ok(state.questions.every((question) => !question.resolution));
+});
+
+test('the tool generates 45 candidates and defaults to a coverage-first 25-question run preserved across resume', async () => {
+  setup();
+  globalThis.__laneQuizGenerate = async ({ source }) => ({
+    title: 'Larger bank',
+    assessments: source.leaves.map((leaf, index) => ({
+      leafId: leaf.id, supportedTypes: ['text'], questionCount: index ? 22 : 23, reason: 'Distinct supported objectives.',
+    })),
+    questions: Array.from({ length: 45 }, (_, index) => ({
+      ...quizBank[index % 2], question: `Question ${index}?`, learningObjective: `Objective ${index}`,
+    })),
+  });
+  const started = await createRealQuiz();
+  const stored = await savedQuiz();
+  assert.equal(stored.bank.length, 45);
+  assert.equal(stored.questionCount, 25);
+  assert.equal(stored.questions.length, 25);
+  assert.equal(started.quiz.total, 25);
+  assert.equal(new Set(stored.questions.slice(0, 2).map((question) => question.leafId)).size, 2);
+  const { result } = await submit('Resume this quiz.', [
+    tools(tool('quiz', quizArgs('resume', { quizId: stored.id }))), final('Continue the saved quiz.'),
+  ]);
+  assert.equal(result.interaction.prompt, started.interaction.prompt);
+  assert.deepEqual((await savedQuiz()).questions, stored.questions);
+});
+
+test('taking a quiz again can choose a new size without generation and cannot answer the new run in the same turn', async () => {
+  setup();
+  let generated = 0;
+  globalThis.__laneQuizGenerate = async ({ source }) => {
+    generated++;
+    return {
+      title: 'Reusable bank',
+      assessments: source.leaves.map((leaf, index) => ({
+        leafId: leaf.id, supportedTypes: ['text'], questionCount: index ? 22 : 23, reason: 'Distinct supported objectives.',
+      })),
+      questions: Array.from({ length: 45 }, (_, index) => ({
+        ...quizBank[index % 2], question: `Question ${index}?`, learningObjective: `Objective ${index}`,
+      })),
+    };
+  };
+  const started = await createRealQuiz(10);
+  await submit('Submit', assessQuizAnswer('correct'),
+    quizSubmission(started.interaction, 'submit', { answer: 'My first answer.' }));
+  const previous = await savedQuiz();
+  const { result: sizeOffer } = await submit('Take this quiz again.', [final('Use the default 25 questions, or choose 1-45?')]);
+  const awaitingSize = await savedQuiz();
+  assert.equal(awaitingSize.questionCount, 10);
+  assert.deepEqual(awaitingSize.questions, previous.questions);
+  const message = '45';
+  const { result } = await submit(message, [
+    tools(tool('quiz', quizArgs('restart', {
+      quizId: awaitingSize.id, version: awaitingSize.version, questionCount: 45, restartRequest: message,
+    }))),
+    currentQuizOperation('reveal', { revealRequest: message }),
+    final('The previous run was discarded. Here is the first question of the new run.'),
+  ], { interactionContext: {
+    interactionId: sizeOffer.interaction.interactionId, stepId: sizeOffer.interaction.stepId,
+    version: sizeOffer.interaction.version, workflow: 'quiz',
+  } });
+  const restarted = await savedQuiz();
+  assert.equal(generated, 1);
+  assert.equal(restarted.id, previous.id);
+  assert.equal(restarted.bank.length, 45);
+  assert.equal(restarted.questions.length, 45);
+  assert.equal(restarted.questionCount, 45);
+  assert.deepEqual(restarted.bank, previous.bank);
+  assert.deepEqual(restarted.source, previous.source);
+  assert.equal(result.quiz.correct, 0);
+  assert.equal(result.quiz.skipped, 0);
+  assert.equal(result.quiz.remaining, 45);
+  assert.equal(result.interaction.stepId, 'question-1');
+  assert.equal(result.interaction.review, undefined);
+  assert.equal(restarted.pending, null);
+  assert.ok(restarted.questions.every((question) => question.resolution === null));
+  const restartedCalls = result.familyPayload.responseToolInvocations.filter((call) => call.arguments.operation === 'restart');
+  assert.equal(restartedCalls.length, 1);
+  assert.equal(restartedCalls[0].arguments.restartRequest, undefined);
+  const { result: resumed } = await submit('Continue this quiz.', [
+    tools(tool('quiz', quizArgs('resume', { quizId: restarted.id }))), final('Continue the new run.'),
+  ]);
+  assert.deepEqual((await savedQuiz()).questions, restarted.questions);
+  assert.equal(resumed.interaction.prompt, result.interaction.prompt);
+  const current = await savedQuiz();
+  const defaultRequest = 'Take it again with the default size.';
+  const { result: defaultRun } = await submit(defaultRequest, [
+    tools(tool('quiz', quizArgs('restart', { quizId: current.id, version: current.version, restartRequest: defaultRequest }))),
+    final('Started with the default size.'),
+  ]);
+  assert.equal(defaultRun.quiz.total, 25);
+  assert.equal((await savedQuiz()).questionCount, 25);
+  assert.equal(generated, 1);
+});
+
+test('restart needs the current human request, cannot reinterpret a captured card, and can explicitly discard pending recovery', async () => {
+  setup();
+  const started = await createRealQuiz();
+  const before = await savedQuiz();
+  const { result: unchanged } = await submit('What is my progress?', [
+    tools(tool('quiz', quizArgs('restart', { quizId: before.id, version: before.version, restartRequest: 'Invented approval' }))),
+    final('No restart was authorized.'),
+  ]);
+  assert.deepEqual((await savedQuiz()).questions, before.questions);
+  const current = await savedQuiz();
+  const { result: graded } = await submit('Submit', [
+    tools(tool('quiz', quizArgs('restart', { quizId: current.id, version: current.version + 1, restartRequest: 'Submit' }))),
+    ...assessQuizAnswer('correct'),
+  ], quizSubmission(unchanged.interaction, 'submit', { answer: 'My answer.' }));
+  assert.equal(graded.quiz.correct, 1);
+  globalThis.__laneQuizGrade = async () => { throw new Error('Grading interrupted'); };
+  await assert.rejects(submit('Submit', [
+    currentQuizOperation('answer'), () => { throw new Error('Turn interrupted after grading failure'); },
+  ], quizSubmission(graded.interaction, 'submit', { answer: 'Pending old answer.' })), /Turn interrupted/);
+  const pending = await savedQuiz();
+  assert.ok(pending.pending);
+  context = { conversationId: 'restart-recovery-conversation', version: 0 };
+  history = [];
+  const message = 'Discard the old run and take this quiz again.';
+  const { result } = await submit(message, [
+    tools(quizSwitch(), tool('quiz', quizArgs('restart', { quizId: pending.id, version: pending.version, restartRequest: message }))),
+    final('The old run was discarded.'),
+  ]);
+  assert.equal(result.quiz.correct, 0);
+  assert.equal(result.quiz.remaining, 2);
+  assert.equal((await savedQuiz()).pending, null);
+});
+
+test('a forty-five-note sample survives generation failure and a smaller quiz is selected only from the full bank', async () => {
+  setup();
+  const sourceProvider = globalThis.__laneQuizSources;
+  const snapshot = {
+    treeId: '1', rootIds: ['10'], fingerprint: 'a'.repeat(64),
+    leaves: Array.from({ length: 45 }, (_, index) => ({
+      id: String(100 + index), rootId: '10', title: `Topic ${index}`, path: `Animals > Topic ${index}`,
+      notes: `Supported fact ${index}.`, revision: null,
+    })),
+    excludedLeaves: Array.from({ length: 15 }, (_, index) => ({
+      id: String(200 + index), reason: 'random-sample-limit',
+    })),
+  };
+  let sourceReads = 0;
+  globalThis.__laneQuizSources = async (operation, options) => {
+    if (operation !== 'prepare') return sourceProvider(operation, options);
+    if (++sourceReads === 1) assert.equal(options.selectedLeafIds, undefined);
+    else assert.deepEqual(options.selectedLeafIds, snapshot.leaves.map((leaf) => leaf.id));
+    return structuredClone(snapshot);
+  };
+  let generations = 0;
+  globalThis.__laneQuizGenerate = async ({ source }) => {
+    assert.deepEqual(source, snapshot);
+    if (++generations === 1) throw new Error('Temporary generation failure');
+    return {
+      title: 'Full sampled bank',
+      assessments: source.leaves.map((leaf) => ({
+        leafId: leaf.id, supportedTypes: ['text'], questionCount: 1, reason: 'One supported fact.',
+      })),
+      questions: source.leaves.map((leaf) => ({
+        ...quizBank[0], leafId: leaf.id, question: `Question for ${leaf.id}?`, learningObjective: `Understand ${leaf.id}`,
+      })),
+    };
+  };
+  await createRealQuiz(25);
+  const prepared = await savedQuiz();
+  assert.equal(prepared.status, 'preparing');
+  assert.deepEqual(prepared.source, snapshot);
+  const summaries = modelRequests.flatMap(({ request }) => request.input
+    .filter((item) => item.type === 'function_call_output')
+    .map((item) => JSON.parse(item.output).data?.sourceSummary)).filter(Boolean);
+  assert.equal(summaries[0].eligibleNotes, 45);
+  assert.equal(summaries[0].totalEligibleNotes, 60);
+  assert.equal(summaries[0].sampledOutNotes, 15);
+  const { result } = await submit('Resume and retry with 25 questions.', [
+    tools(tool('quiz', quizArgs('resume', { quizId: prepared.id }))),
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', { quizId: state.id, version: state.version, questionCount: 25 })));
+    },
+    final('The saved sample now has a full bank and a 25-question quiz.'),
+  ]);
+  const active = await savedQuiz();
+  assert.equal(active.bank.length, 45);
+  assert.equal(active.questions.length, 25);
+  assert.deepEqual(active.source, prepared.source);
+  assert.equal(sourceReads, 2, 'Retry must not discover and sample a new source selection');
+  assert.equal(result.quiz.total, 25);
+});
+
+test('closed answers and reveals expose all explanations only after resolution without a grading model call', async () => {
+  for (const [type, answer, action] of [
+    ['single_choice', 'option-2'], ['multiple_choice', ['option-2', 'option-1']], ['yes_no', 'no'],
+  ].flatMap(([type, answer]) => ['submit', 'reveal'].map((action) => [type, answer, action]))) {
+    setup();
+    const generate = globalThis.__laneQuizGenerate;
+    globalThis.__laneQuizGenerate = async (input) => {
+      const bank = await generate(input);
+      bank.assessments[0].supportedTypes = [type];
+      bank.questions[0] = {
+        ...bank.questions[0], type,
+        options: type === 'yes_no' ? [] : ['Alpha', 'Beta', 'Gamma'].map((label, index) => ({ id: `option-${index + 1}`, label })),
+        correctOptionIds: type === 'yes_no' ? ['no'] : type === 'single_choice' ? ['option-2'] : ['option-1', 'option-2'],
+        optionExplanations: (type === 'yes_no' ? ['yes', 'no'] : ['option-1', 'option-2', 'option-3']).map((optionId) => ({
+          optionId, explanation: `PRIVATE_OPTION_REASON_${optionId}`,
+        })),
+      };
+      return bank;
+    };
+    const started = await createRealQuiz();
+    assert.doesNotMatch(JSON.stringify(started), /PRIVATE_OPTION_REASON|optionExplanations|isCorrect/);
+    let modelGrades = 0;
+    globalThis.__laneQuizGrade = async () => { modelGrades++; throw new Error('Closed answers must not use model grading'); };
+    const { result } = await submit('Submit', [
+      currentQuizOperation(action === 'submit' ? 'answer' : 'reveal'), final('Feedback and next question.'),
+    ], quizSubmission(started.interaction, action, action === 'submit' ? { answer } : {}));
+    assert.equal(result.quiz.correct, action === 'submit' ? 1 : 0);
+    assert.equal(result.quiz.skipped, action === 'reveal' ? 1 : 0);
+    assert.equal(result.quiz.remaining, 1);
+    assert.equal(modelGrades, 0);
+    assert.deepEqual((await savedQuiz()).questions[0].resolution.answer, action === 'submit' ? answer : null);
+    assert.equal(result.interaction.review.items.length, type === 'yes_no' ? 2 : 3);
+    assert.ok(result.interaction.review.items.every((item) => item.text.includes(`PRIVATE_OPTION_REASON_${item.id}`)));
+    const output = JSON.parse(modelRequests.at(-1).request.input.filter((item) => item.type === 'function_call_output').at(-1).output);
+    const explanations = output.data.answerReview.optionExplanations;
+    assert.equal(explanations.length, type === 'yes_no' ? 2 : 3);
+    assert.equal(explanations.filter((item) => item.isCorrect).length, type === 'multiple_choice' ? 2 : 1);
+  }
+});
+
+test('a scoped unambiguous option label can be normalized to an ID without applying the free-text equality rule', async () => {
+  setup();
+  const generate = globalThis.__laneQuizGenerate;
+  globalThis.__laneQuizGenerate = async (input) => {
+    const bank = await generate(input);
+    bank.assessments[0].supportedTypes = ['single_choice'];
+    bank.questions[0] = {
+      ...bank.questions[0], type: 'single_choice', correctOptionIds: ['option-2'],
+      options: ['Alpha', 'Beta', 'Gamma'].map((label, index) => ({ id: `option-${index + 1}`, label })),
+      optionExplanations: ['option-1', 'option-2', 'option-3'].map((optionId) => ({
+        optionId, explanation: `Evidence explaining ${optionId}.`,
+      })),
+    };
+    return bank;
+  };
+  const started = await createRealQuiz();
+  const { result } = await submit('Beta', [
+    currentQuizOperation('answer', { response: { action: 'submit', fields: [{ id: 'answer', value: 'option-2', selections: null }] } }),
+    final('Correct; continue.'),
+  ], { interactionContext: {
+    interactionId: started.interaction.interactionId, stepId: 'question-1', version: started.interaction.version, workflow: 'quiz',
+  } });
+  assert.equal(result.quiz.correct, 1);
+  const instructions = modelRequests.at(-2).request.input
+    .filter((item) => item.role === 'system').map((item) => item.content).join('\n');
+  assert.ok(instructions.includes(JSON.stringify({
+    questionId: 'question-1', leafId: '11', prompt: started.interaction.prompt,
+    type: 'single_choice', options: started.interaction.fields[0].options,
+  })), 'Scoped replies must be interpretable without a question/option transcript in assistant prose');
+  assert.match(instructions, /do not copy or paraphrase them in chat/);
+  assert.match(instructions, /Let the human expand the card's Answer explanations review/);
+});
+
+test('internal free-answer clarification stays unscored and a restated scoped answer preserves exact text', async () => {
+  setup();
+  const started = await createRealQuiz();
+  globalThis.__laneQuizGrade = async () => ({ verdict: 'clarify', feedback: 'Please restate your complete answer.' });
+  const { result: clarified } = await submit('Submit', [
+    currentQuizOperation('answer'), final('Please restate your complete answer.'),
+  ], quizSubmission(started.interaction, 'submit', { answer: 'That one.' }));
+  assert.equal(clarified.quiz.answered, 0);
+  assert.equal(clarified.quiz.remaining, 2);
+  assert.equal(clarified.interaction.values.answer, 'That one.');
+  assert.match(clarified.interaction.prompt, /Please restate/);
+  const exact = '  In water.\n  ';
+  globalThis.__laneQuizGrade = async ({ answer }) => {
+    assert.equal(answer, exact);
+    return { verdict: 'correct', feedback: 'Correct.' };
+  };
+  const { result } = await submit(exact, [
+    currentQuizOperation('answer', { response: { action: 'submit', fields: [{ id: 'answer', value: exact, selections: null }] } }),
+    final('Correct; next question.'),
+  ], { interactionContext: {
+    interactionId: clarified.interaction.interactionId, stepId: 'question-1', version: clarified.interaction.version, workflow: 'quiz',
+  } });
+  assert.equal(result.quiz.answered, 1);
+  assert.equal((await savedQuiz()).questions[0].resolution.answer, exact);
+  assert.equal((await savedQuiz()).clarification, null);
+});
+
+test('internal model failures preserve preparing records and captured answers for explicit retry', async () => {
+  setup();
+  globalThis.__laneQuizGenerate = async () => { throw new Error('Generation service unavailable'); };
+  await submit('Create a quiz.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', { quizId: state.id, version: state.version })));
+    },
+    final('Generation failed; the prepared quiz can be resumed.'),
+  ]);
+  assert.equal((await savedQuiz()).status, 'preparing');
+  assert.deepEqual((await savedQuiz()).bank, []);
+  setup();
+  const started = await createRealQuiz();
+  globalThis.__laneQuizGrade = async () => { throw new Error('Grading service unavailable'); };
+  await assert.rejects(submit('Submit', [
+    currentQuizOperation('answer'), () => { throw new Error('Turn interrupted after grading failure'); },
+  ], quizSubmission(started.interaction, 'submit', { answer: 'My saved attempt.' })), /Turn interrupted/);
+  const stored = await savedQuiz(started.quiz.quizId);
+  assert.equal(stored.pending.values.answer, 'My saved attempt.');
+  assert.equal(stored.questions[0].resolution, null);
+});
+
+test('source changes during the internal generation call cannot activate the generated bank', async () => {
+  setup();
+  const generate = globalThis.__laneQuizGenerate;
+  globalThis.__laneQuizGenerate = async (input) => {
+    const bank = await generate(input);
+    quizSourceChanged = true;
+    return bank;
+  };
+  const result = await createRealQuiz();
+  assert.equal(result.interaction, undefined);
+  assert.equal((await savedQuiz()).status, 'preparing');
+});
+
+test('quiz setup uses bound sequential collector submissions and automatically continues to generation', async () => {
+  setup();
+  const currentSetup = async () => {
+    const conversation = JSON.parse(await globalThis.__laneRead({
+      pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+    }));
+    return JSON.parse(await globalThis.__laneRead({
+      pathSegments: ['Knowledge Trees', 'Quiz Setups', 'By Setup ID', conversation.quizSetupId],
+    }));
+  };
+  const collectSelection = async () => {
+    const setup = await currentSetup();
+    return tools(tool('collect_structured_input', {
+      operation: 'start', interactionId: null, specification: setup.specification, response: null,
+    }));
+  };
+  const { result: trees } = await submit('Make me a quiz.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('sources'))),
+    collectSelection,
+    final('Choose a tree.'),
+  ]);
+  assert.equal(trees.interaction.workflow, 'structured-input');
+  assert.equal(trees.interaction.stepId, 'quiz-tree');
+  assert.deepEqual(trees.interaction.allowedActions, ['submit', 'cancel']);
+  const setupId = trees.laneContext.quizSetupId;
+  const treeCard = trees.interaction;
+  const { result: roots } = await submit('Animals', [
+    tools(tool('quiz', quizArgs('sources', { setupId }))),
+    collectSelection,
+    final('Choose roots.'),
+  ], { interactionSubmission: {
+    interactionId: treeCard.interactionId, stepId: treeCard.stepId, version: treeCard.version,
+    workflow: 'structured-input', submissionId: 'chosen-tree', action: 'submit', values: { tree: 'tree-1' },
+  } });
+  assert.equal(roots.interaction.stepId, 'quiz-roots');
+  assert.notEqual(roots.interaction.interactionId, treeCard.interactionId);
+  assert.equal(roots.laneContext.quizSetupId, setupId);
+  const rootCard = roots.interaction;
+  const { result: question } = await submit('Animals roots', [
+    tools(tool('quiz', quizArgs('prepare', { setupId }))),
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', {
+        quizId: state.id, version: state.version,
+      })));
+    },
+    final('First question.'),
+  ], { interactionSubmission: {
+    interactionId: rootCard.interactionId, stepId: rootCard.stepId, version: rootCard.version,
+    workflow: 'structured-input', submissionId: 'chosen-roots', action: 'submit', values: { roots: ['root-10'] },
+  } });
+  assert.equal(question.interaction.workflow, 'quiz');
+  assert.equal(question.quiz.remaining, 2);
+  assert.equal(question.laneContext.quizSetupId, undefined);
+  assert.equal(question.laneContext.quizId, question.quiz.quizId);
+});
+
+test('quiz reveal skips exactly once, presents the next question and cannot fabricate a future answer', async () => {
+  setup();
+  const started = await createRealQuiz();
+  const { result } = await submit('Show answer and skip', [
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('reveal', {
+        quizId: state.id, version: state.version, questionId: 'question-1',
+      })));
+    },
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('answer', {
+        quizId: state.id, version: state.version, questionId: 'question-2',
+        response: {
+          action: 'submit', fields: [{ id: 'answer', value: 'Feathers', selections: null }],
+        },
+      })));
+    },
+    final('Fish live in water. The question was skipped.'),
+  ], quizSubmission(started.interaction, 'reveal'));
+  assert.equal(result.interaction.stepId, 'question-2');
+  assert.equal(result.quiz.skipped, 1);
+  assert.equal(result.quiz.answered, 0);
+  assert.equal(result.quiz.correct, 0);
+  assert.equal(result.quiz.remaining, 1);
+  const state = await savedQuiz();
+  assert.equal(state.questions[0].resolution.outcome, 'skipped');
+  assert.equal(state.questions[1].resolution, null);
+});
+
+test('ordinary chat cannot supply quiz answers and revoked source access blocks capture before grading', async () => {
+  setup();
+  const started = await createRealQuiz();
+  const { result } = await submit('The answer is water, but this is ordinary chat.', [
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('answer', {
+        quizId: state.id, version: state.version, questionId: 'question-1',
+        response: { action: 'submit', fields: [{ id: 'answer', value: 'water', selections: null }] },
+      })));
+    },
+    final('Use the quiz response mode or card to answer.'),
+  ]);
+  assert.equal(result.quiz.correct, 0);
+  assert.equal(result.interaction.stepId, 'question-1');
+  const before = modelRequests.length;
+  quizAccessAllowed = false;
+  await assert.rejects(submit('Submit', [], quizSubmission(result.interaction, 'submit', { answer: 'Water' })), {
+    status: 403,
+  });
+  assert.equal(modelRequests.length, before);
+  assert.equal((await savedQuiz(started.quiz.quizId)).questions[0].resolution, null);
+});
+
+test('a newly generated question cannot be revealed or resolved before a later human presentation', async () => {
+  setup();
+  const { result } = await submit('Quiz me about Animals.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    async () => {
+      const state = await savedQuiz();
+      return tools(tool('quiz', quizArgs('create', {
+        quizId: state.id, version: state.version,
+      })), tool('quiz', quizArgs('reveal', {
+        quizId: state.id, version: state.version + 1, questionId: 'question-1',
+        revealRequest: 'Quiz me about Animals.',
+      })));
+    },
+    final('First question.'),
+  ]);
+  assert.equal(result.interaction.stepId, 'question-1');
+  assert.equal(result.quiz.remaining, 2);
+  assert.equal(result.quiz.skipped, 0);
+  assert.equal((await savedQuiz()).pending, null);
+});
+
+test('cancelling quiz source collection cannot prepare or activate a quiz', async () => {
+  setup();
+  const { result } = await submit('Make a quiz.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('sources', { treeId: '1' }))),
+    async () => {
+      const conversation = JSON.parse(await globalThis.__laneRead({
+        pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+      }));
+      const setup = JSON.parse(await globalThis.__laneRead({
+        pathSegments: ['Knowledge Trees', 'Quiz Setups', 'By Setup ID', conversation.quizSetupId],
+      }));
+      return tools(tool('collect_structured_input', {
+        operation: 'start', interactionId: null, specification: setup.specification, response: null,
+      }));
+    },
+    final('Choose roots.'),
+  ]);
+  await submitDirectCollectorCard(result.interaction, 'cancel');
+  const { result: cancelled } = await submit('Continue setup.', [
+    tools(tool('quiz', quizArgs('prepare', { setupId: result.laneContext.quizSetupId }))),
+    final('The selection was cancelled; start fresh to make a quiz.'),
+  ]);
+  assert.equal(cancelled.quiz, undefined);
+  assert.equal(cancelled.interaction, undefined);
+  assert.equal(cancelled.laneContext.quizId, undefined);
+});
+
+test('more than 20 roots requires narrowing before a collector is started', async () => {
+  setup();
+  const sources = globalThis.__laneQuizSources;
+  globalThis.__laneQuizSources = async (operation, options) => operation === 'roots' && !options.filter
+    ? { treeId: '1', roots: [], total: 21, matching: 21, requiresNarrowing: true }
+    : sources(operation, options);
+  const { result: narrow } = await submit('Make a quiz about Animals.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('sources', { treeId: '1' }))),
+    final('There are more than 20 roots. Narrow the root title.'),
+  ]);
+  assert.equal(narrow.interaction, undefined);
+  const { result } = await submit('Use Animals roots.', [
+    tools(tool('quiz', quizArgs('sources', { setupId: narrow.laneContext.quizSetupId, filter: 'Animals' }))),
+    async () => {
+      const setup = JSON.parse(await globalThis.__laneRead({
+        pathSegments: ['Knowledge Trees', 'Quiz Setups', 'By Setup ID', narrow.laneContext.quizSetupId],
+      }));
+      return tools(tool('collect_structured_input', {
+        operation: 'start', interactionId: null, specification: setup.specification, response: null,
+      }));
+    },
+    final('Select from the matching roots.'),
+  ]);
+  assert.equal(result.laneContext.quizSetupId, narrow.laneContext.quizSetupId);
+  assert.equal(result.interaction.workflow, 'structured-input');
+  assert.deepEqual(result.interaction.fields[0].options.map(({ id }) => id), ['root-10']);
+  assert.match(result.interaction.fields[0].options[0].label, /Animals/);
+});
+
+test('quiz recovery resumes a captured attempt or an already committed verdict without double scoring', async () => {
+  for (const committed of [false, true]) {
+    setup();
+    const started = await createRealQuiz();
+    let failure;
+    try {
+      await submit('Submit', [
+        ...(committed ? assessQuizAnswer('correct').slice(0, 1) : []),
+        () => { throw new Error('Model unavailable'); },
+      ], quizSubmission(started.interaction, 'submit', { answer: 'Water.' }));
+    } catch (error) {
+      failure = error;
+    }
+    assert.match(failure?.message, /Model unavailable/);
+    assert.deepEqual(failure.interaction.allowedActions, ['resume']);
+    const stored = await savedQuiz(started.quiz.quizId);
+    assert.equal(Boolean(stored.pending), !committed);
+    assert.equal(stored.questions.filter((question) => question.resolution).length, committed ? 1 : 0);
+    context = { conversationId: 'recovered-quiz-conversation', version: 0 };
+    history = [];
+    const { result } = await submit('Resume my Animals quiz.', [
+      tools(quizSwitch(), tool('quiz', quizArgs('resume', { quizId: stored.id }))),
+      ...(committed ? [final('Continue with the second question.')] : assessQuizAnswer('correct')),
+    ]);
+    assert.equal(result.interaction.stepId, 'question-2');
+    assert.equal(result.quiz.correct, 1);
+    assert.equal(result.quiz.remaining, 1);
+    const recovered = await savedQuiz(stored.id);
+    assert.equal(recovered.pending, null);
+    assert.equal(recovered.questions[0].resolution.answer, 'Water.');
+  }
+});
+
+test('preparation can resume its frozen evidence after an interrupted generation turn', async () => {
+  setup();
+  await assert.rejects(submit('Quiz me about Animals.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    () => { throw new Error('Generation interrupted'); },
+  ]), /Generation interrupted/);
+  const prepared = await savedQuiz();
+  context = { conversationId: 'generation-recovery-conversation', version: 0 };
+  history = [];
+  const { result } = await submit('Resume creating my quiz.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('resume', { quizId: prepared.id }))),
+    () => {
+      assert.doesNotMatch(JSON.stringify(modelRequests.at(-1).request.input), /Fish live in water/);
+      return tools(tool('quiz', quizArgs('create', {
+        quizId: prepared.id, version: prepared.version + 1,
+      })));
+    },
+    final('Answer the first question.'),
+  ]);
+  assert.equal(result.quiz.status, 'active');
+  assert.equal(result.interaction.stepId, 'question-1');
+});
+
+test('another saved quiz cannot be presented or answered without explicitly resuming it', async () => {
+  setup();
+  const first = await createRealQuiz();
+  const second = await createRealQuiz();
+  const { result } = await submit('Show the other quiz question.', [
+    tools(tool('quiz', quizArgs('question', { quizId: first.quiz.quizId }))),
+    final('Resume that quiz first.'),
+  ]);
+  assert.equal(result.interaction, undefined);
+  assert.equal(result.laneContext.quizId, second.quiz.quizId);
+  await assert.rejects(submit('Submit', [], quizSubmission(first.interaction, 'submit', { answer: 'Water.' })),
+    /Explicitly resume this detached quiz/);
+  assert.equal((await savedQuiz(first.quiz.quizId)).pending, null);
+});
+
+test('resuming a source-selection collection restores its quiz setup in a fresh conversation', async () => {
+  setup();
+  const { result: selection } = await submit('Make a quiz.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('sources'))),
+    async () => {
+      const state = JSON.parse(await globalThis.__laneRead({
+        pathSegments: ['Knowledge Trees', 'Conversations', context.conversationId, 'State'],
+      }));
+      const setup = JSON.parse(await globalThis.__laneRead({
+        pathSegments: ['Knowledge Trees', 'Quiz Setups', 'By Setup ID', state.quizSetupId],
+      }));
+      return tools(tool('collect_structured_input', {
+        operation: 'start', interactionId: null, specification: setup.specification, response: null,
+      }));
+    },
+    final('Choose the source tree.'),
+  ]);
+  context = { conversationId: 'resumed-source-selection', version: 0 };
+  history = [];
+  const { result } = await submit('Resume my quiz source selection.', [
+    tools(quizSwitch(), tool('collect_structured_input', {
+      operation: 'resume', interactionId: selection.interaction.interactionId, specification: null, response: null,
+    })),
+    final('Choose the source tree.'),
+  ]);
+  assert.equal(result.interaction.interactionId, selection.interaction.interactionId);
+  assert.equal(result.laneContext.quizSetupId, selection.laneContext.quizSetupId);
+  assert.deepEqual(result.interaction.allowedActions, ['submit', 'cancel']);
+});
+
+test('listing quizzes and reading unbound results return spoiler-free metadata without presenting another quiz', async () => {
+  setup();
+  const started = await createRealQuiz();
+  const stored = await savedQuiz(started.quiz.quizId);
+  globalThis.__laneQuizRows = [{ quizId: stored.id, notes: JSON.stringify(stored) }];
+  context = { conversationId: 'quiz-results-conversation', version: 0 };
+  history = [];
+  for (const operation of ['list', 'results']) {
+    const { result } = await submit(`Show quiz ${operation}.`, [
+      tools(...(operation === 'list' ? [quizSwitch()] : []),
+        tool('quiz', quizArgs(operation, operation === 'list' ? { offset: 0 } : { quizId: stored.id }))),
+      () => {
+        const output = modelRequests.at(-1).request.input.filter((item) => item.type === 'function_call_output').at(-1).output;
+        assert.doesNotMatch(output, /referenceAnswer|gradingCriteria|Fish live in water/);
+        const data = JSON.parse(output).data;
+        if (operation === 'list') assert.match(output, /Animals quiz/);
+        else {
+          assert.equal(data.quizId, stored.id);
+          assert.equal(data.correct, 0);
+          assert.equal(data.remaining, 2);
+          assert.equal(data.provisional, true);
+        }
+        return final('Your saved quiz is unfinished.');
+      },
+    ]);
+    assert.equal(result.interaction, undefined);
+    assert.equal(result.laneContext.quizId, undefined);
+  }
+});
+
+test('changed source evidence cannot activate a generated quiz bank', async () => {
+  setup();
+  const { result } = await submit('Quiz me about Animals.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('prepare', { treeId: '1', rootIds: ['10'] }))),
+    async () => {
+      const state = await savedQuiz();
+      quizSourceChanged = true;
+      return tools(tool('quiz', quizArgs('create', {
+        quizId: state.id, version: state.version,
+      })));
+    },
+    final('The source material changed; no playable quiz was activated.'),
+  ]);
+  assert.equal(result.interaction, undefined);
+  assert.equal(result.quiz.status, 'preparing');
+  assert.equal((await savedQuiz()).questions.length, 0);
+});
+
+test('quiz detach and fresh-conversation resume preserve durable progress without old chat history', async () => {
+  setup();
+  const started = await createRealQuiz();
+  const { result: answered } = await submit('Submit', assessQuizAnswer('correct'),
+    quizSubmission(started.interaction, 'submit', { answer: 'Water.' }));
+  const quizId = answered.quiz.quizId;
+  const { result: left } = await submit('Find more about fish.', [
+    tools(tool('switch_tree_lane', { activeLane: 'knowledge.retrieval', reason: 'The human requested search.' }),
+      tool('search_tree_topics_1', { query: 'fish' })), final('Fish live in water.'),
+  ]);
+  assert.equal(left.laneContext.quizId, undefined);
+  assert.equal(left.interaction, undefined);
+  context = { conversationId: 'fresh-quiz-conversation', version: 0 };
+  history = [];
+  const { result: resumed } = await submit('Resume my Animals quiz.', [
+    tools(quizSwitch(), tool('quiz', quizArgs('resume', { quizId }))),
+    final('Continue with the second question.'),
+  ]);
+  assert.equal(resumed.interaction.stepId, 'question-2');
+  assert.equal(resumed.quiz.correct, 1);
+  assert.equal(resumed.quiz.remaining, 1);
+  assert.equal(resumed.laneContext.quizId, quizId);
+});
 
 test('the shared collector starts in any lane without authorizing retrieval or saving', async () => {
   for (const activeLane of ['knowledge.retrieval', 'knowledge.saving', 'quiz']) {
@@ -560,26 +1623,6 @@ test('an expired conversation is rejected before any model or tool work', async 
   assert.deepEqual(calls, { preview: 0, save: 0, search: 0, process: 0 });
 });
 
-test('an expired interaction is rejected before model processing without offering recovery controls', async () => {
-  setup();
-  const { result } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  const card = result.interaction;
-  expiredPaths.add(JSON.stringify(['Interactions', 'By Interaction ID', card.interactionId]));
-  const count = modelRequests.length;
-  await assert.rejects(submit('Continue', [], { interactionContext: {
-    interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-  } }), (error) => {
-    assert.equal(error.status, 410);
-    assert.equal(error.code, 'CHAT_STATE_EXPIRED');
-    assert.equal(error.interaction, undefined);
-    return true;
-  });
-  assert.equal(modelRequests.length, count);
-});
-
 test('expiry while awaiting the model remains an explicit expiry even if saving failure status also expires', async () => {
   setup();
   await assert.rejects(submit('Hello', [() => {
@@ -593,288 +1636,6 @@ test('expiry while awaiting the model remains an explicit expiry even if saving 
     assert.ok(error.errors.every((cause) => cause.status === 410));
     return true;
   });
-});
-
-test('expiry discovered during interaction recovery is not replaced by a generic server failure', async () => {
-  setup();
-  const { result } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  const card = result.interaction;
-  await assert.rejects(submit('An unclear selection', [() => {
-    expiredPaths.add(JSON.stringify(['Interactions', 'By Interaction ID', card.interactionId]));
-    throw new Error('Model unavailable');
-  }], { interactionContext: {
-    interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-  } }), (error) => {
-    assert.ok(error instanceof AggregateError);
-    assert.equal(error.status, 410);
-    assert.equal(error.code, 'CHAT_STATE_EXPIRED');
-    assert.match(error.errors[0].message, /Model unavailable/);
-    assert.equal(error.errors[1].status, 410);
-    assert.equal(error.interaction, undefined);
-    return true;
-  });
-});
-
-test('interaction tool launches a fixed card, captures input before the agent, and handles typed Back through the real loop', async () => {
-  setup();
-  const { result: started } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic in the test.'),
-  ]);
-  const card = started.interaction;
-  assert.equal(card.stepId, 'topic');
-  assert.equal(card.status, 'active');
-  assert.equal(started.laneContext.activeLane, 'quiz');
-  assert.deepEqual(card.allowedActions, ['continue', 'cancel']);
-  const submission = {
-    interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-    action: 'continue', values: { topic: 'technology' }, submissionId: 'selection-1',
-  };
-  const originalCreate = globalThis.__laneClient.responses.create;
-  let observedPending = false;
-  globalThis.__laneClient.responses.create = async (request, config) => {
-    if (!observedPending) {
-      const saved = JSON.parse(await globalThis.__laneRead({
-        pathSegments: ['Interactions', 'By Interaction ID', card.interactionId],
-      }));
-      assert.equal(saved.pending.values.topic, 'technology');
-      assert.deepEqual(saved.values, {});
-      assert.equal(saved.stepIndex, 0);
-      observedPending = true;
-    }
-    return originalCreate(request, config);
-  };
-  const { result: answered } = await submit('Browser (automated): Continue\nChoose a topic: Technology', [
-    tools(tool('test_multistep_interaction', { operation: 'process', interactionId: card.interactionId })),
-    final('Enter a note.', { interaction: { interactionId: card.interactionId } }),
-  ], { interactionSubmission: submission });
-  assert.ok(observedPending);
-  assert.equal(answered.interaction.stepId, 'note');
-  assert.equal(answered.interaction.collectedValues.topic.topic, 'technology');
-  const noteCard = answered.interaction;
-  const { result: back } = await submit('Back', [
-    tools(tool('test_multistep_interaction', { operation: 'process', interactionId: card.interactionId })),
-    final('Choose a topic again.'),
-  ], { interactionContext: {
-    interactionId: noteCard.interactionId, version: noteCard.version, stepId: noteCard.stepId,
-  } });
-  assert.equal(back.interaction.stepId, 'topic');
-  assert.equal(back.interaction.values.topic, 'technology');
-  await assert.rejects(submit('A stale selection', [], { interactionSubmission: submission }), /changed/);
-});
-
-test('the agent loop records typed No and Yes as input before final review, without treating either as approval or cancellation', async () => {
-  setup();
-  const { result: started } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  let card = started.interaction;
-  for (const values of [{ topic: 'nature' }, { note: 'Normal test input.' }, { features: [] }]) {
-    const { result } = await submit('Continue with these values', [
-      tools(tool('test_multistep_interaction', { operation: 'process', interactionId: card.interactionId })),
-      final('Input recorded.'),
-    ], { interactionSubmission: {
-      interactionId: card.interactionId, stepId: card.stepId, version: card.version,
-      submissionId: `answer-${card.version}`, action: 'continue', values,
-    } });
-    card = result.interaction;
-  }
-  assert.equal(card.stepId, 'feedback');
-  for (const [message, nextStep] of [['No', 'review'], ['Back', 'feedback'], ['Yes', 'review'], ['Submit', 'review']]) {
-    const { result } = await submit(message, [
-      tools(tool('test_multistep_interaction', { operation: 'process', interactionId: card.interactionId }),
-        ...(message === 'Submit' ? [tool('search_tree_topics_1', { query: 'legacy completion stays isolated' })] : [])),
-      final('Input recorded.'),
-    ], { interactionContext: {
-      interactionId: card.interactionId, stepId: card.stepId, version: card.version,
-    } });
-    card = result.interaction;
-    assert.equal(card.stepId, nextStep);
-    assert.equal(card.status, message === 'Submit' ? 'completed' : 'active');
-    if (message === 'No' || message === 'Yes') {
-      assert.deepEqual(card.collectedValues.feedback, { feedback: message.toLowerCase() });
-    }
-  }
-  assert.deepEqual(calls, { preview: 0, save: 0, search: 0, process: 0 });
-});
-
-test('an interaction submission cannot authorize unrelated tools even after its transition commits', async () => {
-  setup();
-  const { result: start } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  const card = start.interaction;
-  const { result } = await submit('Continue with Nature', [
-    tools(
-      tool('test_multistep_interaction', { operation: 'process', interactionId: card.interactionId }),
-      tool('search_tree_topics_1', { query: 'not authorized by this click' }),
-    ),
-    final('The selection was processed. No unrelated search was executed.'),
-  ], { interactionSubmission: {
-    interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-    action: 'continue', values: { topic: 'nature' }, submissionId: 'scoped-input',
-  } });
-  assert.equal(calls.search, 0);
-  assert.equal(result.interaction.stepId, 'note');
-  assert.match(JSON.stringify(modelRequests.at(-1).request.input), /authorizes only its owning tool/);
-});
-
-test('failed interaction evaluation returns recoverable state and a fresh conversation resumes accepted input once', async () => {
-  setup();
-  const { result: start } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  const card = start.interaction;
-  let failure;
-  try {
-    await submit('Continue with Nature', [], { interactionSubmission: {
-      interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-      action: 'continue', values: { topic: 'nature' }, submissionId: 'interrupted-input',
-    } });
-  } catch (error) {
-    failure = error;
-  }
-  assert.ok(failure);
-  assert.equal(failure.interaction.status, 'pending');
-  assert.deepEqual(failure.interaction.allowedActions, ['resume']);
-  context = { conversationId: 'resumed-conversation', version: 0 };
-  history = [];
-  const { result: resumed } = await submit('Resume my latest interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'resume', interactionId: null })),
-    final('Your saved selection was processed. Enter a note.'),
-  ]);
-  assert.equal(resumed.interaction.stepId, 'note');
-  assert.equal(resumed.interaction.collectedValues.topic.topic, 'nature');
-  const { result: again } = await submit(`Resume interaction ${card.interactionId}`, [
-    tools(tool('test_multistep_interaction', { operation: 'resume', interactionId: card.interactionId })),
-    final('Enter a note.'),
-  ]);
-  assert.equal(again.interaction.stepId, 'note');
-  let committedFailure;
-  try {
-    await submit('Continue with a saved note', [
-      tools(tool('test_multistep_interaction', { operation: 'process', interactionId: card.interactionId })),
-    ], { interactionSubmission: {
-      interactionId: card.interactionId, version: again.interaction.version, stepId: 'note',
-      action: 'continue', values: { note: 'Already committed before response failure.' }, submissionId: 'committed-input',
-    } });
-  } catch (error) {
-    committedFailure = error;
-  }
-  assert.equal(committedFailure?.interaction.stepId, 'features');
-  context = { conversationId: 'after-committed-failure', version: 0 };
-  history = [];
-  const { result: committedResume } = await submit(`Resume interaction ${card.interactionId}`, [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'resume', interactionId: card.interactionId })),
-    final('The note was already processed. Choose features.'),
-  ]);
-  assert.equal(committedResume.interaction.stepId, 'features');
-  assert.equal(committedResume.interaction.collectedValues.note.note, 'Already committed before response failure.');
-});
-
-test('switching out of quiz pauses test input; resuming switches back without losing saved values', async () => {
-  setup();
-  const { result: started } = await submit('Test multistep interaction', [
-    tools(tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  assert.match(JSON.stringify(modelRequests[1].request.input), /not allowed in knowledge.retrieval/);
-  const card = started.interaction;
-  const { result: searched } = await submit('What do the notes say about fish?', [
-    tools(tool('switch_tree_lane', { activeLane: 'knowledge.retrieval', reason: 'The human requested a knowledge search.' }),
-      tool('search_tree_topics_1', { query: 'fish' })),
-    final('The notes describe fish.'),
-  ], { interactionContext: {
-    interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-  } });
-  assert.equal(searched.laneContext.activeLane, 'knowledge.retrieval');
-  assert.equal(searched.interaction, undefined);
-  assert.equal(calls.search, 1);
-  await assert.rejects(submit('Continue with Nature', [], { interactionSubmission: {
-    interactionId: card.interactionId, version: card.version, stepId: card.stepId,
-    action: 'continue', values: { topic: 'nature' }, submissionId: 'wrong-lane',
-  } }), (error) => {
-    assert.match(error.message, /Switch to quiz/);
-    context = error.laneContext;
-    return true;
-  });
-  const { result: resumed } = await submit(`Resume interaction ${card.interactionId}`, [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'resume', interactionId: card.interactionId })),
-    final('Choose a topic again.'),
-  ]);
-  assert.equal(resumed.laneContext.activeLane, 'quiz');
-  assert.equal(resumed.interaction.interactionId, card.interactionId);
-  assert.equal(resumed.interaction.stepId, 'topic');
-  assert.deepEqual(resumed.interaction.collectedValues, {});
-});
-
-test('interaction IDs remain in structured metadata while an answer exposing one is corrected without rerunning the tool', async () => {
-  setup();
-  const { result } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    async () => final(`Your interaction ID is ${await globalThis.__laneLookup()}.`),
-    final('Choose a topic in the test.'),
-  ]);
-  assert.equal(result.answer, 'Choose a topic in the test.');
-  assert.ok(result.interaction.interactionId);
-  assert.equal(result.toolInvocations.filter((invocation) => invocation.toolName === 'test_multistep_interaction').length, 1);
-  assert.match(JSON.stringify(modelRequests.at(-1).request.input), /Remove the interaction ID/);
-});
-
-test('resume without an ID finds an unfinished unexpired interaction in a fresh conversation without history', async () => {
-  setup();
-  const { result: first } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  const { result: answered } = await submit('Nature', [
-    tools(tool('test_multistep_interaction', { operation: 'process', interactionId: first.interaction.interactionId })),
-    final('Enter a note.'),
-  ], { interactionContext: {
-    interactionId: first.interaction.interactionId, stepId: first.interaction.stepId, version: first.interaction.version,
-  } });
-  context = { conversationId: 'another-conversation', version: 0 };
-  history = [];
-  const { result: newer } = await submit('Test multistep interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ]);
-  expiredPaths.add(JSON.stringify(['Interactions', 'By Interaction ID', newer.interaction.interactionId]));
-  context = { conversationId: 'signed-back-in-conversation', version: 0 };
-  history = [];
-  const { result: resumed } = await submit('Resume my interaction', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'resume', interactionId: null })),
-    final('Continue with your saved note step.'),
-  ]);
-  assert.equal(resumed.interaction.interactionId, answered.interaction.interactionId);
-  assert.equal(resumed.interaction.stepId, 'note');
-  assert.deepEqual(resumed.interaction.collectedValues.topic, { topic: 'nature' });
-  assert.equal(resumed.laneContext.activeLane, 'quiz');
-});
-
-test('a human can switch from saving to the test without a pending upload hint forcing saving', async () => {
-  setup();
-  await submit('Save this in a tree', [
-    tools(tool('switch_tree_lane', { activeLane: 'knowledge.saving', reason: 'The human requested saving.' })),
-    final('Which content should be saved?'),
-  ]);
-  const { result } = await submit('Test multistep interaction instead', [
-    tools(quizSwitch(), tool('test_multistep_interaction', { operation: 'start', interactionId: null })),
-    final('Choose a topic.'),
-  ], { pendingUploadId: uploadId });
-  assert.equal(result.laneContext.activeLane, 'quiz');
-  assert.equal(result.laneContext.previewId, null);
-  assert.equal(result.laneContext.uploadId, null);
-  assert.equal(result.interaction.stepId, 'topic');
-  assert.equal(calls.preview, 0);
-  assert.equal(calls.save, 0);
 });
 
 test('real execution preserves retrieval, broadening, preview, later confirmation, and duplicate rejection', async () => {

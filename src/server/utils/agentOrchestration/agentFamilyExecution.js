@@ -152,7 +152,8 @@ export async function runAgentFamilyExecution({
     });
   }
 
-  for (let round = resumeState?.round ?? 0; round < MAX_TOOL_ROUNDS; round += 1) {
+  let round = resumeState?.round ?? 0;
+  while (true) {
     const functionCalls = Array.isArray(currentResponse?.output)
       ? currentResponse.output.filter((item) => item?.type === 'function_call')
       : [];
@@ -191,6 +192,7 @@ export async function runAgentFamilyExecution({
               content: `This is a correction within the same user turn, not a new user request. The latest user message is still the one in the original request; do not ask for approval again if that message already provided it. Do not treat earlier user messages as approval for this turn. ${String(validationInstruction)}`,
             }],
             previous_response_id: currentResponse.id,
+            ...(round >= MAX_TOOL_ROUNDS ? { tool_choice: 'none' } : {}),
           });
           appendDebugStep(debug, 'final response validation retry received', {
             retryCount: finalResponseValidationRetries,
@@ -226,6 +228,15 @@ export async function runAgentFamilyExecution({
         toolInvocations,
         modelCalls,
       };
+    }
+
+    if (round >= MAX_TOOL_ROUNDS) {
+      appendDebugStep(debug, 'agent family execution exceeded tool round limit', {
+        completedToolRounds: round,
+        functionCallCount: functionCalls.length,
+        responseId: currentResponse?.id ?? null,
+      });
+      throw new Error('The agent exceeded the maximum number of tool rounds');
     }
 
     const functionOutputs = resumeState?.round === round ? [...resumeState.outputs] : [];
@@ -376,6 +387,7 @@ export async function runAgentFamilyExecution({
     currentResponse = await createAgentResponse(openAIClient, responseConfig, {
       input: functionOutputs,
       previous_response_id: currentResponse.id,
+      ...(round + 1 >= MAX_TOOL_ROUNDS ? { tool_choice: 'none' } : {}),
     });
     resumeState = null;
     appendDebugStep(debug, `tool round ${round + 1} synthesis received`, {
@@ -394,8 +406,6 @@ export async function runAgentFamilyExecution({
       });
       debug?.toolCalls?.push(...roundDebug);
     }
+    round += 1;
   }
-
-  appendDebugStep(debug, 'agent family execution exceeded tool round limit');
-  throw new Error('The agent exceeded the maximum number of tool rounds');
 }

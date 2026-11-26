@@ -24,7 +24,7 @@ registerHooks({
 });
 
 const { findLatestActiveInteractionId } = await import('./interactionLookupRepository.js');
-const options = { treeId: 7, principal: { userId: 'owner-a' }, workflow: 'interaction-test' };
+const options = { treeId: 7, principal: { userId: 'owner-a' }, workflow: 'structured-input' };
 
 test('latest lookup is owner/app/workflow scoped, across conversations, with a strict 24-hour cutoff and deterministic newest-first order', async () => {
   let request;
@@ -34,7 +34,7 @@ test('latest lookup is owner/app/workflow scoped, across conversations, with a s
   };
   assert.equal(await findLatestActiveInteractionId(options), 'latest-id');
   assert.deepEqual(request.inputs, {
-    tree_id: 7, owner: 'owner-a', application_identifier: 'app-a', workflow: 'interaction-test',
+    tree_id: 7, owner: 'owner-a', application_identifier: 'app-a', workflow: 'structured-input',
   });
   const { query } = request;
   assert.match(query, /SELECT TOP \(1\) interaction\.text AS interactionId/);

@@ -846,7 +846,6 @@ export default function ChatPageClient({ includeDebug }) {
   });
   const [prompt, setPrompt] = useState("");
   const [isNormalChatSelected, setIsNormalChatSelected] = useState(false);
-  const [explicitInteractionReplyTarget, setExplicitInteractionReplyTarget] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState("");
   const [turns, setTurns] = useState([]);
@@ -879,8 +878,7 @@ export default function ChatPageClient({ includeDebug }) {
     latestInteractionTurn?.interactionReadOnly ? null : latestInteractionTurn?.interaction,
     chatFamily, laneContextRef.current?.activeLane, false,
   );
-  const interactionReplyTarget = explicitInteractionReplyTarget ??
-    (isNormalChatSelected ? null : availableStructuredReplyTarget);
+  const interactionReplyTarget = isNormalChatSelected ? null : availableStructuredReplyTarget;
 
   const handleVisibilityChange = (event) => {
     const nextVisibility = setVisibility(event.target.value);
@@ -893,7 +891,6 @@ export default function ChatPageClient({ includeDebug }) {
   const handleChatFamilyChange = (event) => {
     const nextFamily = normalizeChatFamilySelection(event.target.value, availableChatFamilies, defaultChatFamily);
     setSelectedFile(null);
-    setExplicitInteractionReplyTarget(null);
     setChatFamily(nextFamily);
     const nextSearchParams = new URLSearchParams(searchParams.toString());
     setChatFamilySearchParam(nextSearchParams, nextFamily, availableChatFamilies, defaultChatFamily);
@@ -991,7 +988,6 @@ export default function ChatPageClient({ includeDebug }) {
     if (submissionRequestRef.current || isSubmitting || !isVisibilityReady || !chatFamily ||
         turns.some((turn) => turn.approvalRequired)) return;
     submissionRequestRef.current = true;
-    if (interactionSubmission || interactionContext) setExplicitInteractionReplyTarget(null);
     const turnId = createTurnId();
     if (!laneContextRef.current) laneContextRef.current = { conversationId: createRequestId(), version: 0 };
     const laneRequest = chatFamily === "knowledgeTrees" ? buildLaneRequestContext(laneContextRef.current, turnId) : {};
@@ -1265,7 +1261,7 @@ export default function ChatPageClient({ includeDebug }) {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    const message = prompt.trim();
+    let message = prompt.trim();
 
     if ((!message && !(shouldShowVisibilityControl && selectedFile)) || isSubmitting || turns.some((turn) => turn.approvalRequired) || !isVisibilityReady || !chatFamily) {
       return;
@@ -1277,12 +1273,11 @@ export default function ChatPageClient({ includeDebug }) {
         latestInteractionTurn?.interaction, chatFamily, laneContextRef.current?.activeLane);
     } catch {
       setIsNormalChatSelected(true);
-      setExplicitInteractionReplyTarget(null);
       setRequestError(t("Interaction.ReplyChanged"));
       return;
     }
+    if (interactionContext?.workflow === "quiz") message = prompt;
     setPrompt("");
-    setExplicitInteractionReplyTarget(null);
     await submitTurn({
       question: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
       message: message || t("Upload.DefaultPrompt", { fileName: selectedFile.name }),
@@ -1374,24 +1369,20 @@ export default function ChatPageClient({ includeDebug }) {
               {interactionReplyTarget || availableStructuredReplyTarget ? (
                 <div className={styles.interactionReplyMode} role="status">
                   {interactionReplyTarget ? (
-                    <span>{t(interactionReplyTarget.workflow === "structured-input"
-                      ? "Interaction.ReplyingToPrompt" : "Interaction.Replying",
+                    <span>{t("Interaction.ReplyingToPrompt",
                     { prompt: interactionReplyTarget.prompt })}</span>
                   ) : null}
                   <button type="button" className={`appCompactActionButton appCompactActionButtonNeutral ${styles.interactionReplyToggle}`}
                     disabled={isSubmitting || !isVisibilityReady || turns.some((turn) => turn.approvalRequired)}
                     onClick={() => {
                       setIsNormalChatSelected(Boolean(interactionReplyTarget));
-                      setExplicitInteractionReplyTarget(null);
                       if (!interactionReplyTarget) {
                         setSelectedFile(null);
                         setRequestError(null);
                         promptInputRef.current?.focus();
                       }
                     }}>
-                    {t(availableStructuredReplyTarget
-                      ? interactionReplyTarget ? "Interaction.IgnorePrompt" : "Interaction.ReplyToPrompt"
-                      : "Interaction.NormalChat")}
+                    {t(interactionReplyTarget ? "Interaction.IgnorePrompt" : "Interaction.ReplyToPrompt")}
                   </button>
                 </div>
               ) : null}
@@ -1539,15 +1530,6 @@ export default function ChatPageClient({ includeDebug }) {
                               readOnly={turn.interactionReadOnly || turn.id !== latestInteractionTurn?.id ||
                                 ["completed", "cancelled"].includes(turn.interaction.status)}
                               translate={t}
-                              onReplyInChat={turn.interaction.workflow === "structured-input" ? undefined : () => {
-                                setSelectedFile(null);
-                                setRequestError(null);
-                                setIsNormalChatSelected(false);
-                                setExplicitInteractionReplyTarget(
-                                  turn.interaction.workflow === "structured-input" ? null : turn.interaction,
-                                );
-                                promptInputRef.current?.focus();
-                              }}
                               onAction={({ action, values, message }) => submitTurn({
                                 question: message, message,
                                 interactionSubmission: {

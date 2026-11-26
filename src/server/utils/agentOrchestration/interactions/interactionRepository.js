@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { cleanupInactiveInteractions } from './interactionCleanupRepository.js';
 import { findLatestActiveInteractionId } from './interactionLookupRepository.js';
+import { validatePresentedInteractionInput } from './interactionBindings.js';
 import {
   getPersonalCacheContext, mutatePersonalCacheNotes, readPersonalCacheNotes,
 } from '@/server/utils/agentOrchestration/personalCacheTreeRepository';
@@ -11,7 +12,7 @@ import {
 
 function validateRecord(state, definition) {
   if (!state || state.schemaVersion !== 1 || state.workflow !== definition.id ||
-      !(definition.supportedVersions ?? [definition.version]).includes(state.workflowVersion) ||
+      state.workflowVersion !== definition.version ||
       !Number.isSafeInteger(state.version) ||
       state.version < 0 || !Number.isInteger(state.stepIndex) || !state.values ||
       typeof state.values !== 'object' || Array.isArray(state.values) ||
@@ -87,19 +88,7 @@ export function createInteractionRepository(definition) {
       return mutate(principal, input.interactionId, (state) => {
         if (!state) throw interactionError('Interaction was not found.', 404);
         const descriptor = definition.describe(state);
-        if (state.version !== input.version || descriptor.stepId !== input.stepId ||
-            state.pending || state.lastSubmissionId === input.submissionId ||
-            state.presentation?.conversationId !== conversationId ||
-            state.presentation?.turnId === turnId || state.presentation?.stepId !== input.stepId ||
-            state.presentation?.version !== state.version) {
-          throw interactionError('This interaction changed or is not presented in this conversation. Resume it before submitting.', 409);
-        }
-        if (!descriptor.allowedActions.includes(input.action) || input.action === 'resume') {
-          throw interactionError('This action is not available at the current step.', 409);
-        }
-        const values = ['continue', 'submit'].includes(input.action)
-          ? validateInteractionValues(descriptor.fields, input.values)
-          : validateInteractionValues([], input.values);
+        const values = validatePresentedInteractionInput(state, descriptor, input, { conversationId, turnId });
         state.pending = { ...input, values, conversationId, turnId };
         state.version++;
         return state;

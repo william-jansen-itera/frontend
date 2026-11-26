@@ -19,6 +19,12 @@ const exportsByModule = {
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier.endsWith('/lanes/quiz/quizRuntime.js')) {
+      return {
+        url: `data:text/javascript,${encodeURIComponent('export const createQuizRuntime = () => ({ hasBoundQuiz: false, configure() {}, async onCollectionResult() {}, progress: () => null });')}`,
+        shortCircuit: true,
+      };
+    }
     if (specifier.endsWith('/interactionLookupRepository.js')) {
       return {
         url: `data:text/javascript,${encodeURIComponent('export const findLatestActiveInteractionId = async () => null;')}`,
@@ -39,6 +45,9 @@ registerHooks({
     }
     if (specifier === '@/server/utils/agentOrchestration/interactions/interactionRuntime') {
       return nextResolve(new URL('../../interactions/interactionRuntime.js', import.meta.url).href, context);
+    }
+    if (specifier === '@/server/utils/agentOrchestration/interactions/interactionResponse') {
+      return nextResolve(new URL('../../interactions/interactionResponse.js', import.meta.url).href, context);
     }
     const name = specifier.split('/').at(-1).replace(/\.js$/, '');
     if (specifier.startsWith('@/') && name === 'agentAnswerState') {

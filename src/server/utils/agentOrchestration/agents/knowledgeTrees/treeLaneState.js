@@ -28,6 +28,12 @@ export function validateTreeConversation(state) {
     throw new Error('Invalid Knowledge Trees conversation state.');
   }
   assertTreeLane(state.activeLane);
+  for (const key of ['quizId', 'quizSetupId']) {
+    if (state[key] !== null) assertTreeContextId(state[key], key);
+    if (state[key] !== null && state.activeLane !== QUIZ_LANE) {
+      throw new Error('Quiz bindings require the quiz lane.');
+    }
+  }
   if (!STAGES.has(state.stage) ||
       (state.activeLane !== SAVING_LANE && state.stage !== 'idle') ||
       (state.previewId !== null && typeof state.previewId !== 'string') ||
@@ -54,6 +60,8 @@ export function buildTreeLaneContext(state) {
     stage: state.stage,
     previewId: state.previewId,
     uploadId: state.uploadId,
+    ...(state.quizId ? { quizId: state.quizId } : {}),
+    ...(state.quizSetupId ? { quizSetupId: state.quizSetupId } : {}),
   };
 }
 
@@ -62,20 +70,24 @@ export function buildTreeLaneInstruction(state) {
     `Trusted Knowledge Trees turn context: ${JSON.stringify(buildTreeLaneContext(state))}`,
     'Match activeLane exactly to the published [lane: ...] heading. Apply shared, routing, and only the active lane\'s rules and its ancestor common rules. Knowledge common rules apply only to knowledge.retrieval and knowledge.saving, never quiz. Other lane rules are inactive.',
     ...(state.activeLane === QUIZ_LANE ? [
-      'The quiz lane permits test_multistep_interaction, the shared collect_structured_input tool, and switch_tree_lane. Tree search and saving tools are unavailable here. Actual quiz generation and scoring are not implemented.',
+      'The quiz lane permits quiz, collect_structured_input, and switch_tree_lane. Use quiz for source-grounded questions and grading, and the collector for setup selections. Tree search and saving tools are unavailable here.',
     ] : []),
     `Before acting in another lane call ${SWITCH_TREE_LANE_TOOL}. Its successful result supplies the updated trusted context, which replaces this context.`,
     'A lane switch is not approval to save, broaden, or confirm. A workflow stage is not human approval.',
   ].join('\n');
 }
 
+export function isTreeLaneToolAllowed(activeLane, toolName) {
+  if ([SWITCH_TREE_LANE_TOOL, 'collect_structured_input'].includes(toolName)) return true;
+  const requiredLane = SAVING_TOOLS.has(toolName) ? SAVING_LANE
+    : toolName === 'quiz' ? QUIZ_LANE
+      : toolName.startsWith('search_tree_') ? RETRIEVAL_LANE : null;
+  return Boolean(requiredLane) && activeLane === requiredLane;
+}
+
 export function assertTreeLaneTool(state, toolName) {
   assertTreeLane(state.activeLane);
-  if ([SWITCH_TREE_LANE_TOOL, 'collect_structured_input'].includes(toolName)) return;
-  const requiredLane = SAVING_TOOLS.has(toolName) ? SAVING_LANE
-    : toolName === 'test_multistep_interaction' ? QUIZ_LANE
-      : toolName.startsWith('search_tree_') ? RETRIEVAL_LANE : null;
-  if (!requiredLane || state.activeLane !== requiredLane) {
+  if (!isTreeLaneToolAllowed(state.activeLane, toolName)) {
     throw new Error(`Tool ${toolName} is not allowed in ${state.activeLane}. Request a valid lane switch before calling it.`);
   }
 }
