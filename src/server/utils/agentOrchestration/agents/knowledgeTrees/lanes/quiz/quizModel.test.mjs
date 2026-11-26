@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
+import Ajv from 'ajv';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -71,11 +72,22 @@ function plan(language = 'en') {
 }
 function draft(objectives) {
   return { questions: objectives.map((objective) => {
-    const { leafId, learningObjective, ...question } = bank().questions.find((item) =>
+    const { leafId, learningObjective, type, question, referenceAnswer, gradingCriteria, options,
+      correctOptionIds, optionExplanations } = bank().questions.find((item) =>
       item.leafId === objective.leafId && item.learningObjective === objective.learningObjective);
     assert.equal(leafId, objective.leafId);
     assert.equal(learningObjective, objective.learningObjective);
-    return { objectiveId: objective.objectiveId, ...question };
+    const common = { objectiveId: objective.objectiveId, type, question, referenceAnswer, gradingCriteria };
+    if (type === 'text') return common;
+    if (type === 'yes_no') return {
+      ...common, correctOptionId: correctOptionIds[0],
+      yesExplanation: optionExplanations.find((item) => item.optionId === 'yes').explanation,
+      noExplanation: optionExplanations.find((item) => item.optionId === 'no').explanation,
+    };
+    return {
+      ...common, options, optionExplanations,
+      ...(type === 'single_choice' ? { correctOptionId: correctOptionIds[0] } : { correctOptionIds }),
+    };
   }) };
 }
 
@@ -97,7 +109,6 @@ function largeQuizFixture(questionCount, leafCount = questionCount) {
 }
 const textDraft = (objectives) => ({ questions: objectives.map((objective) => ({
   objectiveId: objective.objectiveId, type: 'text', question: `Explain ${objective.objectiveId}.`,
-  options: [], correctOptionIds: [], optionExplanations: [],
   referenceAnswer: 'Grounded reference.', gradingCriteria: 'Essential supported fact.',
 })) });
 
@@ -133,6 +144,32 @@ test('generation makes a grounded planning call then writes only approved covera
     questions: [expected.questions[0], expected.questions[2], expected.questions[1], expected.questions[3]],
   });
   assert.equal(calls.length, 2);
+});
+
+test('the actual writer schema accepts all four types but excludes incompatible option and answer fields', async () => {
+  globalThis.__quizModel = async (request) => {
+    if (request.text.format.name === 'quiz_plan') return output(plan());
+    const value = draft(JSON.parse(request.input[1].content).objectives);
+    const validate = new Ajv({ allErrors: true }).compile(request.text.format.schema);
+    assert.equal(validate(value), true, JSON.stringify(validate.errors));
+    for (const [type, mutate] of [
+      ['text', (q) => { q.options = [{ id: 'option-1', label: 'Unexpected option' }]; }],
+      ['yes_no', (q) => { q.options = [{ id: 'yes', label: 'Yes' }]; }],
+      ['text', (q) => { q.correctOptionIds = ['option-1']; }],
+      ['text', (q) => { q.optionExplanations = []; }],
+      ['yes_no', (q) => { q.correctOptionId = 'option-1'; }],
+      ['yes_no', (q) => { q.correctOptionId = ['yes', 'no']; }],
+      ['yes_no', (q) => { delete q.noExplanation; }],
+      ['single_choice', (q) => { q.correctOptionId = ['option-1', 'option-2']; }],
+      ['multiple_choice', (q) => { delete q.correctOptionIds; q.correctOptionId = 'option-1'; }],
+    ]) {
+      const invalid = structuredClone(value);
+      mutate(invalid.questions.find((question) => question.type === type));
+      assert.equal(validate(invalid), false, `${type} must reject incompatible fields`);
+    }
+    return output(value);
+  };
+  await generateQuizBank({ source });
 });
 
 test('source-language inference is checkpointed before writing and determines the writer language', async () => {
@@ -265,21 +302,21 @@ test('batch writers cannot exchange objective IDs and merged validation rejects 
 });
 
 test('a failed batch cancels and drains sibling calls while preserving the original global question diagnostic', async () => {
-  const fixture = largeQuizFixture(13);
-  let aborted = false;
-  let settled = false;
-  let siblingSignal;
+  const fixture = largeQuizFixture(25);
+  let aborted = 0;
+  let settled = 0;
+  const siblingSignals = [];
   globalThis.__quizModel = async (request, options) => {
     if (request.text.format.name === 'quiz_plan') return output(fixture.plan);
     const input = JSON.parse(request.input[1].content);
     if (input.objectives.length === 12) {
-      siblingSignal = options.signal;
+      siblingSignals.push(options.signal);
       return new Promise((_, reject) => {
         options.signal.addEventListener('abort', () => {
-          aborted = true;
+          aborted++;
           reject(new Error('Sibling request aborted.'));
         }, { once: true });
-      }).finally(() => { settled = true; });
+      }).finally(() => { settled++; });
     }
     const value = textDraft(input.objectives);
     value.questions[0].question = 'Private question content.'.repeat(100);
@@ -287,13 +324,14 @@ test('a failed batch cancels and drains sibling calls while preserving the origi
   };
   await assert.rejects(generateQuizBank({ source: fixture.source }), (error) => {
     assert.equal(error.status, 502);
-    assert.match(error.message, /question 13: question must be nonempty text of at most 2000 characters/);
+    assert.match(error.message, /question 25: question must be nonempty text of at most 2000 characters/);
     assert.doesNotMatch(error.message, /Private|Sibling/);
-    assert.equal(siblingSignal.reason, error);
+    assert.equal(siblingSignals.length, 2);
+    assert.ok(siblingSignals.every((signal) => signal.reason === error));
     return true;
   });
-  assert.equal(aborted, true);
-  assert.equal(settled, true);
+  assert.equal(aborted, 2);
+  assert.equal(settled, 2);
 });
 
 test('invalid plans and unanchored evidence fail before the writing call', async () => {
@@ -356,7 +394,8 @@ test('question writing cannot change objective coverage, supported types or opti
     (b) => { b.questions[0].correctOptionIds = ['option-1', 'option-2']; },
     (b) => { b.questions[2].correctOptionIds = ['option-1']; },
     (b) => { b.questions[2].correctOptionIds = ['option-1', 'option-2', 'option-3']; },
-    (b) => { b.questions[1].correctOptionIds = ['maybe']; },
+    (b) => { b.questions[1].correctOptionId = 'maybe'; },
+    (b) => { b.questions[1].options = [{ id: 'yes', label: 'Unexpected' }]; },
     (b) => { b.questions[3].options = [{ id: 'option-1', label: 'Unexpected' }]; },
     (b) => { delete b.questions[0].optionExplanations; },
     (b) => { b.questions[0].optionExplanations.pop(); },
@@ -364,7 +403,7 @@ test('question writing cannot change objective coverage, supported types or opti
     (b) => { b.questions[0].optionExplanations[0].explanation = 'x'.repeat(1001); },
     (b) => { b.questions[0].optionExplanations[0].optionId = 'option-2'; },
     (b) => { b.questions[0].optionExplanations[0].optionId = 'unknown'; },
-    (b) => { b.questions[1].optionExplanations.pop(); },
+    (b) => { delete b.questions[1].noExplanation; },
     (b) => { b.questions[3].optionExplanations = [{ optionId: 'made-up', explanation: 'No free-answer choices exist.' }]; },
   ]) {
     let calls = 0;
@@ -384,8 +423,8 @@ test('invalid authored questions report their bank position and rule without dis
   const cases = [
     { index: 0, mutate: (q) => { q.options[0].label = 'Private option content'.repeat(10); },
       rule: /question 1: options\[0\]\.label .*160 characters/ },
-    { index: 1, mutate: (q) => { q.optionExplanations.pop(); },
-      rule: /question 2: optionExplanations must cover each option exactly once/ },
+    { index: 1, mutate: (q) => { q.yesExplanation = ' '; },
+      rule: /question 2: optionExplanations\[0\]\.explanation .*1000 characters/ },
     { index: 2, mutate: (q) => { q.correctOptionIds = q.options.map((option) => option.id); },
       rule: /question 3: multiple_choice requires at least two correct options and at least one incorrect option/ },
     { index: 3, mutate: (q) => { q.question = 'Private question content'.repeat(100); },
@@ -431,8 +470,9 @@ test('a supported free-answer substitution is allowed without changing the alloc
       value.objectives[0].supportedTypes.push('text');
       return output(value);
     }
-    const value = draft(JSON.parse(request.input[1].content).objectives);
-    value.questions[0] = { ...value.questions[0], type: 'text', options: [], correctOptionIds: [], optionExplanations: [] };
+    const { objectives } = JSON.parse(request.input[1].content);
+    const value = draft(objectives);
+    value.questions[0] = textDraft(objectives.slice(0, 1)).questions[0];
     return output(value);
   };
   const result = await generateQuizBank({ source, language: 'en' });

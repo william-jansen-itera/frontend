@@ -13,7 +13,7 @@ import { AgentAnswerContent } from "./AgentAnswerContent";
 import InteractionCard, { InteractionControl } from "./InteractionCard";
 import { validateInteractionDescriptor } from "@/shared/interactions";
 import SavedPrompts from "./SavedPrompts";
-import { acceptLaneContext, buildInteractionReplyContext, buildLaneRequestContext, getInteractionReplyTarget, isInteractionAvailable } from "./chatLaneContext";
+import { acceptLaneContext, buildInteractionReplyContext, buildLaneRequestContext, getAgentChatLanguage, getInteractionReplyTarget, isInteractionAvailable } from "./chatLaneContext";
 import {
   buildChatPlaceholder,
   fetchAvailableChatFamilies,
@@ -39,13 +39,8 @@ const chatTranslators = {
 };
 
 function getAgentChatTranslator(responseLanguage, appLanguage, appTranslator) {
-  const reportedLanguage = String(responseLanguage ?? "").trim().toLowerCase();
-  const selectedLanguage = reportedLanguage === "danish" || reportedLanguage === "dansk" || reportedLanguage === "danish (da)" || /^da(?:-|$)/.test(reportedLanguage)
-    ? "da"
-    : reportedLanguage === "english" || reportedLanguage === "english (en)" || /^en(?:-|$)/.test(reportedLanguage)
-      ? "en"
-      : null;
-  return selectedLanguage && selectedLanguage !== appLanguage ? chatTranslators[selectedLanguage] : appTranslator;
+  const selectedLanguage = getAgentChatLanguage(responseLanguage, appLanguage);
+  return selectedLanguage !== appLanguage ? chatTranslators[selectedLanguage] : appTranslator;
 }
 function buildUploadCompletionMessage(uploadId, note, caption, fileName, t) {
   return t("Upload.AutomatedCompletion", { uploadId, evidence: JSON.stringify({ note, caption, fileName }) });
@@ -984,15 +979,16 @@ export default function ChatPageClient({ includeDebug }) {
     router.replace(nextQueryString ? `${pathname}?${nextQueryString}` : pathname, { scroll: false });
   }, [availableChatFamilies, chatFamily, defaultChatFamily, pathname, requestedFamilyParam, router, searchParams]);
 
-  async function submitTurn({ question, message, file, hasTypedUploadMessage = false, interactionSubmission = null, interactionContext = null }) {
+  async function submitTurn({ question, message, file, hasTypedUploadMessage = false, interactionSubmission = null, interactionContext = null, interactionResponseLanguage = null }) {
     if (submissionRequestRef.current || isSubmitting || !isVisibilityReady || !chatFamily ||
         turns.some((turn) => turn.approvalRequired)) return;
     submissionRequestRef.current = true;
     const turnId = createTurnId();
     if (!laneContextRef.current) laneContextRef.current = { conversationId: createRequestId(), version: 0 };
     const laneRequest = chatFamily === "knowledgeTrees" ? buildLaneRequestContext(laneContextRef.current, turnId) : {};
-    const submittedLanguage = language;
-    const automatedLabel = interactionSubmission || (file && !hasTypedUploadMessage) ? t("Upload.AutomatedLabel") : null;
+    const submittedLanguage = interactionSubmission ? getAgentChatLanguage(interactionResponseLanguage, language) : language;
+    const submissionTranslator = getAgentChatTranslator(submittedLanguage, language, t);
+    const automatedLabel = interactionSubmission || (file && !hasTypedUploadMessage) ? submissionTranslator("Upload.AutomatedLabel") : null;
     let completionTurnId = null;
     let uploadId = null;
     let stagedUpload = false;
@@ -1529,9 +1525,9 @@ export default function ChatPageClient({ includeDebug }) {
                                 !isInteractionAvailable(turn.interaction, chatFamily, laneContextRef.current?.activeLane)}
                               readOnly={turn.interactionReadOnly || turn.id !== latestInteractionTurn?.id ||
                                 ["completed", "cancelled"].includes(turn.interaction.status)}
-                              translate={t}
+                              translate={getAgentChatTranslator(turn.responseLanguage, language, t)}
                               onAction={({ action, values, message }) => submitTurn({
-                                question: message, message,
+                                question: message, message, interactionResponseLanguage: turn.responseLanguage,
                                 interactionSubmission: {
                                   interactionId: turn.interaction.interactionId, stepId: turn.interaction.stepId,
                                   workflow: turn.interaction.workflow,

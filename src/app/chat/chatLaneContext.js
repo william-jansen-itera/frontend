@@ -1,3 +1,14 @@
+export function getAgentChatLanguage(responseLanguage, appLanguage) {
+  const reportedLanguage = String(responseLanguage ?? "").trim().toLowerCase();
+  if (reportedLanguage === "danish" || reportedLanguage === "dansk" || reportedLanguage === "danish (da)" || /^da(?:-|$)/.test(reportedLanguage)) {
+    return "da";
+  }
+  if (reportedLanguage === "english" || reportedLanguage === "english (en)" || /^en(?:-|$)/.test(reportedLanguage)) {
+    return "en";
+  }
+  return appLanguage;
+}
+
 export function buildLaneRequestContext(context, turnId) {
   return {
     conversationId: context.conversationId,

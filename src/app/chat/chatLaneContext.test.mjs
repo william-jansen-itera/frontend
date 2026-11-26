@@ -1,6 +1,43 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { acceptLaneContext, buildInteractionReplyContext, buildLaneRequestContext, getInteractionReplyTarget, isInteractionAvailable } from './chatLaneContext.js';
+import { createTranslator } from 'next-intl';
+import { formatInteractionMessage } from '../../shared/interactions.js';
+import { acceptLaneContext, buildInteractionReplyContext, buildLaneRequestContext, getAgentChatLanguage, getInteractionReplyTarget, isInteractionAvailable } from './chatLaneContext.js';
+
+test('automated card messages follow the reply language rather than the app language without changing submitted data', () => {
+  for (const [responseLanguage, appLanguage, expectedLanguage, label, actionLabel] of [
+    ['Danish', 'en', 'da', 'Browser (automatisk)', 'Indsend'],
+    ['en-GB', 'da', 'en', 'Browser (automated)', 'Submit'],
+  ]) {
+    const language = getAgentChatLanguage(responseLanguage, appLanguage);
+    const messages = JSON.parse(readFileSync(new URL(`../language/${language}.json`, import.meta.url), 'utf8'));
+    const translate = createTranslator({ locale: language, messages, namespace: 'Pages.Chat' });
+    const descriptor = { fields: [{
+      id: 'roots', label: language === 'da' ? 'Rødder' : 'Roots', type: 'multiple_choice',
+      options: [{ id: 'root-1', label: 'ferskvandsrovfisk (8428)' }],
+    }] };
+    const values = { roots: ['root-1'] };
+    const original = structuredClone({ descriptor, values });
+    const message = formatInteractionMessage(descriptor, 'submit', values, translate('Interaction.Actions.submit'));
+    const automatedLabel = translate('Upload.AutomatedLabel');
+    assert.equal(language, expectedLanguage);
+    assert.equal(automatedLabel, label);
+    assert.equal(message, `${actionLabel}\n${descriptor.fields[0].label}: ferskvandsrovfisk (8428)`);
+    assert.deepEqual({ descriptor, values }, original);
+    assert.equal(`${automatedLabel}: ${message}`.startsWith(`${label}: ${actionLabel}\n`), true);
+  }
+});
+
+test('card language uses the existing reply-language aliases and app fallback', () => {
+  for (const reported of ['da', 'da-DK', 'dansk', 'Danish (da)', ' DANISH ']) {
+    assert.equal(getAgentChatLanguage(reported, 'en'), 'da');
+  }
+  for (const reported of ['en', 'en-US', 'English', 'English (en)']) {
+    assert.equal(getAgentChatLanguage(reported, 'da'), 'en');
+  }
+  for (const reported of [null, '', 'de']) assert.equal(getAgentChatLanguage(reported, 'da'), 'da');
+});
 
 test('real quiz cards default to prompt replies only in quiz and honor Ignore prompt', () => {
   const card = { interactionId: 'quiz-1', stepId: 'question-1', version: 3,

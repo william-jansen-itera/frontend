@@ -8,14 +8,26 @@ const string = (maxLength) => ({ type: 'string', minLength: 1, maxLength });
 const object = (properties) => ({
   type: 'object', additionalProperties: false, properties, required: Object.keys(properties),
 });
-const questionSchema = object({
-  objectiveId: string(100), type: { type: 'string', enum: QUIZ_QUESTION_TYPES },
-  question: string(2000),
+const selectionProperties = {
   options: { type: 'array', maxItems: 6, items: object({ id: string(20), label: string(160) }) },
   optionExplanations: { type: 'array', maxItems: 6, items: object({ optionId: string(20), explanation: string(1000) }) },
-  correctOptionIds: { type: 'array', maxItems: 6, items: string(20) },
+};
+const questionSchema = (type, properties) => object({
+  objectiveId: string(100), type: { type: 'string', enum: [type] }, question: string(2000),
+  ...properties,
   referenceAnswer: string(8000), gradingCriteria: string(4000),
 });
+const questionSchemas = {
+  single_choice: questionSchema('single_choice', { ...selectionProperties, correctOptionId: string(20) }),
+  multiple_choice: questionSchema('multiple_choice', {
+    ...selectionProperties, correctOptionIds: { type: 'array', maxItems: 5, items: string(20) },
+  }),
+  yes_no: questionSchema('yes_no', {
+    correctOptionId: { type: 'string', enum: ['yes', 'no'] },
+    yesExplanation: string(1000), noExplanation: string(1000),
+  }),
+  text: questionSchema('text', {}),
+};
 const planSchema = object({
   language: { type: 'string', enum: ['en', 'da', 'und'] },
   languageReason: string(500),
@@ -30,7 +42,9 @@ const planSchema = object({
     supportedTypes: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string', enum: QUIZ_QUESTION_TYPES } },
   }) },
 });
-const bankSchema = (count) => object({ questions: { type: 'array', minItems: count, maxItems: count, items: questionSchema } });
+const bankSchema = (count) => object({
+  questions: { type: 'array', minItems: count, maxItems: count, items: { anyOf: Object.values(questionSchemas) } },
+});
 const gradeSchema = object({
   verdict: { type: 'string', enum: ['correct', 'incorrect', 'clarify'] }, feedback: string(4000),
 });
@@ -119,9 +133,10 @@ For tree classification, specify the level and use comparable categories so broa
 not accidentally competing correct answers. Alternatives may be supplied categories or plausible
 invented contrasting labels; do not claim invented branches actually exist. Explain whether each
 option matches the supplied placement, not invented subject-matter traits.
-single_choice: 3-6 plausible, distinct options, exactly one correct.
+single_choice: 3-6 plausible, distinct options; correctOptionId identifies the single correct answer.
 multiple_choice: explicitly say select all that apply; 3-6 options, at least two correct and at least one incorrect.
-For these selection types use IDs option-1, option-2, ... in display order; correctOptionIds identifies the answer set.
+correctOptionIds identifies the multiple-choice answer set.
+For these selection types use IDs option-1, option-2, ... in display order.
 Vary correct option positions; no length/grammar clues, 'all/none of the above', or silly distractors.
 Build plausible distractors from specific mistakes: swapped relationships, reversed conditions,
 wrong sequences or confused concepts. First extract the explicit discriminating attributes and their
@@ -138,7 +153,7 @@ Anchor the question to the situation or strategy described by the note, rather t
 alternative behaviors are universally impossible. Preserve qualifiers such as often, may and sometimes.
 For multiple choice, judge each option against an explicit inclusion criterion, not a single-best ranking.
 Prefer alternatives that test understanding of the requested attributes, not unrelated assertions.
-For EVERY option provide an optionExplanations item with its
+For EVERY selection option provide an optionExplanations item with its
 optionId and a concise, evidence-grounded explanation of why it is correct or incorrect IN THIS QUESTION.
 The card adds the correctness label. Write only the reason in explanation; do not prefix it with
 "Correct", "Incorrect" or their translated equivalents.
@@ -148,14 +163,15 @@ source-supported fact it contradicts OR the explicit question criterion it fails
 For a plausible but insufficient option, identify the requested information it does not establish;
 do not invent a contradiction or describe the underlying statement as universally false.
 Not being mentioned in the note does NOT itself make a statement false.
-Check every explanation against correctOptionIds and the stem; reject genuinely ambiguous alternatives.
+Check every explanation against the correct answer ID(s) and the stem; reject genuinely ambiguous alternatives.
 If the note cannot support plausible alternatives with defensible explanations, choose text instead.
-yes_no: no options; correctOptionIds is exactly ["yes"] or ["no"]. Use an unambiguous supported or contradicted
+yes_no: omit options and optionExplanations; correctOptionId is exactly "yes" or "no". Use an unambiguous supported or contradicted
 claim, not absence-of-evidence-as-false. Vary yes/no outcomes where evidence allows.
-Include optionExplanations for BOTH optionIds "yes" and "no", explaining why each response is correct
+Include BOTH yesExplanation and noExplanation, explaining why each response is correct
 or incorrect given the claim and evidence. Do not confuse a false claim with "no" being an incorrect response.
-text: no options and no correctOptionIds. Ask for a focused explanation with concise referenceAnswer
-and explicit essential gradingCriteria that accept equivalent wording and examples. Use optionExplanations=[].
+Do not prefix these explanations with correctness labels either; the card supplies them.
+text: omit options, correctOptionId, correctOptionIds and optionExplanations. Ask for a focused explanation with concise referenceAnswer
+and explicit essential gradingCriteria that accept equivalent wording and examples.
 For all types, referenceAnswer explains the evidence-supported answer; criteria specify what is essential.
 Hard character limits, including whitespace: question 2000, each option label 160, each option
 explanation 1000, referenceAnswer 8000, gradingCriteria 4000. Keep wording comfortably within these limits.
@@ -231,7 +247,6 @@ export async function generateQuizBank({ source, language = null, onLanguageSele
     throw interactionError('The selected notes do not support any quiz questions. Choose different sources.', 400);
   }
   const invalid = () => { throw interactionError('Quiz model returned a bank inconsistent with the approved plan. Resume to retry.', 502); };
-  const fields = Object.keys(questionSchema.properties);
   // The approved plan's 45-objective limit bounds this fan-out to four concurrent calls.
   const batches = Array.from({ length: Math.ceil(plan.objectives.length / QUESTION_BATCH_SIZE) }, (_, index) =>
     plan.objectives.slice(index * QUESTION_BATCH_SIZE, (index + 1) * QUESTION_BATCH_SIZE));
@@ -246,12 +261,24 @@ export async function generateQuizBank({ source, language = null, onLanguageSele
     const objectives = new Map(batch.map((objective) => [objective.objectiveId, objective]));
     const questions = new Map();
     for (const question of draft.questions) {
-      if (!question || Object.keys(question).length !== fields.length ||
-          fields.some((field) => !Object.hasOwn(question, field))) invalid();
+      if (!question || typeof question !== 'object' || Array.isArray(question)) invalid();
       const objective = objectives.get(question.objectiveId);
       if (!objective || questions.has(question.objectiveId) || !objective.supportedTypes.includes(question.type)) invalid();
-      const { objectiveId, ...authored } = question;
-      const resolved = { ...authored, leafId: objective.leafId, learningObjective: objective.learningObjective };
+      const fields = Object.keys(questionSchemas[question.type].properties);
+      if (Object.keys(question).length !== fields.length ||
+          fields.some((field) => !Object.hasOwn(question, field))) invalid();
+      const { objectiveId, type, question: prompt, referenceAnswer, gradingCriteria } = question;
+      const selection = type === 'single_choice' || type === 'multiple_choice';
+      const resolved = {
+        leafId: objective.leafId, learningObjective: objective.learningObjective,
+        type, question: prompt, referenceAnswer, gradingCriteria,
+        options: selection ? question.options : [],
+        correctOptionIds: type === 'text' ? [] : type === 'multiple_choice' ? question.correctOptionIds : [question.correctOptionId],
+        optionExplanations: type === 'yes_no' ? [
+          { optionId: 'yes', explanation: question.yesExplanation },
+          { optionId: 'no', explanation: question.noExplanation },
+        ] : selection ? question.optionExplanations : [],
+      };
       validateQuizQuestion(resolved, 502, batchIndex * QUESTION_BATCH_SIZE + batch.indexOf(objective));
       questions.set(objectiveId, resolved);
     }
